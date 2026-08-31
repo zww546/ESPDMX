@@ -167,6 +167,10 @@ class FixtureStore(context: Context) {
             return list.sortedBy { it.name }
         }
 
+    /** 指定原始格式（"xml"/"d4"/"r20"）的灯库列表（按是否保存了该格式原始文件过滤）。 */
+    fun fixturesOfFormat(ext: String): List<FixtureDef> =
+        fixtures.filter { File(dir, "${it.id}.$ext").exists() }
+
     var currentFixtureId: String?
         get() = prefs.getString("current_fixture", null)
         set(value) = prefs.edit().putString("current_fixture", value).apply()

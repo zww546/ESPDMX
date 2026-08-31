@@ -1296,6 +1296,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             importFileLauncher.launch("*/*")
         }
 
+        // 格式筛选标签：XML / D4 / R20
+        fixb.btnFmtXml.setOnClickListener { setFixtureFmt("xml") }
+        fixb.btnFmtD4.setOnClickListener { setFixtureFmt("d4") }
+        fixb.btnFmtR20.setOnClickListener { setFixtureFmt("r20") }
+
         fixb.btnAddInstance.setOnClickListener { showAddInstanceDialog() }
 
         fixb.btnEdit.setOnClickListener {
@@ -1328,6 +1333,26 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private var selectMode = false
+    private var fixtureFmt = "xml"          // 灯具页当前格式筛选：xml / d4 / r20
+
+    /** 切换灯具格式筛选并刷新列表。 */
+    private fun setFixtureFmt(fmt: String) {
+        fixtureFmt = fmt
+        updateFmtTabs()
+        refreshFixturePage()
+    }
+
+    /** 灯具页格式标签（XML/D4/R20）统一风格 + 选中高亮。 */
+    private fun updateFmtTabs() {
+        fun setTab(btn: Button, active: Boolean) {
+            btn.setBackgroundResource(if (active) R.drawable.bg_pill_selected else R.drawable.bg_pill)
+            btn.setTextColor(getColor(if (active) R.color.bg else R.color.textDim))
+            btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+        }
+        setTab(fixb.btnFmtXml, fixtureFmt == "xml")
+        setTab(fixb.btnFmtD4, fixtureFmt == "d4")
+        setTab(fixb.btnFmtR20, fixtureFmt == "r20")
+    }
 
     private fun toggleSelectMode() {
         selectMode = !selectMode
@@ -1345,7 +1370,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun refreshFixturePage() {
         val def = fixtureStore.currentFixture
         fixb.tvCurrentFixture.text = def?.let { "${it.name} / ${it.mode}" } ?: "无"
-        fixtureAdapter?.submitList(fixtureStore.fixtures)
+        fixtureAdapter?.submitList(fixtureStore.fixturesOfFormat(fixtureFmt))
+        updateFmtTabs()
         renderInstanceBar()
     }
 
