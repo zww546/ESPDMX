@@ -25,6 +25,7 @@ import android.graphics.drawable.GradientDrawable
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.graphics.Typeface
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -1807,6 +1808,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private fun refreshStoragePage() {
+        updateStorageTabs()
         // 0=App灯库(本地列表) 1=设备灯库 2=文件管理：统一按 storageMode 决定显示哪边，
         // 否则从设备页切回 App 灯库时 showDeviceFiles 残留 true 导致本地灯库不显示
         showDeviceFiles = (storageMode != 0)
@@ -1948,6 +1950,18 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             sdb.tvListTitle.text = "App 端已保存灯库"
             sdb.tvListHint.text = if (libs.isEmpty()) "暂无灯库" else "${libs.size} 个 — 点按上传到设备"
         }
+    }
+
+    /** 存储页三个标签（App灯库/设备灯库/文件管理）统一风格 + 选中高亮。 */
+    private fun updateStorageTabs() {
+        fun setTab(btn: Button, active: Boolean) {
+            btn.setBackgroundResource(if (active) R.drawable.bg_pill_active else R.drawable.bg_pill)
+            btn.setTextColor(getColor(if (active) R.color.accent else R.color.textDim))
+            btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+        }
+        setTab(sdb.btnAppLibs, storageMode == 0)
+        setTab(sdb.btnDeviceLibs, storageMode == 1)
+        setTab(sdb.btnFileMgr, storageMode == 2)
     }
 
     /** 上传单个文件数据（分块 200B，间隔 50ms；上传到当前目录 curPath）。 */
