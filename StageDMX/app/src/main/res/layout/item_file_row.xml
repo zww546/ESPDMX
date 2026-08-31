@@ -40,7 +40,7 @@
         android:textSize="11sp"
         android:textColor="@color/text"
         android:textStyle="bold"
-        android:background="@drawable/bg_pill_selected"
+        android:background="@drawable/bg_pill_outline_accent"
         android:minWidth="52dp"
         android:gravity="center"
         android:paddingHorizontal="12dp" />
