@@ -462,6 +462,8 @@ object FixtureParser {
         val channels = mutableListOf<FixtureChannel>()
         var chNumber = 0
         var attrId = ""; var attrName = ""; var attrSize = 1
+        var inControl = false   // 只统计 <Control> 下的 Attribute 定义，
+                                // 忽略 <Mode><Include> 里的 Attribute 引用（否则会把多个 Mode 重复计入）
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
@@ -471,25 +473,29 @@ object FixtureParser {
                         shortName = parser.getAttributeValue(null, "ShortName") ?: ""
                         company = parser.getAttributeValue(null, "Company") ?: ""
                     }
-                    "Attribute" -> {
+                    "Control" -> inControl = true
+                    "Attribute" -> if (inControl) {
                         attrId = parser.getAttributeValue(null, "ID") ?: ""
                         attrName = parser.getAttributeValue(null, "Name") ?: ""
                         attrSize = parser.getAttributeValue(null, "Size")?.toIntOrNull() ?: 1
                     }
                 }
-                XmlPullParser.END_TAG -> if (parser.name == "Attribute" && attrId.isNotEmpty()) {
-                    val key = D4_ATTR[attrId] ?: attrId.lowercase()
-                    val display = attrName.ifEmpty { attrId }
-                    chNumber++
-                    channels.add(FixtureChannel(
-                        chNumber, translate(display, key, fixtureName), display, key, 0, 0,
-                        false, null, 0f, 0f))
-                    if (attrSize >= 2) {
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "Control" -> inControl = false
+                    "Attribute" -> if (inControl && attrId.isNotEmpty()) {
+                        val key = D4_ATTR[attrId] ?: attrId.lowercase()
+                        val display = attrName.ifEmpty { attrId }
                         chNumber++
-                        val fineKey = key + "_fine"
                         channels.add(FixtureChannel(
-                            chNumber, "${translate(display, key, fixtureName)}微调", "${display} Fine", fineKey, 0, 0,
-                            true, null, 0f, 0f))
+                            chNumber, translate(display, key, fixtureName), display, key, 0, 0,
+                            false, null, 0f, 0f))
+                        if (attrSize >= 2) {
+                            chNumber++
+                            val fineKey = key + "_fine"
+                            channels.add(FixtureChannel(
+                                chNumber, "${translate(display, key, fixtureName)}微调", "${display} Fine", fineKey, 0, 0,
+                                true, null, 0f, 0f))
+                        }
                     }
                 }
             }
