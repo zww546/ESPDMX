@@ -68,7 +68,7 @@
             android:text="App灯库"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill"
+            android:background="@drawable/bg_pill_outline"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnDeviceLibs"
@@ -78,7 +78,7 @@
             android:text="设备灯库"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill"
+            android:background="@drawable/bg_pill_outline"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnFileMgr"
@@ -88,7 +88,7 @@
             android:text="文件管理"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill" />
+            android:background="@drawable/bg_pill_outline" />
     </LinearLayout>
 
     <!-- 文件管理操作（仅文件管理页签显示） -->

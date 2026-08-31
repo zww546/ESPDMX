@@ -55,7 +55,7 @@
             android:text="XML"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill"
+            android:background="@drawable/bg_pill_outline"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnFmtD4"
@@ -65,7 +65,7 @@
             android:text="D4"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill"
+            android:background="@drawable/bg_pill_outline"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnFmtR20"
@@ -75,7 +75,7 @@
             android:text="R20"
             android:textSize="12sp"
             android:textColor="@color/textDim"
-            android:background="@drawable/bg_pill" />
+            android:background="@drawable/bg_pill_outline" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
