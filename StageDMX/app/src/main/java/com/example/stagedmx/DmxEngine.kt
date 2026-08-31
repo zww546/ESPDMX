@@ -197,4 +197,5 @@ class DmxEngine(private val ble: BleManager) {
     fun sendMkdir(name: String) = ble.send(DmxProtocol.encodeMkdir(name))
     fun sendRmdir(name: String) = ble.send(DmxProtocol.encodeRmdir(name))
     fun sendRename(oldName: String, newName: String) = ble.send(DmxProtocol.encodeRename(oldName, newName))
+    fun sendMove(name: String, dir: String) = ble.send(DmxProtocol.encodeMove(name, dir))
 }

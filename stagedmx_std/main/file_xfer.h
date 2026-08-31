@@ -41,3 +41,7 @@ bool file_xfer_rmdir(const char *name);
 
 /** 重命名 /fw 下文件或文件夹。成功返回 true。 */
 bool file_xfer_rename(const char *old_name, const char *new_name);
+
+/** 移动 /fw 下文件到目标文件夹（dir 为空串 = 移到根目录，dir 不含路径分隔符）。
+ *  目标文件夹必须已存在。成功返回 true。 */
+bool file_xfer_move(const char *name, const char *dir);

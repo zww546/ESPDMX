@@ -107,11 +107,13 @@ App 行为：
 
 > 未知首字节的帧，固件应安全忽略。
 
-### 2.11 文件管理（创建/删除文件夹）
+### 2.11 文件管理（创建/删除/重命名/移动）
 ```
 0x36  nameLen name…            删除文件（回 0x95）
 0x37  nameLen name…            新建文件夹（回 0x96）
 0x38  nameLen name…            删除空文件夹（回 0x96）
+0x39  oldLen old… newLen new…  重命名文件/文件夹（回 0x96）
+0x3A  nameLen name… dirLen dir…  移动文件到文件夹（回 0x96；dirLen=0 → 移到根目录，dir 不含路径分隔符，目标文件夹须已存在）
 ```
 
 ---
@@ -125,7 +127,7 @@ App 行为：
 0x93  seq totalChunks dataLen data…   下载数据块
 0x94  status                   下载结束（0=成功 1=未找到）
 0x95  status                   删除文件结果（0=成功 1=失败）
-0x96  status                   文件夹操作结果（0=成功 1=失败）
+0x96  status                   文件夹操作/移动结果（0=成功 1=失败）
 ```
 
 ---

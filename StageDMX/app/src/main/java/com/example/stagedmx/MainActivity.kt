@@ -1069,6 +1069,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private var downloadBuf = ByteArray(0)
     private var deletingFile: String? = null
     private var dirOpName: String? = null    // 正在创建/删除的文件夹名
+    private var moveOp: String? = null       // 正在移动的文件（"name → dir"）
     private var showDeviceFiles = false  // false=App列表, true=设备列表
     private var storageMode = 0          // 存储页签：0=App灯库 1=设备灯库 2=文件管理
 
@@ -1113,11 +1114,17 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             data.size >= 2 && (data[0].toInt() and 0xFF) == DmxProtocol.RESP_DIR_RESULT -> {
                 val ok = data[1].toInt() == 0
                 val name = dirOpName
+                val mv = moveOp
                 runOnUiThread {
-                    toast(if (ok) "文件夹操作成功${name?.let { "：$it" } ?: ""}" else "文件夹操作失败${name?.let { "：$it" } ?: ""}")
+                    if (mv != null) {
+                        toast(if (ok) "已移动 $mv" else "移动失败：$mv")
+                    } else {
+                        toast(if (ok) "文件夹操作成功${name?.let { "：$it" } ?: ""}" else "文件夹操作失败${name?.let { "：$it" } ?: ""}")
+                    }
                     if (ok) refreshDeviceFiles()
                 }
                 dirOpName = null
+                moveOp = null
             }
             data.size >= 4 && (data[0].toInt() and 0xFF) == DmxProtocol.RESP_FILE_CHUNK -> {
                 val dataLen = data[3].toInt() and 0xFF
@@ -1695,7 +1702,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         devFiles.clear()
         showDeviceFiles = true
         refreshStoragePage()
-        sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备文件"
+        sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
         sdb.tvListHint.text = "正在获取..."
         engine.sendListFiles()
     }
@@ -1734,24 +1741,40 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             .setNegativeButton("取消", null).show()
     }
 
+    /** 移动文件到设备文件夹（列出设备上的文件夹，含"根目录"）。 */
+    private fun moveDialog(name: String) {
+        val dirs = devFiles.filter { it.isDir }.map { it.name }
+        val opts = mutableListOf("（根目录）")
+        opts.addAll(dirs)
+        MaterialAlertDialogBuilder(this@MainActivity)
+            .setTitle("移动「$name」到")
+            .setItems(opts.toTypedArray()) { _, which ->
+                val dir = if (which == 0) "" else opts[which]
+                moveOp = if (dir.isEmpty()) "$name → 根目录" else "$name → $dir"
+                engine.sendMove(name, dir)
+                toast(if (dir.isEmpty()) "正在移动到根目录..." else "正在移动到「$dir」...")
+            }
+            .setNegativeButton("取消", null).show()
+    }
+
     private fun refreshDeviceFilesUI() {
         showDeviceFiles = true
         sdb.btnNewFolder.visibility = if (storageMode == 2) View.VISIBLE else View.GONE
-        sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备文件"
-        if (devFiles.isEmpty()) {
-            sdb.tvListHint.text = "设备上暂无文件，请先上传"
-        } else {
-            sdb.tvListHint.text = "${devFiles.size} 个条目"
-        }
+        sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
         refreshStoragePage()
     }
 
     private fun refreshStoragePage() {
+        // 0=App灯库(本地列表) 1=设备灯库 2=文件管理：统一按 storageMode 决定显示哪边，
+        // 否则从设备页切回 App 灯库时 showDeviceFiles 残留 true 导致本地灯库不显示
+        showDeviceFiles = (storageMode != 0)
+        // 设备灯库页只显示灯库文件，文件夹仅出现在文件管理页
+        val shownDev = if (storageMode == 1) devFiles.filter { !it.isDir } else devFiles
         val libs = fixtureStore.fixtures
         val ctx = this
         sdb.rvFileList.layoutManager = LinearLayoutManager(ctx)
         sdb.rvFileList.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun getItemCount() = if (showDeviceFiles) devFiles.size else libs.size
+            override fun getItemCount() = if (showDeviceFiles) shownDev.size else libs.size
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val v = LayoutInflater.from(parent.context).inflate(R.layout.item_file_row, parent, false)
                 return object : RecyclerView.ViewHolder(v) {}
@@ -1762,7 +1785,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 val tvInfo = root.findViewById<TextView>(R.id.tvFileInfo)
                 val btn = root.findViewById<Button>(R.id.btnAction)
                 if (showDeviceFiles) {
-                    val f = devFiles[pos]
+                    val f = shownDev[pos]
                     if (f.isDir) {
                         tvName.text = "📁 ${f.name}"
                         tvInfo.text = "文件夹"
@@ -1797,15 +1820,18 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                                 return@setOnLongClickListener true
                             }
                             if (storageMode == 2) {
-                                val opts = arrayOf("重命名", "删除")
+                                val opts = arrayOf("重命名", "移动", "删除")
                                 MaterialAlertDialogBuilder(this@MainActivity)
                                     .setTitle(f.name)
                                     .setItems(opts) { _, which ->
-                                        if (which == 0) renameDialog(f.name)
-                                        else {
-                                            deletingFile = f.name
-                                            engine.sendDeleteFile(f.name)
-                                            toast("正在删除 ${f.name}...")
+                                        when (which) {
+                                            0 -> renameDialog(f.name)
+                                            1 -> moveDialog(f.name)
+                                            else -> {
+                                                deletingFile = f.name
+                                                engine.sendDeleteFile(f.name)
+                                                toast("正在删除 ${f.name}...")
+                                            }
                                         }
                                     }
                                     .show()
@@ -1846,8 +1872,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         if (showDeviceFiles) {
             sdb.btnNewFolder.visibility = if (storageMode == 2) View.VISIBLE else View.GONE
-            sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备文件"
-            sdb.tvListHint.text = if (devFiles.isEmpty()) "设备暂无文件" else "${devFiles.size} 个条目"
+            sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
+            sdb.tvListHint.text = when {
+                shownDev.isEmpty() && storageMode == 1 -> "设备上暂无灯库，请先上传"
+                shownDev.isEmpty() -> "设备上暂无文件"
+                storageMode == 1 -> "${shownDev.size} 个灯库 — 点按下载到 App"
+                else -> "${shownDev.size} 个条目"
+            }
         } else {
             sdb.btnNewFolder.visibility = View.GONE
             sdb.tvListTitle.text = "App 端已保存灯库"

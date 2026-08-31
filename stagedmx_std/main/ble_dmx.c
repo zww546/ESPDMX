@@ -200,6 +200,24 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         ble_dmx_notify(resp, 2);
         break;
     }
+    case 0x3A: { // MOVE: 0x3A nameLen name… dirLen dir…（dirLen=0 → 根目录）
+        if (len < 3) return;
+        uint8_t nl = d[1];
+        if (nl == 0 || 2 + nl + 1 > len) return;
+        uint8_t dl = d[2 + nl];
+        if (2 + nl + 1 + dl > len) return;
+        char name[128], dir[128];
+        memcpy(name, &d[2], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        if (dl > 0) {
+            memcpy(dir, &d[3 + nl], dl < 127 ? dl : 127); dir[dl < 127 ? dl : 127] = '\0';
+        } else {
+            dir[0] = '\0';
+        }
+        bool ok = file_xfer_move(name, dir);
+        uint8_t resp[2] = {0x96, ok ? 0 : 1};
+        ble_dmx_notify(resp, 2);
+        break;
+    }
 
     // ---- 自定义系统命令 ----
     case 0xA0: { // 0xA0 cmd arg

@@ -59,6 +59,7 @@ object DmxProtocol {
     const val CMD_MKDIR: Int = 0x37
     const val CMD_RMDIR: Int = 0x38
     const val CMD_RENAME: Int = 0x39
+    const val CMD_MOVE: Int = 0x3A
 
     // ESP32 → App notify 响应
     const val RESP_UPLOAD_RESULT: Int = 0x91
@@ -235,6 +236,19 @@ object DmxProtocol {
         System.arraycopy(o, 0, out, 2, o.size)
         out[2 + o.size] = n.size.toByte()
         System.arraycopy(n, 0, out, 3 + o.size, n.size)
+        return out
+    }
+
+    /** 0x3A: 移动文件到文件夹（dir 为空串 = 移到根目录）：nameLen name… dirLen dir… */
+    fun encodeMove(name: String, dir: String): ByteArray {
+        val n = name.toByteArray(Charsets.UTF_8)
+        val d = dir.toByteArray(Charsets.UTF_8)
+        val out = ByteArray(2 + n.size + 1 + d.size)
+        out[0] = CMD_MOVE.toByte()
+        out[1] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2, n.size)
+        out[2 + n.size] = d.size.toByte()
+        System.arraycopy(d, 0, out, 3 + n.size, d.size)
         return out
     }
 }

@@ -321,3 +321,26 @@ bool file_xfer_rename(const char *old_name, const char *new_name)
     ESP_LOGI(TAG, "renamed %s -> %s", old_name, new_name);
     return true;
 }
+
+// ---- 移动（文件 → 目标文件夹；dir 为空串 = 根目录）----
+bool file_xfer_move(const char *name, const char *dir)
+{
+    if (!file_xfer_mount()) return false;
+    if (strchr(name, '/') || strchr(name, '\\')) return false;
+    if (dir && (strchr(dir, '/') || strchr(dir, '\\'))) return false;
+
+    char src[288], dst[288];
+    snprintf(src, sizeof(src), MOUNT_POINT "/%s", name);
+    if (dir && dir[0]) {
+        snprintf(dst, sizeof(dst), MOUNT_POINT "/%s/%s", dir, name);
+    } else {
+        snprintf(dst, sizeof(dst), MOUNT_POINT "/%s", name);
+    }
+    int rc = rename(src, dst);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "move %s -> %s failed: %d", name, (dir && dir[0]) ? dir : "(root)", rc);
+        return false;
+    }
+    ESP_LOGI(TAG, "moved %s -> %s", name, (dir && dir[0]) ? dir : "(root)");
+    return true;
+}
