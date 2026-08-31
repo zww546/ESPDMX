@@ -31,7 +31,7 @@
     <Button
         android:id="@+id/btnAction"
         android:layout_width="wrap_content"
-        android:layout_height="32dp"
+        android:layout_height="28dp"
         android:textSize="11sp"
         android:textColor="@color/accent"
         android:textStyle="bold"
