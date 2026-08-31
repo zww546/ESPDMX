@@ -1342,10 +1342,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshFixturePage()
     }
 
-    /** 灯具页格式标签（XML/D4/R20）统一风格 + 选中高亮。 */
+    /** 灯具页格式标签（XML/D4/R20）统一风格 + 选中提示。 */
     private fun updateFmtTabs() {
         fun setTab(btn: Button, active: Boolean) {
-            btn.setBackgroundResource(if (active) R.drawable.bg_pill_selected else R.drawable.bg_pill_outline)
+            btn.setBackgroundResource(if (active) R.drawable.bg_pill_outline_accent else R.drawable.bg_pill_outline)
             btn.setTextColor(getColor(if (active) R.color.text else R.color.textDim))
             btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
         }
@@ -1978,11 +1978,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
     }
 
-    /** 存储页三个标签（App灯库/设备灯库/文件管理）统一风格 + 选中高亮。
-     *  选中 = 实心蓝底 + 白字；未选中 = 深灰底 + 灰描边（轮廓清晰）+ 灰字。 */
+    /** 存储页三个标签（App灯库/设备灯库/文件管理）统一风格 + 选中提示。
+     *  选中 = 空心蓝圈 + 白字；未选中 = 深灰底 + 灰描边 + 灰字。 */
     private fun updateStorageTabs() {
         fun setTab(btn: Button, active: Boolean) {
-            btn.setBackgroundResource(if (active) R.drawable.bg_pill_selected else R.drawable.bg_pill_outline)
+            btn.setBackgroundResource(if (active) R.drawable.bg_pill_outline_accent else R.drawable.bg_pill_outline)
             btn.setTextColor(getColor(if (active) R.color.text else R.color.textDim))
             btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
         }
