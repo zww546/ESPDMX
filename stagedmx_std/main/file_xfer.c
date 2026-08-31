@@ -1,19 +1,32 @@
 /**
- * file_xfer.c — ESP32 灯库文件 Wi-Fi-less 传输
+ * file_xfer.c — ESP32 灯库文件 Wi-Fi-less 传输（支持子目录）
  *
  * 存储位置: /fw (storage 分区, FAT/wear-leveling, 2MB)
- * 文件格式: MA2 XML 灯库 (.xml)
+ * 所有操作都带 dir 参数（相对 /fw 的目录路径，可为空串 = 根目录）：
+ *   dir 允许多级（如 "a/b"，不含前导/结尾 '/'，不含 ".." 与 '\'）
+ *   name 为单级条目名（不含 '/' '\' ".."）
  *
  * 协议帧格式:
- *   App→ESP: 0x31 UPLOAD_START  nameLen name… sizeHi sizeLo
+ *   App→ESP: 0x31 UPLOAD_START  dirLen dir… nameLen name… sizeHi sizeLo
  *             0x32 UPLOAD_CHUNK  seq data…
  *             0x33 UPLOAD_END
+ *             0x34 LIST_FILES    [dirLen dir…]（无参数 = 根目录）
+ *             0x35 DOWNLOAD      dirLen dir… nameLen name…
+ *             0x36 DELETE        dirLen dir… nameLen name…
+ *             0x37 MKDIR         dirLen dir… nameLen name…
+ *             0x38 RMDIR         dirLen dir… nameLen name…
+ *             0x39 RENAME        dirLen dir… oldLen old… newLen new…
+ *             0x3A MOVE          dirLen dir… nameLen name… dstDirLen dstDir…
+ *             0x3B COPY          dirLen dir… nameLen name… dstDirLen dstDir…
+ *             0x3C LIST_DIRS     （全量目录树，回 0x97 多帧 + 0x98 结束帧）
  *   ESP→App: 0x91 UPLOAD_RESULT  status(0=ok)
- *   App→ESP: 0x34 LIST_FILES
- *   ESP→App: 0x92 FILE_LIST  count [nameLen name… sizeHi sizeLo]×count
- *   App→ESP: 0x35 DOWNLOAD_FILE  nameLen name…
- *   ESP→App: 0x93 FILE_CHUNK  seq totalChunks dataLen data…
- *   ESP→App: 0x94 FILE_END     status(0=ok 1=not found)
+ *             0x92 FILE_LIST     count [nameLen name type sizeHi sizeLo]×count
+ *             0x93 FILE_CHUNK    seq totalChunks dataLen data…
+ *             0x94 FILE_END      status(0=ok 1=not found)
+ *             0x95 DELETE_RESULT status
+ *             0x96 DIR_RESULT    status（mkdir/rmdir/rename/move/copy）
+ *             0x97 DIRS_LIST     count [dirLen dir…]×count
+ *             0x98 DIRS_END      （全量目录收集完成）
  */
 #include "file_xfer.h"
 #include "usb_msc.h"
@@ -35,6 +48,39 @@ static FILE *s_upload_fp = NULL;
 
 #define MOUNT_POINT "/fw"
 #define CHUNK_SIZE   200   // BLE 每帧数据载荷（留空间给帧头）
+
+// ---- 路径辅助 ----
+// dir 允许多级，但不能以 '/' 开头/结尾、不含 ".." 与 '\'
+static bool path_valid(const char *p)
+{
+    if (!p) return false;
+    if (p[0] == '/') return false;
+    size_t l = strlen(p);
+    if (l == 0) return true;
+    if (p[l - 1] == '/') return false;
+    if (strstr(p, "..") || strchr(p, '\\')) return false;
+    return true;
+}
+
+// name 为单级条目：非空，不含 '/' '\' ".."
+static bool name_valid(const char *n)
+{
+    if (!n || !n[0]) return false;
+    if (strchr(n, '/') || strchr(n, '\\') || strstr(n, "..")) return false;
+    return true;
+}
+
+// 构造 /fw/<dir>/<name>（dir 可为空串；name 为 NULL 时只到 dir）
+static void build_path(char *out, size_t outsz, const char *dir, const char *name)
+{
+    if (dir && dir[0]) {
+        if (name && name[0]) snprintf(out, outsz, MOUNT_POINT "/%s/%s", dir, name);
+        else                 snprintf(out, outsz, MOUNT_POINT "/%s", dir);
+    } else {
+        if (name && name[0]) snprintf(out, outsz, MOUNT_POINT "/%s", name);
+        else                 snprintf(out, outsz, MOUNT_POINT);
+    }
+}
 
 bool file_xfer_is_mounted(void)
 {
@@ -85,12 +131,16 @@ bool file_xfer_mount(void)
 }
 
 // ---- 文件列表 ----
-// 帧: 0x92 count [nameLen(1B) name sizeHi sizeLo]×count
-void file_xfer_list(file_xfer_notify_t notify_cb)
+// 帧: 0x92 count [nameLen(1B) name type sizeHi sizeLo]×count
+void file_xfer_list(const char *dir, file_xfer_notify_t notify_cb)
 {
     if (!notify_cb || !file_xfer_mount()) return;
+    if (!path_valid(dir)) return;
 
-    DIR *d = opendir(MOUNT_POINT);
+    char base[512];
+    build_path(base, sizeof(base), dir, NULL);
+
+    DIR *d = opendir(base);
     if (!d) return;
 
     // 第一遍: 收集所有条目（文件夹 + 文件），type=1 目录 / 0 文件
@@ -114,8 +164,8 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
             files[count].is_dir = true;
             count++;
         } else if (ent->d_type == DT_REG) {
-            char path[288];
-            snprintf(path, sizeof(path), MOUNT_POINT "/%s", ent->d_name);
+            char path[1024];
+            snprintf(path, sizeof(path), "%s/%s", base, ent->d_name);
             struct stat st;
             if (stat(path, &st) != 0) continue;
             strncpy(files[count].name, ent->d_name, 127);
@@ -164,26 +214,79 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
         notify_cb(empty, 2);
     }
 
-    ESP_LOGI(TAG, "listed %d entries", count);
+    ESP_LOGI(TAG, "listed %d entries in '%s'", count, dir && dir[0] ? dir : "/");
+}
+
+// ---- 全量目录树 ----
+// 递归收集 /fw 下所有目录（含多级），回 0x97 多帧（每帧 ≤8 条）+ 0x98 结束帧
+static void list_dirs_rec(const char *base, const char *rel,
+                          file_xfer_notify_t notify_cb,
+                          uint8_t *buf, int *pos, int *nframe)
+{
+    DIR *d = opendir(base);
+    if (!d) return;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_type != DT_DIR || ent->d_name[0] == '.') continue;
+
+        char child_rel[512];
+        if (rel && rel[0]) snprintf(child_rel, sizeof(child_rel), "%s/%s", rel, ent->d_name);
+        else               snprintf(child_rel, sizeof(child_rel), "%s", ent->d_name);
+        if (strlen(child_rel) > 250) continue;   // 协议 dirLen 上限 255，过深目录跳过
+
+        uint8_t dl = (uint8_t)strlen(child_rel);
+        // 本帧放不下 → 先发当前帧再开新帧（目录路径 ≤250，必能放入）
+        if (*pos + 1 + dl > 500) {
+            buf[1] = (uint8_t)*nframe;
+            notify_cb(buf, *pos);
+            *pos = 2; *nframe = 0;
+        }
+        buf[(*pos)++] = dl;
+        memcpy(&buf[*pos], child_rel, dl); *pos += dl;
+        (*nframe)++;
+
+        char child_base[512];
+        snprintf(child_base, sizeof(child_base), "%s/%s", base, ent->d_name);
+        list_dirs_rec(child_base, child_rel, notify_cb, buf, pos, nframe);
+    }
+    closedir(d);
+}
+
+void file_xfer_list_dirs(file_xfer_notify_t notify_cb)
+{
+    if (!notify_cb || !file_xfer_mount()) return;
+    uint8_t buf[512];
+    buf[0] = 0x97;
+    buf[1] = 0;   // 本帧目录数（发帧时填写）
+    int pos = 2, nframe = 0;
+    list_dirs_rec(MOUNT_POINT, "", notify_cb, buf, &pos, &nframe);
+    if (nframe > 0) {
+        buf[1] = (uint8_t)nframe;
+        notify_cb(buf, pos);
+    } else {
+        uint8_t empty[2] = {0x97, 0};
+        notify_cb(empty, 2);
+    }
+    uint8_t endf[2] = {0x98, 0};
+    notify_cb(endf, 2);
+    ESP_LOGI(TAG, "dirs collected");
 }
 
 // ---- 上传(写) ----
-bool file_xfer_upload_begin(const char *name, uint32_t size)
+bool file_xfer_upload_begin(const char *dir, const char *name, uint32_t size)
 {
     if (!file_xfer_mount()) return false;
+    if (!path_valid(dir) || !name_valid(name)) return false;
     if (s_upload_fp) { fclose(s_upload_fp); s_upload_fp = NULL; }
 
-    // 安全检查：文件名不包含路径分隔符
-    if (strchr(name, '/') || strchr(name, '\\')) return false;
-
-    char path[288];
-    snprintf(path, sizeof(path), MOUNT_POINT "/%s", name);
+    char path[512];
+    build_path(path, sizeof(path), dir, name);
     s_upload_fp = fopen(path, "w");
     if (!s_upload_fp) {
         ESP_LOGE(TAG, "upload: fopen %s failed (errno=%d: %s)", path, errno, strerror(errno));
         return false;
     }
-    ESP_LOGI(TAG, "upload begin: %s (%lu bytes)", name, size);
+    ESP_LOGI(TAG, "upload begin: %s (%lu bytes)", path, size);
     (void)size;
     return true;
 }
@@ -204,21 +307,20 @@ bool file_xfer_upload_end(void)
 }
 
 // ---- 下载(读) ----
-void file_xfer_download(const char *name, file_xfer_notify_t notify_cb)
+void file_xfer_download(const char *dir, const char *name, file_xfer_notify_t notify_cb)
 {
     if (!notify_cb || !file_xfer_mount()) return;
-
-    if (strchr(name, '/') || strchr(name, '\\')) {
+    if (!path_valid(dir) || !name_valid(name)) {
         uint8_t endf[2] = {0x94, 1}; // fail
         notify_cb(endf, 2);
         return;
     }
 
-    char path[288];
-    snprintf(path, sizeof(path), MOUNT_POINT "/%s", name);
+    char path[512];
+    build_path(path, sizeof(path), dir, name);
     FILE *fp = fopen(path, "r");
     if (!fp) {
-        ESP_LOGW(TAG, "download: %s not found", name);
+        ESP_LOGW(TAG, "download: %s not found", path);
         uint8_t endf[2] = {0x94, 1};
         notify_cb(endf, 2);
         return;
@@ -250,97 +352,155 @@ void file_xfer_download(const char *name, file_xfer_notify_t notify_cb)
     uint8_t endf[2] = {0x94, 0}; // ok
     notify_cb(endf, 2);
 
-    ESP_LOGI(TAG, "download: %s (%ld bytes, %d chunks)", name, fsize, seq);
+    ESP_LOGI(TAG, "download: %s (%ld bytes, %d chunks)", path, fsize, seq);
 }
 
 // ---- 删除 ----
-bool file_xfer_delete(const char *name)
+bool file_xfer_delete(const char *dir, const char *name)
 {
     if (!file_xfer_mount()) return false;
-    if (strchr(name, '/') || strchr(name, '\\')) return false;
+    if (!path_valid(dir) || !name_valid(name)) return false;
 
-    char path[288];
-    snprintf(path, sizeof(path), MOUNT_POINT "/%s", name);
+    char path[512];
+    build_path(path, sizeof(path), dir, name);
     int rc = unlink(path);
     if (rc != 0) {
-        ESP_LOGW(TAG, "delete %s failed: %d", name, rc);
+        ESP_LOGW(TAG, "delete %s failed: %d", path, rc);
         return false;
     }
-    ESP_LOGI(TAG, "deleted %s", name);
+    ESP_LOGI(TAG, "deleted %s", path);
     return true;
 }
 
 // ---- 目录 ----
-bool file_xfer_mkdir(const char *name)
+bool file_xfer_mkdir(const char *dir, const char *name)
 {
     if (!file_xfer_mount()) return false;
-    if (strchr(name, '/') || strchr(name, '\\')) return false;
+    if (!path_valid(dir) || !name_valid(name)) return false;
 
-    char path[288];
-    snprintf(path, sizeof(path), MOUNT_POINT "/%s", name);
+    char path[512];
+    build_path(path, sizeof(path), dir, name);
     int rc = mkdir(path, 0755);
     if (rc != 0) {
-        ESP_LOGW(TAG, "mkdir %s failed: %d", name, rc);
+        ESP_LOGW(TAG, "mkdir %s failed: %d", path, rc);
         return false;
     }
-    ESP_LOGI(TAG, "mkdir %s", name);
+    ESP_LOGI(TAG, "mkdir %s", path);
     return true;
 }
 
-bool file_xfer_rmdir(const char *name)
+bool file_xfer_rmdir(const char *dir, const char *name)
 {
     if (!file_xfer_mount()) return false;
-    if (strchr(name, '/') || strchr(name, '\\')) return false;
+    if (!path_valid(dir) || !name_valid(name)) return false;
 
-    char path[288];
-    snprintf(path, sizeof(path), MOUNT_POINT "/%s", name);
+    char path[512];
+    build_path(path, sizeof(path), dir, name);
     int rc = rmdir(path);
     if (rc != 0) {
-        ESP_LOGW(TAG, "rmdir %s failed: %d", name, rc);
+        ESP_LOGW(TAG, "rmdir %s failed: %d", path, rc);
         return false;
     }
-    ESP_LOGI(TAG, "rmdir %s", name);
+    ESP_LOGI(TAG, "rmdir %s", path);
     return true;
 }
 
 // ---- 重命名（文件/文件夹）----
-bool file_xfer_rename(const char *old_name, const char *new_name)
+bool file_xfer_rename(const char *dir, const char *old_name, const char *new_name)
 {
     if (!file_xfer_mount()) return false;
-    if (strchr(old_name, '/') || strchr(old_name, '\\') ||
-        strchr(new_name, '/') || strchr(new_name, '\\')) return false;
+    if (!path_valid(dir) || !name_valid(old_name) || !name_valid(new_name)) return false;
 
-    char oldp[288], newp[288];
-    snprintf(oldp, sizeof(oldp), MOUNT_POINT "/%s", old_name);
-    snprintf(newp, sizeof(newp), MOUNT_POINT "/%s", new_name);
+    char oldp[512], newp[512];
+    build_path(oldp, sizeof(oldp), dir, old_name);
+    build_path(newp, sizeof(newp), dir, new_name);
     int rc = rename(oldp, newp);
     if (rc != 0) {
-        ESP_LOGW(TAG, "rename %s -> %s failed: %d", old_name, new_name, rc);
+        ESP_LOGW(TAG, "rename %s -> %s failed: %d", oldp, newp, rc);
         return false;
     }
-    ESP_LOGI(TAG, "renamed %s -> %s", old_name, new_name);
+    ESP_LOGI(TAG, "renamed %s -> %s", oldp, newp);
     return true;
 }
 
-// ---- 移动（文件 → 目标文件夹；dir 为空串 = 根目录）----
-bool file_xfer_move(const char *name, const char *dir)
+// ---- 移动（条目 → 目标文件夹；dst_dir 为空串 = 根目录）----
+bool file_xfer_move(const char *dir, const char *name, const char *dst_dir)
 {
     if (!file_xfer_mount()) return false;
-    if (strchr(name, '/') || strchr(name, '\\')) return false;
-    if (dir && (strchr(dir, '/') || strchr(dir, '\\'))) return false;
+    if (!path_valid(dir) || !name_valid(name) || !path_valid(dst_dir)) return false;
 
-    char src[288], dst[288];
-    snprintf(src, sizeof(src), MOUNT_POINT "/%s", name);
-    if (dir && dir[0]) {
-        snprintf(dst, sizeof(dst), MOUNT_POINT "/%s/%s", dir, name);
-    } else {
-        snprintf(dst, sizeof(dst), MOUNT_POINT "/%s", name);
-    }
+    char src[512], dst[512];
+    build_path(src, sizeof(src), dir, name);
+    build_path(dst, sizeof(dst), dst_dir, name);
     int rc = rename(src, dst);
     if (rc != 0) {
-        ESP_LOGW(TAG, "move %s -> %s failed: %d", name, (dir && dir[0]) ? dir : "(root)", rc);
+        ESP_LOGW(TAG, "move %s -> %s failed: %d", src, dst, rc);
         return false;
     }
-    ESP_LOGI(TAG, "moved %s -> %s", name, (dir && dir[0]) ? dir : "(root)");
+    ESP_LOGI(TAG, "moved %s -> %s", src, dst);
+    return true;
+}
+
+// ---- 复制（文件 / 文件夹递归）----
+static bool copy_one_file(const char *src, const char *dst)
+{
+    FILE *in = fopen(src, "rb");
+    if (!in) return false;
+    FILE *out = fopen(dst, "wb");
+    if (!out) { fclose(in); return false; }
+    uint8_t buf[512];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) { ok = false; break; }
+    }
+    fclose(in);
+    fclose(out);
+    return ok;
+}
+
+static bool copy_tree(const char *src, const char *dst)
+{
+    struct stat st;
+    if (stat(src, &st) != 0) return false;
+    if (S_ISDIR(st.st_mode)) {
+        if (mkdir(dst, 0755) != 0 && errno != EEXIST) return false;
+        DIR *d = opendir(src);
+        if (!d) return false;
+        struct dirent *ent;
+        bool ok = true;
+        while ((ent = readdir(d)) != NULL && ok) {
+            if (ent->d_name[0] == '.') continue;
+            char sp[512], dp[512];
+            snprintf(sp, sizeof(sp), "%s/%s", src, ent->d_name);
+            snprintf(dp, sizeof(dp), "%s/%s", dst, ent->d_name);
+            ok = copy_tree(sp, dp);
+        }
+        closedir(d);
+        return ok;
+    }
+    return copy_one_file(src, dst);
+}
+
+bool file_xfer_copy(const char *dir, const char *name, const char *dst_dir)
+{
+    if (!file_xfer_mount()) return false;
+    if (!path_valid(dir) || !name_valid(name) || !path_valid(dst_dir)) return false;
+
+    char src[512], dst[512];
+    build_path(src, sizeof(src), dir, name);
+    build_path(dst, sizeof(dst), dst_dir, name);
+
+    // 禁止复制到自身（源与目标同路径）或复制到自己的子目录
+    if (strcmp(src, dst) == 0) return false;
+    size_t sl = strlen(src);
+    if (strncmp(dst, src, sl) == 0 && dst[sl] == '/') return false;
+
+    bool ok = copy_tree(src, dst);
+    if (!ok) {
+        ESP_LOGW(TAG, "copy %s -> %s failed", src, dst);
+        return false;
+    }
+    ESP_LOGI(TAG, "copied %s -> %s", src, dst);
     return true;
 }

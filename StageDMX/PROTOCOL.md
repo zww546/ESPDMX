@@ -107,14 +107,22 @@ App 行为：
 
 > 未知首字节的帧，固件应安全忽略。
 
-### 2.11 文件管理（创建/删除/重命名/移动）
+### 2.11 文件管理（子目录支持：所有命令带 `dirLen dir…`，dir 相对 /fw，空 = 根目录）
 ```
-0x36  nameLen name…            删除文件（回 0x95）
-0x37  nameLen name…            新建文件夹（回 0x96）
-0x38  nameLen name…            删除空文件夹（回 0x96）
-0x39  oldLen old… newLen new…  重命名文件/文件夹（回 0x96）
-0x3A  nameLen name… dirLen dir…  移动文件到文件夹（回 0x96；dirLen=0 → 移到根目录，dir 不含路径分隔符，目标文件夹须已存在）
+0x31  dirLen dir… nameLen name… sizeHi sizeLo   上传开始（回 0x91）
+0x34  [dirLen dir…]                              列出目录内容（无参数 = 根目录，回 0x92）
+0x35  dirLen dir… nameLen name…                  下载文件（回 0x93/0x94）
+0x36  dirLen dir… nameLen name…                  删除文件（回 0x95）
+0x37  dirLen dir… nameLen name…                  新建文件夹（回 0x96）
+0x38  dirLen dir… nameLen name…                  删除空文件夹（回 0x96）
+0x39  dirLen dir… oldLen old… newLen new…        重命名（回 0x96）
+0x3A  dirLen dir… nameLen name… dstDirLen dstDir…  移动条目到文件夹（回 0x96；dstDir 空=根，目标须已存在）
+0x3B  dirLen dir… nameLen name… dstDirLen dstDir…  复制条目到文件夹（回 0x96；文件夹递归复制）
+0x3C  （无参数）                                  全量目录树（回 0x97 多帧 + 0x98 结束帧）
 ```
+- `dir`：允许多级（如 `a/b`），不含前导/结尾 `/`、不含 `..` 与 `\`
+- `name`：单级条目名，不含 `/` `\` `..`
+- 目录深度/路径长度上限 255 字节（协议 `dirLen` 单字节）
 
 ---
 
@@ -127,7 +135,9 @@ App 行为：
 0x93  seq totalChunks dataLen data…   下载数据块
 0x94  status                   下载结束（0=成功 1=未找到）
 0x95  status                   删除文件结果（0=成功 1=失败）
-0x96  status                   文件夹操作/移动结果（0=成功 1=失败）
+0x96  status                   文件夹操作/移动/复制结果（0=成功 1=失败）
+0x97  count [dirLen dir…]×count   全量目录（多帧累加）
+0x98  （结束帧）                目录收集完成
 ```
 
 ---

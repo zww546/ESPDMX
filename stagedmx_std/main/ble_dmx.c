@@ -111,16 +111,20 @@ static void handle_frame(const uint8_t *d, uint16_t len)
     }
     case 0x22: fx_stop_all(); break; // 全部停止
 
-    // ---- 文件传输（灯库上传/下载）----
-    case 0x31: { // UPLOAD_START: 0x31 nameLen name… sizeHi sizeLo
+    // ---- 文件传输（灯库上传/下载，全部支持子目录 dir）----
+    // 通用解析：帧前部为 dirLen dir…（dirLen=0 → 根目录），后跟 nameLen name…
+    case 0x31: { // UPLOAD_START: 0x31 dirLen dir… nameLen name… sizeHi sizeLo
         if (len < 5) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl + 2 > len) return;
-        char name[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127);
-        name[nl < 127 ? nl : 127] = '\0';
-        uint32_t size = ((uint32_t)d[2+nl] << 8) | d[3+nl];
-        bool ok = file_xfer_upload_begin(name, size);
+        uint8_t dl = d[1];
+        if (2 + dl + 2 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl + 2 > len) return;
+        char dir[256], name[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        uint32_t size = ((uint32_t)d[3 + dl + nl] << 8) | d[4 + dl + nl];
+        bool ok = file_xfer_upload_begin(dir, name, size);
         uint8_t resp[2] = {0x91, ok ? 0 : 1};
         ble_dmx_notify(resp, 2);
         break;
@@ -136,86 +140,133 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         ble_dmx_notify(resp, 2);
         break;
     }
-    case 0x34: { // LIST_FILES
-        file_xfer_list(file_notify_cb);
+    case 0x34: { // LIST_FILES: 0x34 [dirLen dir…]（无参数 = 根目录）
+        char dir[256];
+        dir[0] = '\0';
+        if (len >= 2) {
+            uint8_t dl = d[1];
+            if (2 + dl > len) return;
+            if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        }
+        file_xfer_list(dir, file_notify_cb);
         break;
     }
-    case 0x35: { // DOWNLOAD_FILE: 0x35 nameLen name…
-        if (len < 2) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl > len) return;
-        char name[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127);
-        name[nl < 127 ? nl : 127] = '\0';
-        file_xfer_download(name, file_notify_cb);
+    case 0x35: { // DOWNLOAD_FILE: 0x35 dirLen dir… nameLen name…
+        if (len < 3) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl > len) return;
+        char dir[256], name[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        file_xfer_download(dir, name, file_notify_cb);
         break;
     }
-    case 0x36: { // DELETE_FILE: 0x36 nameLen name…
-        if (len < 2) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl > len) return;
-        char name[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127);
-        name[nl < 127 ? nl : 127] = '\0';
-        bool ok = file_xfer_delete(name);
+    case 0x36: { // DELETE_FILE: 0x36 dirLen dir… nameLen name…
+        if (len < 3) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl > len) return;
+        char dir[256], name[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        bool ok = file_xfer_delete(dir, name);
         uint8_t resp[2] = {0x95, ok ? 0 : 1};
         ble_dmx_notify(resp, 2);
         break;
     }
-    case 0x37: { // MKDIR: 0x37 nameLen name…
-        if (len < 2) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl > len) return;
-        char name[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127);
-        name[nl < 127 ? nl : 127] = '\0';
-        bool ok = file_xfer_mkdir(name);
-        uint8_t resp[2] = {0x96, ok ? 0 : 1};
-        ble_dmx_notify(resp, 2);
-        break;
-    }
-    case 0x38: { // RMDIR: 0x38 nameLen name…
-        if (len < 2) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl > len) return;
-        char name[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127);
-        name[nl < 127 ? nl : 127] = '\0';
-        bool ok = file_xfer_rmdir(name);
-        uint8_t resp[2] = {0x96, ok ? 0 : 1};
-        ble_dmx_notify(resp, 2);
-        break;
-    }
-    case 0x39: { // RENAME: 0x39 oldLen old… newLen new…
-        if (len < 4) return;
-        uint8_t ol = d[1];
-        if (ol == 0 || 2 + ol + 1 > len) return;
-        uint8_t nl = d[2 + ol];
-        if (nl == 0 || 2 + ol + 1 + nl > len) return;
-        char oname[128], nname[128];
-        memcpy(oname, &d[2], ol < 127 ? ol : 127); oname[ol < 127 ? ol : 127] = '\0';
-        memcpy(nname, &d[2 + ol + 1], nl < 127 ? nl : 127); nname[nl < 127 ? nl : 127] = '\0';
-        bool ok = file_xfer_rename(oname, nname);
-        uint8_t resp[2] = {0x96, ok ? 0 : 1};
-        ble_dmx_notify(resp, 2);
-        break;
-    }
-    case 0x3A: { // MOVE: 0x3A nameLen name… dirLen dir…（dirLen=0 → 根目录）
+    case 0x37: { // MKDIR: 0x37 dirLen dir… nameLen name…
         if (len < 3) return;
-        uint8_t nl = d[1];
-        if (nl == 0 || 2 + nl + 1 > len) return;
-        uint8_t dl = d[2 + nl];
-        if (2 + nl + 1 + dl > len) return;
-        char name[128], dir[128];
-        memcpy(name, &d[2], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
-        if (dl > 0) {
-            memcpy(dir, &d[3 + nl], dl < 127 ? dl : 127); dir[dl < 127 ? dl : 127] = '\0';
-        } else {
-            dir[0] = '\0';
-        }
-        bool ok = file_xfer_move(name, dir);
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl > len) return;
+        char dir[256], name[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        bool ok = file_xfer_mkdir(dir, name);
         uint8_t resp[2] = {0x96, ok ? 0 : 1};
         ble_dmx_notify(resp, 2);
+        break;
+    }
+    case 0x38: { // RMDIR: 0x38 dirLen dir… nameLen name…
+        if (len < 3) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl > len) return;
+        char dir[256], name[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        bool ok = file_xfer_rmdir(dir, name);
+        uint8_t resp[2] = {0x96, ok ? 0 : 1};
+        ble_dmx_notify(resp, 2);
+        break;
+    }
+    case 0x39: { // RENAME: 0x39 dirLen dir… oldLen old… newLen new…
+        if (len < 4) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t ol = d[2 + dl];
+        if (2 + dl + 1 + ol + 1 > len) return;
+        uint8_t nl = d[3 + dl + ol];
+        if (2 + dl + 1 + ol + 1 + nl > len) return;
+        char dir[256], oname[128], nname[128];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(oname, &d[3 + dl], ol < 127 ? ol : 127); oname[ol < 127 ? ol : 127] = '\0';
+        memcpy(nname, &d[4 + dl + ol], nl < 127 ? nl : 127); nname[nl < 127 ? nl : 127] = '\0';
+        bool ok = file_xfer_rename(dir, oname, nname);
+        uint8_t resp[2] = {0x96, ok ? 0 : 1};
+        ble_dmx_notify(resp, 2);
+        break;
+    }
+    case 0x3A: { // MOVE: 0x3A dirLen dir… nameLen name… dstDirLen dstDir…
+        if (len < 4) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl + 1 > len) return;
+        uint8_t ddl = d[3 + dl + nl];
+        if (2 + dl + 1 + nl + 1 + ddl > len) return;
+        char dir[256], name[128], dst_dir[256];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        if (ddl > 0) { memcpy(dst_dir, &d[4 + dl + nl], ddl < 255 ? ddl : 255); dst_dir[ddl < 255 ? ddl : 255] = '\0'; }
+        else dst_dir[0] = '\0';
+        bool ok = file_xfer_move(dir, name, dst_dir);
+        uint8_t resp[2] = {0x96, ok ? 0 : 1};
+        ble_dmx_notify(resp, 2);
+        break;
+    }
+    case 0x3B: { // COPY: 0x3B dirLen dir… nameLen name… dstDirLen dstDir…
+        if (len < 4) return;
+        uint8_t dl = d[1];
+        if (2 + dl + 1 > len) return;
+        uint8_t nl = d[2 + dl];
+        if (2 + dl + 1 + nl + 1 > len) return;
+        uint8_t ddl = d[3 + dl + nl];
+        if (2 + dl + 1 + nl + 1 + ddl > len) return;
+        char dir[256], name[128], dst_dir[256];
+        if (dl > 0) { memcpy(dir, &d[2], dl < 255 ? dl : 255); dir[dl < 255 ? dl : 255] = '\0'; }
+        else dir[0] = '\0';
+        memcpy(name, &d[3 + dl], nl < 127 ? nl : 127); name[nl < 127 ? nl : 127] = '\0';
+        if (ddl > 0) { memcpy(dst_dir, &d[4 + dl + nl], ddl < 255 ? ddl : 255); dst_dir[ddl < 255 ? ddl : 255] = '\0'; }
+        else dst_dir[0] = '\0';
+        bool ok = file_xfer_copy(dir, name, dst_dir);
+        uint8_t resp[2] = {0x96, ok ? 0 : 1};
+        ble_dmx_notify(resp, 2);
+        break;
+    }
+    case 0x3C: { // LIST_DIRS: 全量目录树（回 0x97 多帧 + 0x98 结束帧）
+        file_xfer_list_dirs(file_notify_cb);
         break;
     }
 

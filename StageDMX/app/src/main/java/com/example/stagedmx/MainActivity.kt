@@ -1069,7 +1069,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private var downloadBuf = ByteArray(0)
     private var deletingFile: String? = null
     private var dirOpName: String? = null    // 正在创建/删除的文件夹名
-    private var moveOp: String? = null       // 正在移动的文件（"name → dir"）
+    private var moveOp: String? = null       // 正在移动/复制的条目（"操作: name → dir"）
+    private var curPath = ""                 // 文件管理当前设备目录（相对 /fw，空串 = 根）
+    private val dirList = mutableListOf<String>()          // 全量目录收集（0x97 帧累加）
+    private var dirCollectCb: (() -> Unit)? = null         // 目录收集完成回调（0x98 后触发）
     private var showDeviceFiles = false  // false=App列表, true=设备列表
     private var storageMode = 0          // 存储页签：0=App灯库 1=设备灯库 2=文件管理
 
@@ -1117,7 +1120,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 val mv = moveOp
                 runOnUiThread {
                     if (mv != null) {
-                        toast(if (ok) "已移动 $mv" else "移动失败：$mv")
+                        toast(if (ok) "$mv 成功" else "$mv 失败")
                     } else {
                         toast(if (ok) "文件夹操作成功${name?.let { "：$it" } ?: ""}" else "文件夹操作失败${name?.let { "：$it" } ?: ""}")
                     }
@@ -1125,6 +1128,23 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 }
                 dirOpName = null
                 moveOp = null
+            }
+            data.size >= 2 && (data[0].toInt() and 0xFF) == DmxProtocol.RESP_DIRS_LIST -> {
+                // 全量目录收集帧: 0x97 count [dirLen dir…]*
+                val cnt = data[1].toInt()
+                var p = 2
+                for (i in 0 until cnt) {
+                    if (p >= data.size) break
+                    val dl = data[p++].toInt()
+                    if (dl <= 0 || p + dl > data.size) break
+                    dirList.add(String(data, p, dl, Charsets.UTF_8))
+                    p += dl
+                }
+            }
+            data.size >= 2 && (data[0].toInt() and 0xFF) == DmxProtocol.RESP_DIRS_END -> {
+                val cb = dirCollectCb
+                dirCollectCb = null
+                runOnUiThread { cb?.invoke() }
             }
             data.size >= 4 && (data[0].toInt() and 0xFF) == DmxProtocol.RESP_FILE_CHUNK -> {
                 val dataLen = data[3].toInt() and 0xFF
@@ -1659,6 +1679,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         sdb.btnDeviceLibs.setOnClickListener {
             if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
             storageMode = 1
+            curPath = ""            // 设备灯库固定显示根目录
             sdb.btnNewFolder.visibility = View.GONE
             refreshDeviceFiles()
         }
@@ -1667,6 +1688,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
             storageMode = 2
             sdb.btnNewFolder.visibility = View.VISIBLE
+            refreshDeviceFiles()
+        }
+
+        // 返回上级目录（文件管理页签）
+        sdb.btnGoUp.setOnClickListener {
+            if (storageMode != 2) return@setOnClickListener
+            if (curPath.isEmpty()) { toast("已在根目录"); return@setOnClickListener }
+            curPath = curPath.substringBeforeLast('/', "")
             refreshDeviceFiles()
         }
 
@@ -1687,7 +1716,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                         return@setPositiveButton
                     }
                     dirOpName = nm
-                    engine.sendMkdir(nm)
+                    engine.sendMkdir(curPath, nm)
                 }
                 .setNegativeButton("取消", null)
                 .show()
@@ -1704,7 +1733,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshStoragePage()
         sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
         sdb.tvListHint.text = "正在获取..."
-        engine.sendListFiles()
+        engine.sendListFiles(curPath)
     }
 
     /** 确认删除设备文件夹（空文件夹）。 */
@@ -1714,7 +1743,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             .setMessage("删除设备上的空文件夹「$name」？（文件夹非空将失败）")
             .setPositiveButton("删除") { _, _ ->
                 dirOpName = name
-                engine.sendRmdir(name)
+                engine.sendRmdir(curPath, name)
             }
             .setNegativeButton("取消", null).show()
     }
@@ -1736,26 +1765,39 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     return@setPositiveButton
                 }
                 dirOpName = nm
-                engine.sendRename(oldName, nm)
+                engine.sendRename(curPath, oldName, nm)
             }
             .setNegativeButton("取消", null).show()
     }
 
-    /** 移动文件到设备文件夹（列出设备上的文件夹，含"根目录"）。 */
-    private fun moveDialog(name: String) {
-        val dirs = devFiles.filter { it.isDir }.map { it.name }
-        val opts = mutableListOf("（根目录）")
-        opts.addAll(dirs)
-        MaterialAlertDialogBuilder(this@MainActivity)
-            .setTitle("移动「$name」到")
-            .setItems(opts.toTypedArray()) { _, which ->
-                val dir = if (which == 0) "" else opts[which]
-                moveOp = if (dir.isEmpty()) "$name → 根目录" else "$name → $dir"
-                engine.sendMove(name, dir)
-                toast(if (dir.isEmpty()) "正在移动到根目录..." else "正在移动到「$dir」...")
-            }
-            .setNegativeButton("取消", null).show()
+    /** 移动/复制目标选择：先请求设备全量目录树（0x3C），收集完（0x98）后弹窗选择。 */
+    private fun pickDestDialog(name: String, isCopy: Boolean) {
+        if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return }
+        dirList.clear()
+        dirCollectCb = {
+            val act = if (isCopy) "复制" else "移动"
+            val opts = mutableListOf("（根目录）")
+            opts.addAll(dirList)
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle("$act「$name」到")
+                .setItems(opts.toTypedArray()) { _, which ->
+                    val dst = if (which == 0) "" else opts[which]
+                    if (dst == curPath) { toast("目标与当前位置相同"); return@setItems }
+                    val dstShow = if (dst.isEmpty()) "根目录" else dst
+                    moveOp = "$act: $name → $dstShow"
+                    if (isCopy) engine.sendCopy(curPath, name, dst)
+                    else        engine.sendMove(curPath, name, dst)
+                    toast("正在$act到 $dstShow...")
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+        engine.sendListDirs()
+        toast("正在获取设备目录...")
     }
+
+    private fun moveDialog(name: String) = pickDestDialog(name, false)
+    private fun copyDialog(name: String) = pickDestDialog(name, true)
 
     private fun refreshDeviceFilesUI() {
         showDeviceFiles = true
@@ -1794,12 +1836,28 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                             if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
                             rmdirConfirm(f.name)
                         }
-                        // 文件管理页签：长按文件夹 → 重命名
+                        // 文件管理页签：点按进入文件夹
+                        root.setOnClickListener {
+                            if (storageMode != 2) return@setOnClickListener
+                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                            curPath = if (curPath.isEmpty()) f.name else "$curPath/${f.name}"
+                            refreshDeviceFiles()
+                        }
+                        // 长按文件夹 → 重命名 / 移动 / 删除（仅文件管理页签）
                         root.setOnLongClickListener {
-                            if (storageMode == 2) {
-                                if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnLongClickListener true }
-                                renameDialog(f.name)
-                            }
+                            if (storageMode != 2) return@setOnLongClickListener true
+                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnLongClickListener true }
+                            val opts = arrayOf("重命名", "移动", "删除")
+                            MaterialAlertDialogBuilder(this@MainActivity)
+                                .setTitle(f.name)
+                                .setItems(opts) { _, which ->
+                                    when (which) {
+                                        0 -> renameDialog(f.name)
+                                        1 -> moveDialog(f.name)
+                                        else -> rmdirConfirm(f.name)
+                                    }
+                                }
+                                .show()
                             true
                         }
                     } else {
@@ -1810,26 +1868,27 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                             if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
                             downloadingFile = f.name
                             downloadBuf = ByteArray(0)
-                            engine.sendDownloadFile(f.name)
+                            engine.sendDownloadFile(curPath, f.name)
                             toast("正在下载 ${f.name}...")
                         }
-                        // 长按设备文件 → 删除（文件管理页签可重命名）
+                        // 长按设备文件：文件管理页签 → 重命名/移动/复制/删除
                         root.setOnLongClickListener {
                             if (ble.state != BleManager.State.CONNECTED) {
                                 toast("请先连接设备")
                                 return@setOnLongClickListener true
                             }
                             if (storageMode == 2) {
-                                val opts = arrayOf("重命名", "移动", "删除")
+                                val opts = arrayOf("重命名", "移动", "复制", "删除")
                                 MaterialAlertDialogBuilder(this@MainActivity)
                                     .setTitle(f.name)
                                     .setItems(opts) { _, which ->
                                         when (which) {
                                             0 -> renameDialog(f.name)
                                             1 -> moveDialog(f.name)
+                                            2 -> copyDialog(f.name)
                                             else -> {
                                                 deletingFile = f.name
-                                                engine.sendDeleteFile(f.name)
+                                                engine.sendDeleteFile(curPath, f.name)
                                                 toast("正在删除 ${f.name}...")
                                             }
                                         }
@@ -1841,7 +1900,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                                     .setMessage("删除设备上的文件「${f.name}」？")
                                     .setPositiveButton("删除") { _, _ ->
                                         deletingFile = f.name
-                                        engine.sendDeleteFile(f.name)
+                                        engine.sendDeleteFile(curPath, f.name)
                                         toast("正在删除 ${f.name}...")
                                     }
                                     .setNegativeButton("取消", null)
@@ -1872,23 +1931,28 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         if (showDeviceFiles) {
             sdb.btnNewFolder.visibility = if (storageMode == 2) View.VISIBLE else View.GONE
-            sdb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
+            sdb.tvListTitle.text = if (storageMode == 2) {
+                val p = if (curPath.isEmpty()) "/fw" else "/fw/$curPath"
+                "ESP32 文件管理  $p"
+            } else "ESP32 设备灯库"
+            sdb.btnGoUp.visibility = if (storageMode == 2 && curPath.isNotEmpty()) View.VISIBLE else View.GONE
             sdb.tvListHint.text = when {
                 shownDev.isEmpty() && storageMode == 1 -> "设备上暂无灯库，请先上传"
                 shownDev.isEmpty() -> "设备上暂无文件"
                 storageMode == 1 -> "${shownDev.size} 个灯库 — 点按下载到 App"
-                else -> "${shownDev.size} 个条目"
+                else -> "${shownDev.size} 个条目 — 点文件夹进入，长按操作"
             }
         } else {
             sdb.btnNewFolder.visibility = View.GONE
+            sdb.btnGoUp.visibility = View.GONE
             sdb.tvListTitle.text = "App 端已保存灯库"
             sdb.tvListHint.text = if (libs.isEmpty()) "暂无灯库" else "${libs.size} 个 — 点按上传到设备"
         }
     }
 
-    /** 上传单个文件数据（分块 200B，间隔 50ms）。 */
+    /** 上传单个文件数据（分块 200B，间隔 50ms；上传到当前目录 curPath）。 */
     private fun uploadFileData(fileName: String, data: ByteArray, label: String, onDone: (() -> Unit)? = null) {
-        engine.sendUploadStart(fileName, data.size)
+        engine.sendUploadStart(curPath, fileName, data.size)
         val handler = Handler(Looper.getMainLooper())
         var off = 0
         val chunkSize = 200

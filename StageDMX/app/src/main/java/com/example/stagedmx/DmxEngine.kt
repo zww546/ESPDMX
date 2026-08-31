@@ -187,15 +187,17 @@ class DmxEngine(private val ble: BleManager) {
         ble.send(byteArrayOf(0xA0.toByte(), cmd.toByte(), arg.toByte()))
     }
 
-    // ---- 文件传输 ----
-    fun sendUploadStart(name: String, size: Int) = ble.send(DmxProtocol.encodeUploadStart(name, size))
+    // ---- 文件传输（dir = 相对 /fw 目录，空串 = 根目录）----
+    fun sendUploadStart(dir: String, name: String, size: Int) = ble.send(DmxProtocol.encodeUploadStart(dir, name, size))
     fun sendUploadChunk(seq: Int, data: ByteArray) = ble.send(DmxProtocol.encodeUploadChunk(seq, data))
     fun sendUploadEnd() = ble.send(DmxProtocol.encodeUploadEnd())
-    fun sendListFiles() = ble.send(DmxProtocol.encodeListFiles())
-    fun sendDownloadFile(name: String) = ble.send(DmxProtocol.encodeDownloadFile(name))
-    fun sendDeleteFile(name: String) = ble.send(DmxProtocol.encodeDeleteFile(name))
-    fun sendMkdir(name: String) = ble.send(DmxProtocol.encodeMkdir(name))
-    fun sendRmdir(name: String) = ble.send(DmxProtocol.encodeRmdir(name))
-    fun sendRename(oldName: String, newName: String) = ble.send(DmxProtocol.encodeRename(oldName, newName))
-    fun sendMove(name: String, dir: String) = ble.send(DmxProtocol.encodeMove(name, dir))
+    fun sendListFiles(dir: String = "") = ble.send(DmxProtocol.encodeListFiles(dir))
+    fun sendDownloadFile(dir: String, name: String) = ble.send(DmxProtocol.encodeDownloadFile(dir, name))
+    fun sendDeleteFile(dir: String, name: String) = ble.send(DmxProtocol.encodeDeleteFile(dir, name))
+    fun sendMkdir(dir: String, name: String) = ble.send(DmxProtocol.encodeMkdir(dir, name))
+    fun sendRmdir(dir: String, name: String) = ble.send(DmxProtocol.encodeRmdir(dir, name))
+    fun sendRename(dir: String, oldName: String, newName: String) = ble.send(DmxProtocol.encodeRename(dir, oldName, newName))
+    fun sendMove(dir: String, name: String, dstDir: String) = ble.send(DmxProtocol.encodeMove(dir, name, dstDir))
+    fun sendCopy(dir: String, name: String, dstDir: String) = ble.send(DmxProtocol.encodeCopy(dir, name, dstDir))
+    fun sendListDirs() = ble.send(DmxProtocol.encodeListDirs())
 }

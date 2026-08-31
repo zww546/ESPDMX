@@ -114,6 +114,16 @@
             android:textColor="@color/text"
             android:textSize="13sp"
             android:textStyle="bold" />
+        <Button
+            android:id="@+id/btnGoUp"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:text="⬆ 上级"
+            android:textSize="11sp"
+            android:textColor="@color/text"
+            android:background="@drawable/bg_pill"
+            android:visibility="gone"
+            android:layout_marginEnd="8dp" />
         <TextView
             android:id="@+id/tvListHint"
             android:layout_width="wrap_content"

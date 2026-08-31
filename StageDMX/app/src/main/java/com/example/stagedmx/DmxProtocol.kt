@@ -60,6 +60,8 @@ object DmxProtocol {
     const val CMD_RMDIR: Int = 0x38
     const val CMD_RENAME: Int = 0x39
     const val CMD_MOVE: Int = 0x3A
+    const val CMD_COPY: Int = 0x3B
+    const val CMD_LIST_DIRS: Int = 0x3C
 
     // ESP32 → App notify 响应
     const val RESP_UPLOAD_RESULT: Int = 0x91
@@ -68,6 +70,8 @@ object DmxProtocol {
     const val RESP_FILE_END: Int = 0x94
     const val RESP_DELETE_RESULT: Int = 0x95
     const val RESP_DIR_RESULT: Int = 0x96
+    const val RESP_DIRS_LIST: Int = 0x97
+    const val RESP_DIRS_END: Int = 0x98
 
     const val MAX_CHANNELS = 512
 
@@ -162,17 +166,25 @@ object DmxProtocol {
     fun encodeFxStop(slot: Int): ByteArray = byteArrayOf(CMD_FX_STOP.toByte(), slot.toByte())
     fun encodeFxStopAll(): ByteArray = byteArrayOf(CMD_FX_STOPALL.toByte())
 
-    // ---- 文件传输编码 ----
+    // ---- 文件传输编码（全部支持 dir：相对 /fw 的目录，空串 = 根目录）----
 
-    /** 0x31: 上传开始 — name不含路径,size为文件总字节数 */
-    fun encodeUploadStart(name: String, size: Int): ByteArray {
+    /** dir 参数编码: dirLen dir…（空串 = 单字节 0） */
+    private fun dirPart(dir: String): ByteArray {
+        val d = dir.toByteArray(Charsets.UTF_8)
+        return byteArrayOf(d.size.toByte()) + d
+    }
+
+    /** 0x31: 上传开始 — dir+name 不含路径分隔符, size 为文件总字节数 */
+    fun encodeUploadStart(dir: String, name: String, size: Int): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(4 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + n.size + 2)
         out[0] = CMD_UPLOAD_START.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
-        out[2 + n.size] = ((size ushr 8) and 0xFF).toByte()
-        out[3 + n.size] = (size and 0xFF).toByte()
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
+        out[2 + dp.size + n.size] = ((size ushr 8) and 0xFF).toByte()
+        out[3 + dp.size + n.size] = (size and 0xFF).toByte()
         return out
     }
 
@@ -183,72 +195,102 @@ object DmxProtocol {
     /** 0x33: 上传结束 */
     fun encodeUploadEnd(): ByteArray = byteArrayOf(CMD_UPLOAD_END.toByte())
 
-    /** 0x34: 列出设备文件 */
-    fun encodeListFiles(): ByteArray = byteArrayOf(CMD_LIST_FILES.toByte())
+    /** 0x34: 列出设备文件（dir 空 = 根目录） */
+    fun encodeListFiles(dir: String): ByteArray =
+        if (dir.isEmpty()) byteArrayOf(CMD_LIST_FILES.toByte())
+        else byteArrayOf(CMD_LIST_FILES.toByte()) + dirPart(dir)
 
     /** 0x35: 下载设备文件 */
-    fun encodeDownloadFile(name: String): ByteArray {
+    fun encodeDownloadFile(dir: String, name: String): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + n.size)
         out[0] = CMD_DOWNLOAD_FILE.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
         return out
     }
 
     /** 0x36: 删除设备文件 */
-    fun encodeDeleteFile(name: String): ByteArray {
+    fun encodeDeleteFile(dir: String, name: String): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + n.size)
         out[0] = CMD_DELETE_FILE.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
         return out
     }
 
-    /** 0x37: 创建设备文件夹 */
-    fun encodeMkdir(name: String): ByteArray {
+    /** 0x37: 在 dir 下创建设备文件夹 */
+    fun encodeMkdir(dir: String, name: String): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + n.size)
         out[0] = CMD_MKDIR.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
         return out
     }
 
-    /** 0x38: 删除设备空文件夹 */
-    fun encodeRmdir(name: String): ByteArray {
+    /** 0x38: 删除 dir 下设备空文件夹 */
+    fun encodeRmdir(dir: String, name: String): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + n.size)
         out[0] = CMD_RMDIR.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
         return out
     }
 
-    /** 0x39: 重命名设备文件/文件夹：oldLen old… newLen new… */
-    fun encodeRename(oldName: String, newName: String): ByteArray {
+    /** 0x39: 重命名 dir 下文件/文件夹：oldLen old… newLen new… */
+    fun encodeRename(dir: String, oldName: String, newName: String): ByteArray {
         val o = oldName.toByteArray(Charsets.UTF_8)
         val n = newName.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + o.size + 1 + n.size)
+        val dp = dirPart(dir)
+        val out = ByteArray(2 + dp.size + o.size + 1 + n.size)
         out[0] = CMD_RENAME.toByte()
-        out[1] = o.size.toByte()
-        System.arraycopy(o, 0, out, 2, o.size)
-        out[2 + o.size] = n.size.toByte()
-        System.arraycopy(n, 0, out, 3 + o.size, n.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = o.size.toByte()
+        System.arraycopy(o, 0, out, 2 + dp.size, o.size)
+        out[2 + dp.size + o.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 3 + dp.size + o.size, n.size)
         return out
     }
 
-    /** 0x3A: 移动文件到文件夹（dir 为空串 = 移到根目录）：nameLen name… dirLen dir… */
-    fun encodeMove(name: String, dir: String): ByteArray {
+    /** 0x3A: 移动 dir 下条目到目标文件夹（dstDir 空 = 根目录） */
+    fun encodeMove(dir: String, name: String, dstDir: String): ByteArray {
         val n = name.toByteArray(Charsets.UTF_8)
-        val d = dir.toByteArray(Charsets.UTF_8)
-        val out = ByteArray(2 + n.size + 1 + d.size)
+        val dp = dirPart(dir)
+        val ddp = dirPart(dstDir)
+        val out = ByteArray(2 + dp.size + n.size + ddp.size)
         out[0] = CMD_MOVE.toByte()
-        out[1] = n.size.toByte()
-        System.arraycopy(n, 0, out, 2, n.size)
-        out[2 + n.size] = d.size.toByte()
-        System.arraycopy(d, 0, out, 3 + n.size, d.size)
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
+        System.arraycopy(ddp, 0, out, 2 + dp.size + n.size, ddp.size)
         return out
     }
+
+    /** 0x3B: 复制 dir 下条目到目标文件夹（dstDir 空 = 根目录；文件夹递归复制） */
+    fun encodeCopy(dir: String, name: String, dstDir: String): ByteArray {
+        val n = name.toByteArray(Charsets.UTF_8)
+        val dp = dirPart(dir)
+        val ddp = dirPart(dstDir)
+        val out = ByteArray(2 + dp.size + n.size + ddp.size)
+        out[0] = CMD_COPY.toByte()
+        System.arraycopy(dp, 0, out, 1, dp.size)
+        out[1 + dp.size] = n.size.toByte()
+        System.arraycopy(n, 0, out, 2 + dp.size, n.size)
+        System.arraycopy(ddp, 0, out, 2 + dp.size + n.size, ddp.size)
+        return out
+    }
+
+    /** 0x3C: 全量目录树（回 0x97 多帧 + 0x98 结束帧） */
+    fun encodeListDirs(): ByteArray = byteArrayOf(CMD_LIST_DIRS.toByte())
 }
