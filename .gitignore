@@ -17,6 +17,9 @@ stagedmx_std/managed_components/
 # ===== 备份文件 =====
 *.bak
 
+# ===== 灯库测试数据 =====
+*.zip
+
 # ===== 系统 =====
 .DS_Store
 Thumbs.db
