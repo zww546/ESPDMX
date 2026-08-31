@@ -106,6 +106,7 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
         if (ent->d_type == DT_DIR) {
             if (ent->d_name[0] == '.') continue;   // 跳过 . ..
             strncpy(files[count].name, ent->d_name, 127);
+            files[count].name[127] = '\0';          // 防御: 超长名强制终止
             files[count].size = 0;
             files[count].is_dir = true;
             count++;
@@ -115,6 +116,7 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
             struct stat st;
             if (stat(path, &st) != 0) continue;
             strncpy(files[count].name, ent->d_name, 127);
+            files[count].name[127] = '\0';          // 防御: 超长名强制终止
             files[count].size = (uint32_t)st.st_size;
             files[count].is_dir = false;
             count++;
@@ -124,6 +126,8 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
 
     // 第二遍: 分包发送(每包最多 6 个记录，保持单帧 512 以内)
     // 帧: 0x92 count [nameLen name type sizeHi sizeLo]*
+    // 注意: 单帧载荷必须 < ATT MTU-3(509)，且 buf 只有 512；
+    //       长文件名会导致 6 条放不下，按可用空间截断本批。
     int offset = 0;
     while (offset < count) {
         int batch = count - offset;
@@ -137,12 +141,16 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
         for (int i = 0; i < batch; i++) {
             int idx = offset + i;
             uint8_t nl = (uint8_t)strlen(files[idx].name);
+            // 防御: 放不下本条记录则提前结束本批（至少能放下 1 条，见下）
+            if (pos + 1 + nl + 3 > 500) { batch = i; break; }
             buf[pos++] = nl;
             memcpy(&buf[pos], files[idx].name, nl); pos += nl;
             buf[pos++] = files[idx].is_dir ? 1 : 0;
             buf[pos++] = (files[idx].size >> 8) & 0xFF;
             buf[pos++] = files[idx].size & 0xFF;
         }
+        if (batch == 0) batch = 1;   // 单条超 500 只可能因 name 过长，兜底发 1 条
+        buf[1] = (uint8_t)batch;
         notify_cb(buf, pos);
         offset += batch;
     }
