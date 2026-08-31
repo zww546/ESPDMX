@@ -47,7 +47,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginBottom="6dp">
-        <Button
+        <TextView
             android:id="@+id/btnFmtXml"
             android:layout_width="0dp"
             android:layout_weight="1"
@@ -55,10 +55,12 @@
             android:text="XML"
             android:textSize="12sp"
             android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
             android:background="@drawable/bg_pill_outline_white"
-            android:backgroundTint="@null"
             android:layout_marginEnd="4dp" />
-        <Button
+        <TextView
             android:id="@+id/btnFmtD4"
             android:layout_width="0dp"
             android:layout_weight="1"
@@ -66,10 +68,12 @@
             android:text="D4"
             android:textSize="12sp"
             android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
             android:background="@drawable/bg_pill_outline_white"
-            android:backgroundTint="@null"
             android:layout_marginEnd="4dp" />
-        <Button
+        <TextView
             android:id="@+id/btnFmtR20"
             android:layout_width="0dp"
             android:layout_weight="1"
@@ -77,8 +81,10 @@
             android:text="R20"
             android:textSize="12sp"
             android:textColor="@color/text"
-            android:background="@drawable/bg_pill_outline_white"
-            android:backgroundTint="@null" />
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bg_pill_outline_white" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
