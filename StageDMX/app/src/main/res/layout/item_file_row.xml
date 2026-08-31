@@ -33,9 +33,9 @@
         android:layout_width="wrap_content"
         android:layout_height="28dp"
         android:textSize="11sp"
-        android:textColor="@color/accent"
+        android:textColor="@color/text"
         android:textStyle="bold"
-        android:background="@drawable/bg_pill_accent"
+        android:background="@drawable/bg_pill_selected"
         android:minWidth="52dp"
         android:gravity="center"
         android:paddingHorizontal="12dp" />
