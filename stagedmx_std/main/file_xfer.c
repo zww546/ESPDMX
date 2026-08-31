@@ -94,7 +94,10 @@ void file_xfer_list(file_xfer_notify_t notify_cb)
     if (!d) return;
 
     // 第一遍: 收集所有条目（文件夹 + 文件），type=1 目录 / 0 文件
-    struct {
+    // 注意: 该函数运行在 NimBLE host_task（默认仅 4KB 栈）内，
+    //       大数组绝不能放栈上（会栈溢出破坏 mbuf 池导致随机崩溃），
+    //       因此用 static 存放。list 为同步单线程调用，static 安全。
+    static struct {
         char name[128];
         uint32_t size;
         bool is_dir;
