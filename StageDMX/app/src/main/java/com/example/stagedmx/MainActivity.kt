@@ -1333,7 +1333,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private var selectMode = false
-    private var fixtureFmt = ""               // 灯具页格式筛选：""=全部 / xml / d4 / r20
+    private var fixtureFmt = "xml"            // 灯具页格式筛选：""=全部 / xml / d4 / r20（默认选中 xml）
 
     /** 切换灯具格式筛选：点击选中（蓝圈），再次点击同一格式取消（回到全部，白圈）。 */
     private fun setFixtureFmt(fmt: String) {
