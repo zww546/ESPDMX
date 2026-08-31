@@ -41,6 +41,7 @@
         android:textColor="@color/text"
         android:textStyle="bold"
         android:background="@drawable/bg_pill_outline_accent"
+        android:backgroundTint="@null"
         android:minWidth="52dp"
         android:gravity="center"
         android:paddingHorizontal="12dp" />

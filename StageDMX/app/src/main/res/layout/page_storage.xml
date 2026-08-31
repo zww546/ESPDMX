@@ -51,7 +51,8 @@
             android:text="开启"
             android:textSize="12sp"
             android:textColor="@color/text"
-            android:background="@drawable/bg_pill" />
+            android:background="@drawable/bg_pill"
+            android:backgroundTint="@null" />
     </LinearLayout>
 
     <!-- 列表切换按钮行（三个同级页签） -->
@@ -69,6 +70,7 @@
             android:textSize="12sp"
             android:textColor="@color/text"
             android:background="@drawable/bg_pill_outline_white"
+            android:backgroundTint="@null"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnDeviceLibs"
@@ -79,6 +81,7 @@
             android:textSize="12sp"
             android:textColor="@color/text"
             android:background="@drawable/bg_pill_outline_white"
+            android:backgroundTint="@null"
             android:layout_marginEnd="4dp" />
         <Button
             android:id="@+id/btnFileMgr"
@@ -88,7 +91,8 @@
             android:text="文件管理"
             android:textSize="12sp"
             android:textColor="@color/text"
-            android:background="@drawable/bg_pill_outline_white" />
+            android:background="@drawable/bg_pill_outline_white"
+            android:backgroundTint="@null" />
     </LinearLayout>
 
     <!-- 文件管理操作（仅文件管理页签显示） -->
@@ -130,6 +134,7 @@
             android:textSize="11sp"
             android:textColor="@color/text"
             android:background="@drawable/bg_pill"
+            android:backgroundTint="@null"
             android:visibility="gone"
             android:layout_marginEnd="8dp" />
         <TextView
