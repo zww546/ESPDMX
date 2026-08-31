@@ -1787,7 +1787,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     moveOp = "$act: $name → $dstShow"
                     if (isCopy) engine.sendCopy(curPath, name, dst)
                     else        engine.sendMove(curPath, name, dst)
-                    toast("正在$act到 $dstShow...")
+                    toast("正在${act}到 $dstShow...")
                 }
                 .setNegativeButton("取消", null)
                 .show()
