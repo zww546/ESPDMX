@@ -1333,11 +1333,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private var selectMode = false
-    private var fixtureFmt = "xml"          // 灯具页当前格式筛选：xml / d4 / r20
+    private var fixtureFmt = ""               // 灯具页格式筛选：""=全部 / xml / d4 / r20
 
-    /** 切换灯具格式筛选并刷新列表。 */
+    /** 切换灯具格式筛选：点击选中（蓝圈），再次点击同一格式取消（回到全部，白圈）。 */
     private fun setFixtureFmt(fmt: String) {
-        fixtureFmt = fmt
+        fixtureFmt = if (fixtureFmt == fmt) "" else fmt
         updateFmtTabs()
         refreshFixturePage()
     }
@@ -1371,7 +1371,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun refreshFixturePage() {
         val def = fixtureStore.currentFixture
         fixb.tvCurrentFixture.text = def?.let { "${it.name} / ${it.mode}" } ?: "无"
-        fixtureAdapter?.submitList(fixtureStore.fixturesOfFormat(fixtureFmt))
+        // fixtureFmt 为空 = 显示全部格式（此时三个格式标签均为未选中白色空心）
+        fixtureAdapter?.submitList(
+            if (fixtureFmt.isEmpty()) fixtureStore.fixtures
+            else fixtureStore.fixturesOfFormat(fixtureFmt)
+        )
         updateFmtTabs()
         renderInstanceBar()
     }
