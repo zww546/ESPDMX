@@ -1,0 +1,21 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.StageDMX" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">@color/accent2</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="alertDialogTheme">@style/AppDialogTheme</item>
+    </style>
+
+    <style name="AppDialogTheme" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="colorOnSurfaceVariant">@color/textDim</item>
+    </style>
+</resources>

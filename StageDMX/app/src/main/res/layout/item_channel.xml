@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/bg_card"
+    android:paddingLeft="8dp"
+    android:paddingRight="8dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp"
+    android:layout_margin="4dp">
+
+    <!-- 通道名：留足 5 个字宽度（13sp 约 65dp），文字居中 -->
+    <TextView
+        android:id="@+id/tvCh"
+        android:layout_width="66dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="CH 1"
+        android:textColor="@color/accent"
+        android:textStyle="bold"
+        android:textSize="13sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- 滑块：固定高度一行字（20dp），右移并加长 -->
+    <SeekBar
+        android:id="@+id/seek"
+        android:layout_width="0dp"
+        android:layout_height="20dp"
+        android:layout_weight="1"
+        android:layout_marginStart="28dp"
+        android:layout_marginEnd="2dp"
+        android:max="255"
+        android:maxHeight="8dp"
+        android:minHeight="8dp"
+        android:splitTrack="false"
+        android:progressDrawable="@drawable/fader_progress"
+        android:thumb="@drawable/fader_thumb" />
+
+    <!-- 数值：居中显示，留右边距避免贴边 -->
+    <TextView
+        android:id="@+id/tvVal"
+        android:layout_width="34dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:gravity="center"
+        android:text="0"
+        android:textColor="@color/text"
+        android:textSize="15sp" />
+</LinearLayout>

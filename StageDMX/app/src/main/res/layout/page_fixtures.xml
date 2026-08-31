@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="@color/bg">
+
+    <!-- 当前灯具 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="当前灯具"
+            android:textColor="#cccccc"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/tvCurrentFixture"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="无"
+            android:textColor="#ff9800"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 灯具列表 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="已加载灯具"
+        android:textColor="#888888"
+        android:textSize="13sp"
+        android:paddingBottom="4dp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvFixtures"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 批量操作栏（选灯模式下显示） -->
+    <LinearLayout
+        android:id="@+id/batchBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelectAll"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="全选"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvSelectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="已选 0"
+            android:textColor="@color/warn"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDeleteSelected"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:text="删除选中"
+            android:textSize="13sp"
+            android:textColor="@color/err" />
+    </LinearLayout>
+
+    <!-- 操作按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="8dp">
+
+        <Button
+            android:id="@+id/btnImport"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="导入灯库"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddInstance"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:text="加实例"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEdit"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:text="编辑"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>

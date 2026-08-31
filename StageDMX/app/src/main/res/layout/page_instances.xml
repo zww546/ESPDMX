@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg"
+    android:padding="8dp">
+
+    <!-- 标题行 + 返回 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnBackInstances"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:paddingHorizontal="12dp"
+            android:gravity="center"
+            android:text="← 返回"
+            android:textColor="@color/accent"
+            android:textSize="13sp"
+            android:background="@drawable/bg_pill"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="实例管理"
+            android:textColor="@color/text"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+    </LinearLayout>
+
+    <!-- 跟随延时开关 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="跟随延时"
+                android:textColor="@color/text"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="开启后，多台灯按地址顺序依次响应"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swFollowDelay"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            app:thumbTint="@color/ok"
+            app:trackTint="@color/surface2" />
+    </LinearLayout>
+
+    <!-- 延时时间 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="延时时间"
+            android:textColor="@color/text"
+            android:textSize="15sp" />
+
+        <EditText
+            android:id="@+id/etFollowDelay"
+            android:layout_width="64dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_pill"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="4"
+            android:text="200"
+            android:textColor="@color/text"
+            android:textSize="14sp"
+            android:importantForAutofill="no" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" ms / 台"
+            android:textColor="@color/textDim"
+            android:textSize="12sp"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+    <!-- 实例列表标题 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="参与同时控制的实例（勾选，按地址顺序）"
+        android:textColor="@color/textDim"
+        android:textSize="12sp"
+        android:paddingBottom="4dp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvInstanceMgr"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/tvInstMgrHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="勾选后回到推子页，滑条/定位/全黑/Flash 会同时作用于所有勾选的灯；跟随延时开启时按地址顺序依次响应。"
+        android:textColor="@color/textDim"
+        android:textSize="11sp"
+        android:paddingTop="6dp" />
+</LinearLayout>

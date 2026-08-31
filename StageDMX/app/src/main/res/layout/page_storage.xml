@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg"
+    android:padding="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="文件管理"
+        android:textColor="@color/text"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <!-- USB MSC 开关 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="U盘模式"
+                android:textColor="@color/text"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvMscStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="关闭"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+        </LinearLayout>
+        <Button
+            android:id="@+id/swMsc"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="开启"
+            android:textSize="12sp"
+            android:textColor="@color/text"
+            android:background="@drawable/bg_pill" />
+    </LinearLayout>
+
+    <!-- 列表切换按钮行（三个同级页签） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="4dp">
+        <Button
+            android:id="@+id/btnAppLibs"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="App灯库"
+            android:textSize="12sp"
+            android:layout_marginEnd="4dp" />
+        <Button
+            android:id="@+id/btnDeviceLibs"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="设备灯库"
+            android:textSize="12sp"
+            android:layout_marginEnd="4dp" />
+        <Button
+            android:id="@+id/btnFileMgr"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="文件管理"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 文件管理操作（仅文件管理页签显示） -->
+    <Button
+        android:id="@+id/btnNewFolder"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:text="＋ 新建文件夹"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <!-- 列表标题切换 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingVertical="4dp">
+        <TextView
+            android:id="@+id/tvListTitle"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="App 端已保存灯库"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/tvListHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="点按上传到设备"
+            android:textColor="@color/textDim"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvFileList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

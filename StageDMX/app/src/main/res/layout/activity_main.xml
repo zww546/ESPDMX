@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- 顶部控制栏：设备管理胶囊 + 状态点 + 实例条/通道数 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:padding="6dp"
+        android:layout_marginLeft="8dp"
+        android:layout_marginRight="8dp"
+        android:layout_marginBottom="8dp">
+
+        <!-- 设备管理胶囊 -->
+        <TextView
+            android:id="@+id/btnConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:paddingHorizontal="12dp"
+            android:gravity="center"
+            android:text="设备"
+            android:textColor="@color/accent"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_pill"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- 状态颜色点（在胶囊后） -->
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_pill" />
+
+        <!-- 实例标签条（横向滚动，与通道数同行） -->
+        <HorizontalScrollView
+            android:id="@+id/instScroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/instBar"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+
+        <!-- 实例管理入口（实例存在时显示） -->
+        <TextView
+            android:id="@+id/btnInstanceMgr"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:paddingHorizontal="10dp"
+            android:gravity="center"
+            android:text="实例管理"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:background="@drawable/bg_pill"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone" />
+
+        <!-- 预设通道按钮组（中间，代码动态填充） -->
+        <LinearLayout
+            android:id="@+id/presetBar"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
+
+        <!-- 自定义通道数值输入（右边，常驻显示） -->
+        <EditText
+            android:id="@+id/etChannels"
+            android:layout_width="52dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/bg_pill"
+            android:paddingHorizontal="6dp"
+            android:inputType="number"
+            android:maxLength="3"
+            android:hint="512"
+            android:textColorHint="@color/textDim"
+            android:textColor="@color/text"
+            android:textSize="15sp"
+            android:gravity="center"
+            android:importantForAutofill="no" />
+    </LinearLayout>
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/pager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_card"
+        android:layout_marginLeft="8dp"
+        android:layout_marginRight="8dp"
+        android:layout_marginBottom="4dp"
+        app:menu="@menu/bottom_nav"
+        app:labelVisibilityMode="unlabeled"
+        app:itemIconTint="@color/nav_selector"
+        app:itemTextColor="@color/nav_selector"
+        android:elevation="0dp" />
+
+</LinearLayout>

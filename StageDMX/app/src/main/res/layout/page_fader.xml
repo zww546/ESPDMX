@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- 灯具名标签（选中实例/灯库时显示） -->
+    <TextView
+        android:id="@+id/tvFixtureLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="4dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/accent"
+        android:textSize="13sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <!-- 快捷操作 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBlackout"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="12sp"
+            android:text="全黑" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnLocate"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="12sp"
+            android:layout_marginStart="4dp"
+            android:text="定位" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFlash"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="12sp"
+            android:layout_marginStart="4dp"
+            android:text="Flash" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRecord"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="12sp"
+            android:layout_marginStart="4dp"
+            android:text="记录" />
+    </LinearLayout>
+
+    <!-- 推子区 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvChannels"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="6dp"
+        android:clipToPadding="false"
+        android:paddingBottom="4dp" />
+
+</LinearLayout>

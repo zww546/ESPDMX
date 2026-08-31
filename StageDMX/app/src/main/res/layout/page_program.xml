@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingHorizontal="8dp">
+
+    <!-- 程序选择 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="程序"
+            android:textColor="@color/accent"
+            android:textStyle="bold"
+            android:textSize="14sp" />
+
+        <Spinner
+            android:id="@+id/spProgram"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNewProg"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"
+            android:text="新建" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDelProg"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"
+            android:text="删除" />
+    </LinearLayout>
+
+    <!-- 步时间 + 记录一步 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="6dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="步时间(秒)"
+            android:textColor="@color/textDim"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etStepTime"
+            android:layout_width="64dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_pill"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="6dp"
+            android:inputType="numberDecimal"
+            android:maxLength="6"
+            android:text="1.0"
+            android:textColor="@color/text"
+            android:textSize="14sp"
+            android:importantForAutofill="no" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveStep"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="记录一步" />
+    </LinearLayout>
+
+    <!-- 播放 + 清空 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPlay"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="播放" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearSteps"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="清空步" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="点=预览  长按=删除步"
+        android:textColor="@color/textDim"
+        android:textSize="12sp" />
+
+    <ListView
+        android:id="@+id/lvSteps"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp" />
+</LinearLayout>

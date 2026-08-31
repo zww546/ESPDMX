@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="灯型"
+        android:textColor="@color/textDim"
+        android:textSize="13sp" />
+
+    <Spinner
+        android:id="@+id/spInstType"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="实例名称"
+        android:textColor="@color/textDim"
+        android:textSize="13sp" />
+
+    <EditText
+        android:id="@+id/etInstName"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="4dp"
+        android:hint="如 EOS-F1000"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:textColor="@color/text"
+        android:textColorHint="@color/textDim"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="DMX 起始地址 (1-512)"
+        android:textColor="@color/textDim"
+        android:textSize="13sp" />
+
+    <EditText
+        android:id="@+id/etInstAddr"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="4dp"
+        android:hint="1"
+        android:importantForAutofill="no"
+        android:inputType="number"
+        android:maxLength="3"
+        android:textColor="@color/text"
+        android:textColorHint="@color/textDim"
+        android:textSize="14sp" />
+
+</LinearLayout>

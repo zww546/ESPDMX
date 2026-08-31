@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 基本信息 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="灯库编辑器"
+            android:textColor="@color/text"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="名称"
+                android:textColor="@color/textDim"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etFixName"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_pill"
+                android:paddingHorizontal="8dp"
+                android:hint="EOS-F1000A"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:importantForAutofill="no"
+                android:maxLength="32" />
+
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="厂家"
+                android:textColor="@color/textDim"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etFixManu"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_pill"
+                android:paddingHorizontal="8dp"
+                android:hint="Omarte"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:importantForAutofill="no"
+                android:maxLength="32" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="模式"
+                android:textColor="@color/textDim"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etFixMode"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_pill"
+                android:paddingHorizontal="8dp"
+                android:hint="通道数"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:importantForAutofill="no"
+                android:inputType="number"
+                android:maxLength="4" />
+
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="行程"
+                android:textColor="@color/textDim"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etPanRange"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_pill"
+                android:paddingHorizontal="8dp"
+                android:hint="360"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:importantForAutofill="no"
+                android:inputType="numberDecimal"
+                android:maxLength="6" />
+
+            <EditText
+                android:id="@+id/etTiltRange"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_pill"
+                android:paddingHorizontal="8dp"
+                android:hint="180"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:importantForAutofill="no"
+                android:inputType="numberDecimal"
+                android:maxLength="6" />
+        </LinearLayout>
+
+        <!-- 通道列表 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="通道列表"
+                android:textColor="@color/text"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvChCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 通道"
+                android:textColor="@color/textDim"
+                android:textSize="12sp"
+                android:paddingEnd="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddCh"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:text="+ 通道"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 通道表头 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="4dp">
+
+            <TextView android:layout_width="28dp" android:layout_height="wrap_content"
+                android:text="#" android:textColor="@color/textDim" android:textSize="11sp"
+                android:gravity="center" />
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="通道名" android:textColor="@color/textDim" android:textSize="11sp" />
+            <TextView android:layout_width="80dp" android:layout_height="wrap_content"
+                android:text="属性" android:textColor="@color/textDim" android:textSize="11sp" />
+            <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+                android:text="默认" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
+            <TextView android:layout_width="40dp" android:layout_height="wrap_content"
+                android:text="高亮" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
+            <TextView android:layout_width="30dp" android:layout_height="wrap_content"
+                android:text="F" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/chList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- 底部操作 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="8dp">
+
+            <Button
+                android:id="@+id/btnExportZip"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="导出 ZIP"
+                android:textColor="#fff"
+                android:backgroundTint="@color/accent" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnImportEdit"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="编辑已有灯库"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

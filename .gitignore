@@ -1,0 +1,22 @@
+# ===== Android (StageDMX) =====
+.gradle/
+.idea/
+.kotlin/
+build/
+*.apk
+local.properties
+app/build/
+*.iml
+
+# ===== ESP-IDF (stagedmx_std) =====
+stagedmx_std/build/
+stagedmx_std/managed_components/
+*.elf
+*.map
+
+# ===== 备份文件 =====
+*.bak
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db

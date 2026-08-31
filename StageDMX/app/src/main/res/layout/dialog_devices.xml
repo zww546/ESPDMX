@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp">
+
+        <TextView
+            android:id="@+id/tvLastDevice"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="上次设备：无"
+            android:textColor="@color/textDim"
+            android:textSize="12sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swAutoConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="自动连接"
+            android:textColor="@color/textDim"
+            android:textSize="12sp"
+            app:thumbTint="@color/ok"
+            app:trackTint="@color/surface2" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="扫描中…"
+        android:textColor="@color/textDim"
+        android:textSize="13sp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvDevices"
+        android:layout_width="match_parent"
+        android:layout_height="320dp" />
+</LinearLayout>

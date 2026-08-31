@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 整体缩放进安全区 -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.92"
+        android:scaleY="0.92">
+
+        <!-- 太阳光晕 -->
+        <path
+            android:fillColor="#33FFF3C4"
+            android:pathData="M70,38 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 z" />
+        <!-- 太阳本体 -->
+        <path
+            android:fillColor="#FFD54F"
+            android:pathData="M70,38 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 z" />
+        <!-- 太阳高光核 -->
+        <path
+            android:fillColor="#FFE9A8"
+            android:pathData="M70,38 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 z" />
+
+        <!-- 云朵阴影（柔和，navy 半透明，向下偏移） -->
+        <group android:translateY="4">
+            <path android:fillColor="#22102A52" android:pathData="M50,64 m-15,0 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0 z" />
+            <path android:fillColor="#22102A52" android:pathData="M34,72 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 z" />
+            <path android:fillColor="#22102A52" android:pathData="M66,72 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0 z" />
+            <path android:fillColor="#22102A52" android:pathData="M34,66 h32 v16 h-32 z" />
+        </group>
+
+        <!-- 云朵（白，前景，遮住太阳下缘） -->
+        <path android:fillColor="#FFFFFF" android:pathData="M50,62 m-15,0 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M34,70 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M66,70 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M34,64 h32 v16 h-32 z" />
+    </group>
+</vector>
