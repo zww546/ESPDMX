@@ -1,0 +1,127 @@
+name: build-and-release
+
+# On tag push (v*) build the Android APK + ESP32-S3 firmware and publish a GitHub
+# Release with all binaries attached. Can also be started manually from the
+# Actions tab (Run workflow).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1); leave empty to only build artifacts'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------- Android App ----------------
+  android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build debug APK
+        working-directory: StageDMX
+        run: gradle --no-daemon assembleDebug
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp StageDMX/app/build/outputs/apk/debug/app-debug.apk dist/StageDMX.apk
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StageDMX-apk
+          path: dist/StageDMX.apk
+
+  # ---------------- ESP32-S3 firmware ----------------
+  firmware:
+    name: Build ESP32-S3 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF v5.5.2
+        uses: espressif/esp-idf-ci-action@v1.1.0
+        with:
+          esp_idf_version: v5.5.2
+          target: esp32s3
+          path: stagedmx_std
+          command: idf.py build --no-daemon
+
+      - name: Collect firmware binaries
+        run: |
+          mkdir -p dist
+          cp stagedmx_std/build/bootloader/bootloader.bin          dist/bootloader.bin
+          cp stagedmx_std/build/partition_table/partition-table.bin dist/partition-table.bin
+          cp stagedmx_std/build/stagedmx.bin                       dist/stagedmx.bin
+          cat > dist/FLASH-README.txt <<'EOF'
+          StageDMX firmware flashing (ESP32-S3, 16MB flash; adjust COM port)
+            esptool.py --chip esp32s3 -p COM13 -b 460800 write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 stagedmx.bin
+
+          Reset fixture filesystem if needed:
+            esptool.py --chip esp32s3 -p COM13 erase_region 0x310000 0x200000
+
+          Install the Android app:
+            adb install -r StageDMX.apk
+          EOF
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stagedmx-firmware
+          path: dist/*
+
+  # ---------------- Publish release ----------------
+  release:
+    name: Publish Release
+    needs: [android, firmware]
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifacts
+        run: |
+          find dist -mindepth 2 -type f -exec cp {} dist/ \;
+          find dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+          ls -l dist
+
+      - name: Determine tag
+        id: t
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create / update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.t.outputs.tag }}
+          name: StageDMX ${{ steps.t.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*
