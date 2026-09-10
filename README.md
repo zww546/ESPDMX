@@ -20,9 +20,10 @@
 ### App（Android）
 - **BLE 扫描 / 连接**：按 DMX 服务（0xFF00）过滤，支持扫描全部兜底；自动周期重扫、已连接设备置顶
 - **512 通道控制**：滑条实时调光（0–255），可自定义显示通道数；全黑 / 全亮一键
+- **主控亮度（总控推子）**：推子页顶部一条推子，0–100% 全局缩放所有实例的输出（HTP 之前的整体上限），带百分比显示与断电记忆
 - **场景系统**：保存 / 调用 / 删除（本地持久化 512 通道快照），支持编组、多实例分组与跟随延迟
 - **程序走灯（Chase）**：多步程序 + 节拍控制
-- **效果引擎 FX（1–11）**：
+- **效果引擎 FX（1–11 + 13）**：
   1. 圆形摆动（pan+tilt 圆）
   2. Pan 摆动 · 3. Tilt 摆动
   4. 频闪（方波）
@@ -30,7 +31,9 @@
   6. 放大摆动（zoom）· 7. 调焦摆动（focus）
   8. 色盘摆动（color）· 9. 图案盘摆动（gobo）
   10. 图案盘自转（gobo_rot）· 11. 固定图案摇动（shake）
+  13. **切割循环**（切割片 BLADE1A–4B 依次拉满→关闭、切割旋转、循环间隔；参数为每步时长 / 循环间隔）
   - 幅度 0–255、速度 33–3277（可调），通道可任意指定
+  - **多效果叠加**：同一实例可同时叠加多个效果（各自占用一个板载槽，共 8 槽），同实例通道冲突会被拦截
 - **灯库系统**：
   - 支持 **3 种灯库格式**：MA2 XML（`.xml`）、Avolites Titan `.d4`、AVOLITES Pearl `.R20`
   - 内置灯库编辑器，可创建 / 编辑自定义灯型（通道语义：RGB / Pan / Tilt / Zoom / Focus / Color / Gobo…）
@@ -41,7 +44,7 @@
 ### 固件（ESP32-S3）
 - **DMX512 发送**：UART 250k 8N2 + Break/MAB，由 SP3485 转为 RS-485 差分信号；512 字节缓冲循环输出
 - **BLE GATT**：服务 `0xFF00`，写特征 `0xFF01`（WRITE / WRITE_NO_RSP），通知特征 `0xFF02`
-- **FX 效果引擎**：256 点 SIN 表 + 8.8 定点相位累加，与 App 端效果 1–11 一一对应
+- **FX 效果引擎**：256 点 SIN 表 + 8.8 定点相位累加，与 App 端效果 1–11、13 一一对应；效果帧 57 字节（含 8 片切割片 + 切割旋转）
 - **内置程序**：chase 走灯等内置程序（协议 0x10–0x15）
 - **USB MSC（U 盘模式）**：2MB SPI Flash 挂载为 FAT 文件系统，手机 / 电脑可直插当作 U 盘管理灯库文件（协议 0xA0 0x30 切换）
 - **文件传输协议**：上传 / 下载 / 列表 / 删除 / 建目录 / 重命名（0x31–0x39，响应 0x91–0x96）
@@ -147,6 +150,19 @@ esptool.py --chip esp32s3 -p COM13 -b 460800 write_flash `
 
 ---
 
+## 自动构建 / 发布（GitHub Actions）
+
+`.github/workflows/build-release.yml`：推 `v*` tag（或在 Actions 页手动 Run workflow）后自动
+
+1. 编译 Android APK（JDK 17 + Android SDK + Gradle 8.13 → `assembleDebug`）
+2. 编译 ESP32-S3 固件（ESP-IDF v5.5.2 → `bootloader.bin` / `partition-table.bin` / `stagedmx.bin`）
+3. 创建 / 更新 GitHub Release，把 APK 与固件 bin 作为附件上传
+
+产物也可在 Actions 运行的 Artifacts 里单独下载。**不想用 Actions 时**：
+`release_assets/publish_release.ps1`（设 `GH_TOKEN` 后运行，走 REST API 上传本地已构建的产物）。
+
+---
+
 ## 通信协议
 
 BLE GATT：
@@ -161,7 +177,7 @@ BLE GATT：
 | 0x01–0x03 | 通道区间设置 / 全黑 / 全亮 |
 | 0x04 | Ping |
 | 0x10–0x15 | 内置程序（chase 等） |
-| 0x20–0x22 | 效果设置（39 字节帧，FX 1–11）/ 停止 |
+| 0x20–0x22 | 效果设置（57 字节帧，FX 1–11 + 13 切割循环）/ 停止 |
 | 0x30 / 0xA0 | USB MSC U 盘模式切换 |
 | 0x31–0x39 | 文件上传 / 列表 / 下载 / 删除 / 建目录 / 删目录 / 重命名 |
 | 0x91–0x96 | 对应响应帧 |
