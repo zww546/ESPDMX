@@ -61,20 +61,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build with ESP-IDF v5.5.2
-        uses: espressif/esp-idf-ci-action@v1.1.0
-        with:
-          esp_idf_version: v5.5.2
-          target: esp32s3
-          path: stagedmx_std
-          command: idf.py build --no-daemon
+      # 直接用 espressif 官方安装脚本装 ESP-IDF（不用 esp-idf-ci-action：
+      # 其预构建容器对 v5.5.x 支持不稳，且这层薄封装里失败原因不可见）
+      - name: Install ESP-IDF v5.5.2
+        run: |
+          set -e
+          git clone -b v5.5.2 --depth 1 --recursive --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$HOME/esp/esp-idf"
+          "$HOME/esp/esp-idf/install.sh" esp32s3
+          # 给后续 step 暴露 idf.py
+          echo "$HOME/esp/esp-idf/tools" >> "$GITHUB_PATH"
+
+      - name: Build firmware
+        working-directory: stagedmx_std
+        run: |
+          . "$HOME/esp/esp-idf/export.sh"
+          idf.py build
 
       - name: Collect firmware binaries
         run: |
+          ls -l stagedmx_std/build
           mkdir -p dist
           cp stagedmx_std/build/bootloader/bootloader.bin          dist/bootloader.bin
           cp stagedmx_std/build/partition_table/partition-table.bin dist/partition-table.bin
           cp stagedmx_std/build/stagedmx.bin                       dist/stagedmx.bin
+          ls -l dist
           cat > dist/FLASH-README.txt <<'EOF'
           StageDMX firmware flashing (ESP32-S3, 16MB flash; adjust COM port)
             esptool.py --chip esp32s3 -p COM13 -b 460800 write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 stagedmx.bin
