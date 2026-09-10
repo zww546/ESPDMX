@@ -108,6 +108,11 @@ object FixtureParser {
         "blade2a" to "切割3", "blade2b" to "切割4",
         "blade3a" to "切割5", "blade3b" to "切割6",
         "blade4a" to "切割7", "blade4b" to "切割8",
+        // 老虎 D4 用 BLADE1..8 表示 8 片切割片
+        "blade1" to "切割1", "blade2" to "切割2",
+        "blade3" to "切割3", "blade4" to "切割4",
+        "blade5" to "切割5", "blade6" to "切割6",
+        "blade7" to "切割7", "blade8" to "切割8",
         "shaper_rot" to "切割旋转",
         // 动画轮
         "animationwheel" to "动画轮",
@@ -451,6 +456,13 @@ object FixtureParser {
         "Blade2A" to "blade2a", "Blade2B" to "blade2b",
         "Blade3A" to "blade3a", "Blade3B" to "blade3b",
         "Blade4A" to "blade4a", "Blade4B" to "blade4b",
+        "ShaperRot" to "shaper_rot", "FrameRot" to "shaper_rot",
+        // 部分老虎灯库把 8 片切割片直接叫 BLADE1..BLADE8（无 A/B 后缀），
+        // 映射顺序与 BLADE1A..4B 保持一致，切割循环效果才能取到通道。
+        "Blade1" to "blade1a", "Blade2" to "blade1b",
+        "Blade3" to "blade2a", "Blade4" to "blade2b",
+        "Blade5" to "blade3a", "Blade6" to "blade3b",
+        "Blade7" to "blade4a", "Blade8" to "blade4b",
     )
 
     fun parseD4(xml: String): FixtureDef? {

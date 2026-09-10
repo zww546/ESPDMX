@@ -3,9 +3,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="12dp"
+    android:padding="8dp"
     android:background="@drawable/bg_card"
-    android:layout_marginBottom="6dp"
+    android:layout_marginBottom="2dp"
     android:gravity="center_vertical">
 
     <TextView
@@ -14,13 +14,27 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:textColor="@color/text"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:singleLine="true" />
 
     <TextView
         android:id="@+id/tvFxParams"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/textDim"
-        android:textSize="13sp" />
+        android:textSize="12sp"
+        android:layout_marginEnd="6dp" />
+
+    <!-- 每个效果条目的独立启停开关：打开=启动该效果，关闭=停止该效果 -->
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/swFxItem"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="22dp"
+        android:minWidth="36dp"
+        android:scaleX="0.85"
+        android:scaleY="0.85"
+        android:checked="false"
+        android:contentDescription="效果启动开关" />
 </LinearLayout>

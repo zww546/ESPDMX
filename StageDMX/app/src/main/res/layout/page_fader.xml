@@ -18,6 +18,52 @@
         android:ellipsize="end"
         android:visibility="gone" />
 
+    <!-- 总控最大亮度：作用于全部实例（所有 DMX 输出按该百分比缩放） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="主控亮度"
+            android:textColor="@color/textDim"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/seekMaster"
+            android:layout_width="0dp"
+            android:layout_height="20dp"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="4dp"
+            android:max="100"
+            android:progress="100"
+            android:maxHeight="8dp"
+            android:minHeight="8dp"
+            android:splitTrack="false"
+            android:progressDrawable="@drawable/fader_progress"
+            android:thumb="@drawable/fader_thumb" />
+
+        <TextView
+            android:id="@+id/tvMaster"
+            android:layout_width="52dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="100%"
+            android:textColor="@color/accent"
+            android:textStyle="bold"
+            android:textSize="15sp" />
+    </LinearLayout>
+
     <!-- 快捷操作 -->
     <LinearLayout
         android:layout_width="match_parent"

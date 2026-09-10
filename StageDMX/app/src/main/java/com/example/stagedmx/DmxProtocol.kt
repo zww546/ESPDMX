@@ -144,9 +144,11 @@ object DmxProtocol {
                     dim: Int, dimFine: Int, r: Int, g: Int, b: Int,
                     zoom: Int, zoomFine: Int, focus: Int, focusFine: Int,
                     color: Int, gobo: Int, goboRot: Int,
-                    amp16: Int, speed: Int): ByteArray {
+                    amp16: Int, speed: Int,
+                    blades: List<Int> = emptyList(), shaperRot: Int = 0): ByteArray {
         fun u16(v: Int) = byteArrayOf(((v ushr 8) and 0xFF).toByte(), (v and 0xFF).toByte())
-        val out = ByteArray(39)
+        // v5: 39 字节基础 + 8 切割片(16B) + 1 切割旋转(2B) = 57 字节
+        val out = ByteArray(57)
         out[0] = CMD_FX_SET.toByte()
         out[1] = slot.toByte()
         out[2] = fxId.toByte()
@@ -160,6 +162,14 @@ object DmxProtocol {
         out[i++] = ampB[0]; out[i++] = ampB[1]
         val spdB = u16(speed.coerceIn(0, 65535))
         out[i++] = spdB[0]; out[i++] = spdB[1]
+        // v5: 8 个切割片通道（不足补 0，超出截断）
+        for (b in 0 until 8) {
+            val v = if (b < blades.size) blades[b] else 0
+            val bb = u16(v.coerceIn(0, 512))
+            out[i++] = bb[0]; out[i++] = bb[1]
+        }
+        val sr = u16(shaperRot.coerceIn(0, 512))
+        out[i++] = sr[0]; out[i++] = sr[1]
         return out
     }
 

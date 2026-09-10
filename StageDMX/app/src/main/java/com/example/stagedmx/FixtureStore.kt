@@ -38,19 +38,41 @@ data class FixtureDef(
     val tiltRange: Float = 0f,      // TILT 行程（度），如 270.0
     val ptSpeedCh: Int? = null      // Pan/Tilt Speed 通道号，没有则为 null
 ) {
-    /** 按属性名查找通道号（1-based），找不到返 null。 */
-    fun findCh(attribute: String): Int? {
-        val key = attribute.lowercase()
-        return channels.find { it.originalName.lowercase().contains(key) ||
-            it.name.lowercase().contains(key) }?.number
-    }
+    /**
+     * 按属性名查找通道号（1-based），找不到返 null。
+     *
+     * 匹配优先级（重要）：
+     *   1) 标准 attribute 字段精确匹配（MA2 XML / D4 的 attribute 如 BLADE1A、SHAPER ROT）
+     *   2) attribute 包含匹配
+     *   3) 用户通道名/原始名精确匹配
+     *   4) 用户通道名/原始名包含匹配
+     *
+     * 之所以必须先看 attribute：MA2 灯库把切割片命名成 "1A"/"1B"…、切割旋转命名成 "Index"，
+     * 而 attribute 才是唯一可靠的英文标识（BLADE1A / SHAPER ROT）。早期只按名字做包含匹配，
+     * 导致 blade、shaper_rot 一律找不到通道 → 切割循环下发全 0 通道 → 效果“无法使用”。
+     */
+    fun findCh(attribute: String): Int? = findChFine(attribute)?.first
 
     /** 按属性名查找带 fine 的通道对（coarse, fine），无 fine 则 fine=null。 */
     fun findChFine(attribute: String): Pair<Int, Int?>? {
         val key = attribute.lowercase()
-        val ch = channels.find { it.originalName.lowercase().contains(key) ||
-            it.name.lowercase().contains(key) } ?: return null
+        val norm = normalizeKey(key)
+        fun attrNorm(c: FixtureChannel) = normalizeKey(c.attribute)
+        fun nameNorm(c: FixtureChannel) = normalizeKey(c.originalName)
+        fun zhNorm(c: FixtureChannel) = normalizeKey(c.name)
+
+        val ch = channels.firstOrNull { attrNorm(it) == norm }
+            ?: channels.firstOrNull { attrNorm(it).contains(norm) }
+            ?: channels.firstOrNull { nameNorm(it) == norm || zhNorm(it) == norm }
+            ?: channels.firstOrNull { nameNorm(it).contains(key) || zhNorm(it).contains(key) }
+            ?: return null
         return ch.number to (if (ch.hasFine) ch.fineNumber else null)
+    }
+
+    companion object {
+        /** 归一化：小写 + 去掉空格/下划线/连字符，便于 BLADE1A == blade1a == "Blade 1A"。 */
+        fun normalizeKey(s: String): String =
+            s.lowercase().replace(" ", "").replace("_", "").replace("-", "")
     }
 }
 
@@ -146,8 +168,18 @@ class FixtureStore(context: Context) {
     }
 
     fun updateInstance(inst: FixtureInstance) {
-        val list = instances().map { if (it.id == inst.id) inst else it }
-        persistInstances(list)
+        val def = fixtures.find { it.id == inst.fixtureId } ?: return
+        if (inst.startAddr + def.channelCount - 1 > 512) return  // 越界，忽略
+        val list = instances().toMutableList()
+        // 校验与其它实例地址重叠（排除自身）
+        for (it in list) {
+            if (it.id == inst.id) continue
+            val itDef = fixtures.find { f -> f.id == it.fixtureId } ?: continue
+            val a1 = it.startAddr; val a2 = it.startAddr + itDef.channelCount - 1
+            val b1 = inst.startAddr; val b2 = inst.startAddr + def.channelCount - 1
+            if (b1 <= a2 && a1 <= b2) return  // 重叠，拒绝更新
+        }
+        persistInstances(list.map { if (it.id == inst.id) inst else it })
     }
 
     fun deleteInstance(id: String) {

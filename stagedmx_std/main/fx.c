@@ -32,6 +32,11 @@ typedef struct {
     // v4：新增属性通道基底
     uint16_t base_zoom, base_focus;
     uint8_t  base_color, base_gobo, base_gobo_rot;
+    // v5：切割片效果（fx_id=13）时序状态
+    uint32_t step_tick;    // 当前步已走 tick 数
+    uint8_t  step;         // 当前步索引（0..N-1 切割片，N=循环间隔等待，等）
+    bool     blade_on;     // 当前切割片是否处于拉满状态
+    bool     in_loop_gap;  // 是否处于循环间隔等待
 } fx_inst_t;
 
 static fx_inst_t s_fx[FX_MAX_COUNT];
@@ -105,6 +110,11 @@ void fx_set(uint8_t slot, const fx_cfg_t *cfg) {
         f->base_color     = cfg->color_ch     ? dmx_state_get(cfg->color_ch)     : 0;
         f->base_gobo      = cfg->gobo_ch      ? dmx_state_get(cfg->gobo_ch)      : 0;
         f->base_gobo_rot  = cfg->gobo_rot_ch  ? dmx_state_get(cfg->gobo_rot_ch)  : 0;
+        // v5：切割效果启动时重置时序状态
+        f->step_tick = 0;
+        f->step = 0;
+        f->blade_on = false;
+        f->in_loop_gap = false;
     }
     f->cfg = *cfg;
     f->cfg.running = true;
@@ -245,6 +255,65 @@ static void fx_tick(fx_inst_t *f) {
         }
         break;
     }
+    case 13: { // 切割循环（时序分步）: 依次拉满→关闭每个切割片，最后切割旋转，循环
+        // 每步时长(ms) = 655360 / speed（speed 越大越快）；循环间隔(ms) = amp16
+        // 每 tick = 10ms
+        uint32_t step_ticks = c->speed ? (655360u / c->speed) : 655360u;
+        if (step_ticks < 1) step_ticks = 1;
+        uint32_t gap_ticks = c->amp16 ? ((uint32_t)c->amp16 / FX_TICK_MS) : 0;
+
+        // 收集存在的切割片通道（0=未用，跳过）
+        uint16_t blades[FX_BLADE_COUNT];
+        int nblade = 0;
+        for (int i = 0; i < FX_BLADE_COUNT; i++) {
+            if (c->blade_ch[i]) blades[nblade++] = c->blade_ch[i];
+        }
+
+        if (f->in_loop_gap) {
+            // 阶段 C：循环间隔等待，所有通道归零
+            for (int i = 0; i < nblade; i++) dmx_state_set(blades[i], 0);
+            if (c->shaper_rot_ch) dmx_state_set(c->shaper_rot_ch, 0);
+            f->step_tick++;
+            if (gap_ticks == 0 || f->step_tick >= gap_ticks) {
+                f->in_loop_gap = false;
+                f->step_tick = 0;
+                f->step = 0;      // 回到阶段 A 第 0 片
+                f->blade_on = false;
+            }
+            break;
+        }
+
+        f->step_tick++;
+        if (f->step_tick >= step_ticks) {
+            f->step_tick = 0;
+            // 阶段 A：依次处理每片切割片（step=0..nblade-1）
+            if (f->step < nblade) {
+                if (!f->blade_on) {
+                    // 拉满当前片
+                    dmx_state_set(blades[f->step], 255);
+                    f->blade_on = true;
+                } else {
+                    // 关闭当前片，进入下一片
+                    dmx_state_set(blades[f->step], 0);
+                    f->blade_on = false;
+                    f->step++;
+                }
+            } else if (f->step == nblade) {
+                // 阶段 B：切割旋转 —— 拉满
+                if (c->shaper_rot_ch) dmx_state_set(c->shaper_rot_ch, 255);
+                f->blade_on = true;
+                f->step = nblade + 1;
+            } else if (f->step == nblade + 1) {
+                // 阶段 B 完：归零，进入循环间隔
+                if (c->shaper_rot_ch) dmx_state_set(c->shaper_rot_ch, 0);
+                f->blade_on = false;
+                f->in_loop_gap = true;
+                f->step = 0;
+            }
+            break;
+        }
+        break;
+    }
     }
 }
 
@@ -265,6 +334,12 @@ bool fx_owns_channel(uint16_t ch) {
             break;
         case 11: // 固定图案摇动：占 gobo + gobo_rot
             owned = (c->gobo_ch && c->gobo_ch == ch) || (c->gobo_rot_ch && c->gobo_rot_ch == ch);
+            break;
+        case 13: // 切割循环：占所有切割片 + 切割旋转
+            for (int b = 0; b < FX_BLADE_COUNT && !owned; b++) {
+                if (c->blade_ch[b] && c->blade_ch[b] == ch) { owned = true; break; }
+            }
+            if (!owned && c->shaper_rot_ch && c->shaper_rot_ch == ch) owned = true;
             break;
         case 10: // 图案盘自转：占 gobo_rot
             owned = (c->gobo_rot_ch && c->gobo_rot_ch == ch);

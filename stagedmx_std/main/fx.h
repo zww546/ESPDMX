@@ -15,15 +15,20 @@ extern "C" {
 //   1=圆形摇动  2=水平摇动  3=垂直摇动  4=频闪  5=RGB变色
 //   6=放大摆动  7=调焦摆动  8=色盘摆动  9=图案盘摆动
 //   10=图案盘自转  11=固定图案摇动
+//   12=切断循环（时序分步：切割片依次拉满→关闭，切割旋转，循环演示）
 //
 // v2：幅度用 16bit（0..65535 对应灯的全行程），支持 fine 通道（16bit 精细运动），
 // 不同灯的行程差异由 App 端换算（角度→16bit 偏移），固件只做波形叠加。
 // v4：基底启动时捕获一次；新增 zoom/focus/color/gobo/gobo_rot 通道与效果 6~11。
+// v5：新增切割片效果（fx_id=13），支持 blade[0..7] + shaper_rot 分步时序。
 
 #define FX_MAX_COUNT  8      // 最多同时运行的效果数（跟随实例，固件内存允许）
 
+// 切割片最大数（blade1a..blade4b = 8 片）
+#define FX_BLADE_COUNT  8
+
 typedef struct {
-    uint8_t  fx_id;          // 1..11，0=空槽
+    uint8_t  fx_id;          // 1..13，0=空槽
     // 控制通道（1-based，0=未用）及对应 fine 通道（0=无 fine）
     uint16_t pan_ch,     pan_fine_ch;
     uint16_t tilt_ch,    tilt_fine_ch;
@@ -35,6 +40,9 @@ typedef struct {
     uint16_t color_ch;               // 色盘
     uint16_t gobo_ch;                // 图案盘
     uint16_t gobo_rot_ch;            // 图案盘旋转
+    // v5：切割片 + 切割旋转（0=未用）
+    uint16_t blade_ch[FX_BLADE_COUNT];  // 切割片 1a..4b
+    uint16_t shaper_rot_ch;             // 切割旋转
     uint16_t amp16;          // 幅度 0..65535（0=不动，65535=全行程，峰值偏移）
     uint16_t speed;          // 速度 0..65535，越大越快：每 10ms tick 相位推进量×256（8.8 定点）
     volatile bool running;

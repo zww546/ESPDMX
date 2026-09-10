@@ -175,10 +175,11 @@ class DmxEngine(private val ble: BleManager) {
                   dim: Int, dimFine: Int, r: Int, g: Int, b: Int,
                   zoom: Int, zoomFine: Int, focus: Int, focusFine: Int,
                   color: Int, gobo: Int, goboRot: Int,
-                  amp16: Int, speed: Int) =
+                  amp16: Int, speed: Int,
+                  blades: List<Int> = emptyList(), shaperRot: Int = 0) =
         ble.send(DmxProtocol.encodeFxSet(slot, fxId, pan, panFine, tilt, tiltFine,
             dim, dimFine, r, g, b, zoom, zoomFine, focus, focusFine,
-            color, gobo, goboRot, amp16, speed))
+            color, gobo, goboRot, amp16, speed, blades, shaperRot))
     fun sendFxStop(slot: Int) = ble.send(DmxProtocol.encodeFxStop(slot))
     fun sendFxStopAll() = ble.send(DmxProtocol.encodeFxStopAll())
 

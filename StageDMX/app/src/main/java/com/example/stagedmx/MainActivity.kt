@@ -45,6 +45,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.example.stagedmx.databinding.ActivityMainBinding
 import com.example.stagedmx.databinding.DialogDevicesBinding
 import com.example.stagedmx.databinding.ItemDeviceBinding
@@ -254,6 +255,29 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     // ---------------- 推子页 ----------------
     private fun wireFaderPage() {
         setupChannelPresets()
+
+        // 总控最大亮度：0..100%，作用于全部实例（所有 DMX 输出按该百分比缩放）
+        fun loadMaster() {
+            val pct = autoPrefs.getInt("master_pct", 100).coerceIn(0, 100)
+            fb.seekMaster.progress = pct
+            fb.tvMaster.text = "$pct%"
+            fb.tvMaster.setTextColor(ContextCompat.getColor(this,
+                if (pct == 0) R.color.err else R.color.accent))
+            engine.setMasterPct(pct)
+        }
+        fb.seekMaster.max = 100
+        fb.seekMaster.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                engine.setMasterPct(p)
+                fb.tvMaster.text = "$p%"
+                fb.tvMaster.setTextColor(ContextCompat.getColor(this@MainActivity,
+                    if (p == 0) R.color.err else R.color.accent))
+                if (fromUser) autoPrefs.edit().putInt("master_pct", p).apply()
+            }
+            override fun onStartTrackingTouch(s: SeekBar) {}
+            override fun onStopTrackingTouch(s: SeekBar) {}
+        })
+        loadMaster()
 
         fb.btnBlackout.setOnClickListener {
             // 实例/组模式下只作用于选中的地址段
@@ -639,21 +663,48 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 val def = FxEngine.presets[pos]
                 holder.itemView.findViewById<TextView>(R.id.tvFxName).text = def.name
                 holder.itemView.findViewById<TextView>(R.id.tvFxParams).text = def.params.joinToString("+")
+                val active = FxEngine.containsFx(currentInstanceId, def.id)
+                val focused = FxEngine.getFocusedFxId(currentInstanceId)
+                val isFocused = focused == def.id
+                // 高亮三态：聚焦(accent) / 已激活未聚焦(surface2) / 未选中(surface)
                 holder.itemView.background.setTint(
-                    if (FxEngine.isActive(currentInstanceId) && FxEngine.activeFxId(currentInstanceId) == def.id)
-                        ContextCompat.getColor(this@MainActivity, R.color.surface2)
-                    else ContextCompat.getColor(this@MainActivity, R.color.surface))
+                    ContextCompat.getColor(this@MainActivity,
+                        if (isFocused) R.color.accent
+                        else if (active) R.color.surface2
+                        else R.color.surface))
+                // 点击条目（非开关区）→ 只聚焦，用于调幅度/速度
                 holder.itemView.setOnClickListener {
-                    if (FxEngine.isActive(currentInstanceId) && FxEngine.activeFxId(currentInstanceId) == def.id) {
-                        FxEngine.stop(currentInstanceId)
-                    } else {
+                    FxEngine.setSelectedPreset(currentInstanceId, def.id)
+                    refreshFxPage()
+                }
+                // 条目自身的启停开关：打开=启动该效果，关闭=停止该效果
+                val sw = holder.itemView.findViewById<MaterialSwitch>(R.id.swFxItem)
+                sw.setOnCheckedChangeListener(null)
+                sw.isChecked = active
+                sw.setOnCheckedChangeListener { _, checked ->
+                    if (checked) {
                         if (ble.state != BleManager.State.CONNECTED) {
                             toast("请先连接设备再启动效果")
-                            return@setOnClickListener
+                            sw.isChecked = false
+                            return@setOnCheckedChangeListener
                         }
+                        if (FxEngine.slotsFull()) {
+                            toast("效果槽已满(8个)")
+                            sw.isChecked = false
+                            return@setOnCheckedChangeListener
+                        }
+                        FxEngine.setSelectedPreset(currentInstanceId, def.id)
                         updateFxChannels()
-                        FxEngine.start(engine, def.id, currentInstanceId,
-                            amp = FxEngine.getAmplitude(currentInstanceId), speed = FxEngine.getSpeed(currentInstanceId))
+                        val ok = FxEngine.start(engine, def.id, currentInstanceId,
+                            amp = FxEngine.getAmplitude(currentInstanceId),
+                            speed = FxEngine.getSpeed(currentInstanceId))
+                        if (!ok) {
+                            toast("无法启动：与现有效果通道冲突")
+                            sw.isChecked = false
+                        }
+                    } else {
+                        val slot = FxEngine.slotOf(currentInstanceId, def.id)
+                        if (slot != null) FxEngine.stopSlot(currentInstanceId, slot)
                     }
                     refreshFxPage()
                 }
@@ -671,7 +722,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fxb.seekAmplitude.max = 255
         fxb.seekAmplitude.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
-                FxEngine.setAmplitude(p, currentInstanceId); fxb.tvAmplitude.text = "幅度: $p"
+                FxEngine.setAmplitude(p, currentInstanceId)
+                fxb.tvAmplitude.text = fxAmpText()
             }
             override fun onStartTrackingTouch(s: SeekBar) {}
             override fun onStopTrackingTouch(s: SeekBar) {}
@@ -681,7 +733,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
                 val speed = seekToSpeed(p).coerceIn(FxEngine.SPEED_MIN, FxEngine.SPEED_MAX)
                 FxEngine.setSpeed(speed, currentInstanceId)
-                fxb.tvSpeed.text = "速度: $p"
+                fxb.tvSpeed.text = fxSpeedText()
             }
             override fun onStartTrackingTouch(s: SeekBar) {}
             override fun onStopTrackingTouch(s: SeekBar) {}
@@ -691,24 +743,70 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshFxPage()
     }
 
+    // ---- 切割循环（FX 13）参数显示：把固件参数换算回真实时间显示 ----
+    private fun isCutLoopSelected(): Boolean = FxEngine.getFocusedFxId(currentInstanceId) == 13
+
+    private fun fxAmpText(): String {
+        val amp = FxEngine.getAmplitude(currentInstanceId)
+        return if (isCutLoopSelected()) {
+            "循环间隔: %.1fs".format(FxEngine.cutAmpToGapMs(amp) / 1000f)
+        } else "幅度: $amp"
+    }
+
+    private fun fxSpeedText(): String {
+        val speed = FxEngine.getSpeed(currentInstanceId)
+        return if (isCutLoopSelected()) {
+            "每步时长: %.1fs".format(FxEngine.cutSpeedToStepMs(speed) / 1000f)
+        } else {
+            val speedLogMin = kotlin.math.ln(FxEngine.SPEED_MIN.toDouble())
+            val speedLogMax = kotlin.math.ln(FxEngine.SPEED_MAX.toDouble())
+            val seekPos = ((kotlin.math.ln(speed.toDouble()) - speedLogMin) /
+                (speedLogMax - speedLogMin) * 255).toInt().coerceIn(0, 255)
+            "速度: $seekPos"
+        }
+    }
+
     private fun refreshFxPage() {
         val instId = currentInstanceId
-        if (FxEngine.isActive(instId)) {
-            val def = FxEngine.presets.find { it.id == FxEngine.activeFxId(instId) }
-            fxb.tvFxStatus.text = def?.name ?: "运行中"
-            fxb.tvFxStatus.setTextColor(ContextCompat.getColor(this, R.color.accent))
-            fxb.btnFxStop.visibility = View.VISIBLE
+        // 保证效果页的通道映射与当前实例/灯库一致（切割片等通道解析结果随灯库变化）
+        updateFxChannels()
+        val selId = FxEngine.getFocusedFxId(instId)   // 当前选中的预设 id
+        val selActive = selId != 0 && FxEngine.containsFx(instId, selId)
+
+        if (selId != 0) {
+            // 选中了某预设：显示它的名字 + 运行状态；参数区块总是可用（聚焦项）
+            val name = FxEngine.presets.find { it.id == selId }?.name ?: "#$selId"
+            // 若该实例还有叠加的其它运行效果，一并列出
+            val others = FxEngine.activeFxIds(instId)
+                .filter { it != selId }
+                .map { FxEngine.presets.find { p -> p.id == it }?.name ?: "#$it" }
+            fxb.tvFxStatus.text =
+                if (selActive) "▶ $name" + others.joinToString(" + ") { " + $it" }
+                else name + if (others.isNotEmpty()) others.joinToString(" + ") { " + $it" } else ""
+            // 切割循环：显示灯库中解析到的切割片/切割旋转通道数量，
+            // 一眼确认“切割通道是否被灯库识别”（0 片 = 当前灯库没有切割片通道）。
+            if (selId == 13) {
+                val nBlade = FxEngine.bladeCh.count { it != 0 }
+                fxb.tvFxStatus.append(
+                    if (nBlade == 0 && FxEngine.shaperRotCh == 0) "  〔当前灯库无切割通道〕"
+                    else "  〔切割${nBlade}片" + (if (FxEngine.shaperRotCh != 0) " + 旋转" else "") + "〕")
+            }
+            fxb.tvFxStatus.setTextColor(ContextCompat.getColor(this,
+                if (selActive) R.color.accent else R.color.text))
+            fxb.btnFxStop.visibility = if (selActive) View.VISIBLE else View.GONE
             fxb.fxParams.visibility = View.VISIBLE
-            fxb.seekAmplitude.progress = FxEngine.getAmplitude(instId)
-            fxb.tvAmplitude.text = "幅度: ${FxEngine.getAmplitude(instId)}"
+            val amp = FxEngine.getAmplitude(instId)
+            fxb.seekAmplitude.progress = amp
+            fxb.tvAmplitude.text = fxAmpText()
             val speed = FxEngine.getSpeed(instId)
             val speedLogMin = kotlin.math.ln(FxEngine.SPEED_MIN.toDouble())
             val speedLogMax = kotlin.math.ln(FxEngine.SPEED_MAX.toDouble())
             val seekPos = ((kotlin.math.ln(speed.toDouble()) - speedLogMin) / (speedLogMax - speedLogMin) * 255).toInt().coerceIn(0, 255)
             fxb.seekSpeed.progress = seekPos
-            fxb.tvSpeed.text = "速度: $seekPos"
+            fxb.tvSpeed.text = fxSpeedText()
         } else {
-            fxb.tvFxStatus.text = "未启动"
+            // 未选中任何预设
+            fxb.tvFxStatus.text = "点击列表选择效果，用开关启用"
             fxb.tvFxStatus.setTextColor(ContextCompat.getColor(this, R.color.textDim))
             fxb.btnFxStop.visibility = View.GONE
             fxb.fxParams.visibility = View.GONE
