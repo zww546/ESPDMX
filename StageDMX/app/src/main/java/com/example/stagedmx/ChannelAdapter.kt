@@ -31,7 +31,44 @@ class ChannelAdapter(
     private var startAddr = 1                           // 实例 DMX 起始地址（灯具模式/组模式主灯）
     private var defaultValues: IntArray? = null
     private var groupInstances: List<FixtureInstance>? = null  // 组模式：参与控制的实例（按地址排序）
-    @Volatile var translated = true  // 翻译开关
+    /** 自定义排列：order[显示位置] = 灯内通道下标(0-based)；null = 按通道顺序。 */
+    private var order: IntArray? = null
+    @Volatile var translated = true  // 翻译开关（设置页全局控制）
+
+    /** 显示位置 → 灯内通道下标(0-based)。 */
+    private fun idx(position: Int): Int =
+        order?.getOrNull(position)?.takeIf { it in 0 until count } ?: position
+
+    /**
+     * 应用自定义排列（设置页里的“推子页排列方式”）。
+     * 数组必须是 0..count-1 的一个排列，否则忽略并回到通道顺序。
+     */
+    @SuppressLint("NotifyDataSetChanged")
+    fun applyOrder(o: IntArray?) {
+        order = if (o == null || o.size != count || o.toSet().size != count || o.any { it !in 0 until count })
+            null else o.copyOf()
+        notifyDataSetChanged()
+    }
+
+    /** 当前显示顺序（位置 → 灯内通道下标）。 */
+    fun currentOrder(): IntArray = IntArray(count) { idx(it) }
+
+    /** 当前显示顺序下的通道标签（排列编辑对话框用）。 */
+    fun channelLabels(): List<String> = List(count) { displayName(idx(it)) }
+
+    /**
+     * 第 position 行对应灯型的属性名（如 "dim" / "pan" / "gobo1_pos"）。
+     *
+     * 混合灯型的组控制需要它：不同灯型的"第 3 通道"含义不同（一个频闪一个色盘），
+     * 所以不能按通道号照抄，必须按属性名找到每台灯各自的通道。
+     * 显示顺序（自定义排列）也一并处理，保证"推子第 5 行"与属性一致。
+     */
+    fun attrAt(position: Int): String =
+        channelAttrs?.getOrNull(idx(position)) ?: ""
+
+    /** 灯内通道号（1-based）→ 属性名。 */
+    fun attrOfChannel(chNumber: Int): String =
+        channelAttrs?.getOrNull(chNumber - 1) ?: ""
 
     @SuppressLint("NotifyDataSetChanged")
     fun setChannelCount(n: Int) {
@@ -43,6 +80,7 @@ class ChannelAdapter(
         startAddr = 1
         defaultValues = null
         groupInstances = null
+        order = null
         notifyDataSetChanged()
     }
 
@@ -68,6 +106,7 @@ class ChannelAdapter(
         fixtureName = fixture.name
         defaultValues = null
         groupInstances = null
+        order = null
         notifyDataSetChanged()
     }
 
@@ -79,7 +118,7 @@ class ChannelAdapter(
     fun applyFixtureGroup(fixture: FixtureDef, instances: List<FixtureInstance>) {
         require(instances.isNotEmpty()) { "empty group" }
         count = fixture.channelCount.coerceIn(1, DmxProtocol.MAX_CHANNELS)
-        startAddr = instances[0].startAddr.coerceIn(1, DmxProtocol.MAX_CHANNELS)
+        startAddr = instances[0].globalAddr().coerceIn(1, DmxProtocol.MAX_CHANNELS)
         val names = MutableList(count) { "CH ${it + 1}" }
         val origNames = MutableList(count) { "CH ${it + 1}" }
         val attrs = MutableList(count) { "" }
@@ -96,7 +135,8 @@ class ChannelAdapter(
         channelAttrs = attrs
         fixtureName = fixture.name
         defaultValues = null
-        groupInstances = instances.sortedBy { it.startAddr }
+        groupInstances = instances.sortedBy { it.globalAddr() }
+        order = null
         notifyDataSetChanged()
     }
 
@@ -110,15 +150,14 @@ class ChannelAdapter(
         startAddr = 1
         defaultValues = null
         groupInstances = null
+        order = null
         notifyDataSetChanged()
     }
 
     fun isFixtureMode(): Boolean = channelNames != null
     fun isGroupMode(): Boolean = groupInstances != null
     fun groupInstances(): List<FixtureInstance> = groupInstances ?: emptyList()
-    fun groupSize(): Int = groupInstances?.size ?: 0
     fun channelCount() = count
-    fun startAddress() = startAddr
 
     /**
      * 全黑/全亮/Flash 的作用范围（1-based 闭区间）。
@@ -130,7 +169,7 @@ class ChannelAdapter(
         else (1 to count)
 
     /** position → 真实 DMX 通道号（1-based）；组模式返回主灯的真实地址（仅用于回读显示）。 */
-    fun dmxChannel(position: Int): Int = startAddr + position
+    fun dmxChannel(position: Int): Int = startAddr + idx(position)
 
     private fun displayName(position: Int): String {
         val raw = (if (translated || channelOrigNames == null)
@@ -158,7 +197,7 @@ class ChannelAdapter(
             seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
                     if (binding) return
-                    val ch = bound + 1   // 灯内通道号（1-based），写入由 MainActivity 分发
+                    val ch = idx(bound) + 1   // 灯内通道号（1-based），写入由 MainActivity 分发
                     if (ch >= 1) {
                         onSet(ch, progress)
                         tvVal.text = progress.toString()
@@ -168,7 +207,7 @@ class ChannelAdapter(
                 override fun onStopTrackingTouch(sb: SeekBar) {}
             })
             tvVal.setOnClickListener {
-                if (bound >= 0) onEditValue(bound + 1)
+                if (bound >= 0) onEditValue(idx(bound) + 1)
             }
         }
     }

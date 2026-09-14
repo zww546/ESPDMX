@@ -109,6 +109,8 @@
         android:layout_height="0dp"
         android:layout_weight="1" />
 
+    <!-- 底部导航 5 项：推子 / 程序 / 效果 / 灯具（含灯库与文件） / 设置
+         文件管理已并入"灯具"页，因此这里回到 Material 标准的 5 项上限内。 -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"

@@ -78,18 +78,52 @@ data class FixtureDef(
 
 /**
  * 灯具实例（Patch）——同型号多台 = 多个实例不同起始地址。
- * 每个实例有独立 DMX 起始地址，控制时写入 startAddr + ch - 1。
+ *
+ * **双宇宙按 A/B 两条通道分，各自从 1 编号到 512**（与 MA2/Titan 的 universe 模型一致）：
+ *   A = 宇宙 1（UART1 / GPIO17），地址 1~512
+ *   B = 宇宙 2（UART2 / GPIO18），地址 1~512
+ *
+ * 对外统一换算成**全局通道 1~1024**（协议与效果计算都用它）：
+ *   `globalAddr() = (universe-1)×512 + addr`
+ *
+ * 好处：一台灯天然不可能跨宇宙 —— 每个宇宙只有 512 个地址，放不下就是放不下，
+ * 不会出现"灯的通道一半在 A 线一半在 B 线"这种物理上接不出来的 patch。
  */
 data class FixtureInstance(
     val id: String,          // 实例唯一 ID
     val fixtureId: String,   // 所属灯型 FixtureDef.id
     val name: String,        // 实例名，如 "EOS-1"
-    val startAddr: Int,      // DMX 起始地址 1..512
-    val slot: Int = 0        // 板载槽位 0..3（效果/程序），创建时分配，删除不重排
-)
+    val addr: Int,           // **本宇宙内**起始地址 1..512
+    val slot: Int = 0,       // 板载槽位 0..7（效果/程序），创建时分配，删除不重排
+    val universe: Int = 1    // 1 = A 通道，2 = B 通道
+) {
+    /** 全局通道号（1..1024）。 */
+    fun globalAddr(): Int =
+        (universe.coerceIn(1, DmxProtocol.UNIVERSES) - 1) * DmxProtocol.UNIVERSE_SIZE +
+            addr.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
 
-/** 板载槽位总数（固件 FX_MAX_COUNT / PROG_MAX_COUNT = 8，跟随实例数量）。 */
-const val SLOT_COUNT = 8
+    /** 通道字母：A / B */
+    val band: String get() = if (universe <= 1) "A" else "B"
+
+    /** 显示用："A@128" */
+    fun label(): String = "$band@$addr"
+}
+
+/**
+ * 板载**程序槽**总数（固件 PROG_MAX_COUNT = 8）。
+ *
+ * ⚠ 这**不是**实例数上限：一台灯可以有很多实例（一个宇宙 512 地址，
+ * 20ch 灯能放 25 台），而"同时上传到板子运行的独立程序"才有 8 个槽。
+ * 早期版本把两者混用，导致最多只能建 8 个实例 —— 那是 bug。
+ */
+const val PROG_SLOT_COUNT = 8
+
+/**
+ * 单次批量添加的台数上限（只是 UI 一次操作的上限，**不是实例总数上限**）。
+ * 实例总数由地址空间决定：一个宇宙 512 地址，20ch 灯能放 25 台、18ch 能放 28 台，
+ * A+B 两个宇宙合计约 50 台。
+ */
+const val MAX_BATCH_ADD = 64
 
 class FixtureStore(context: Context) {
 
@@ -100,22 +134,38 @@ class FixtureStore(context: Context) {
     // ---------- 灯具实例（Patch）----------
     private val keyInstances = "instances"
 
-    /** 全部灯具实例，按起始地址排序。 */
+    /** 全部灯具实例，按全局起始地址排序。 */
     fun instances(): List<FixtureInstance> {
         val raw = prefs.getString(keyInstances, null) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
+                // 兼容两种旧格式：
+                //   v24「universe + startAddr(1..512)」→ 直接就是 A/B + 地址
+                //   v25「startAddr = 全局通道 1..1024」→ 拆回 A/B + 地址
+                val uniRaw = if (o.has("universe")) o.getInt("universe").coerceIn(1, DmxProtocol.UNIVERSES) else 0
+                val stored = o.getInt("startAddr")
+                val uni: Int
+                val addr: Int
+                if (uniRaw > 0) {
+                    uni = uniRaw
+                    addr = stored.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+                } else {
+                    uni = if (stored > DmxProtocol.UNIVERSE_SIZE) 2 else 1
+                    addr = (if (uni > 1) stored - DmxProtocol.UNIVERSE_SIZE else stored)
+                        .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+                }
                 FixtureInstance(
                     id = o.getString("id"),
                     fixtureId = o.getString("fixtureId"),
                     name = o.getString("name"),
-                    startAddr = o.getInt("startAddr"),
-                    // 旧数据无 slot 字段：按索引分配（仅迁移用）
-                    slot = if (o.has("slot")) o.getInt("slot") else i % SLOT_COUNT
+                    addr = addr,
+                    universe = uni,
+                    // 程序槽：只用于上传板载程序，超出 8 个时取值 0（不影响实例本身）
+                    slot = (if (o.has("slot")) o.getInt("slot") else i) % PROG_SLOT_COUNT
                 )
-            }.sortedBy { it.startAddr }
+            }.sortedBy { it.globalAddr() }
         } catch (_: Exception) { emptyList() }
     }
 
@@ -126,60 +176,111 @@ class FixtureStore(context: Context) {
                 put("id", i.id)
                 put("fixtureId", i.fixtureId)
                 put("name", i.name)
-                put("startAddr", i.startAddr)
+                put("startAddr", i.addr)        // 本宇宙内地址 1..512
+                put("universe", i.universe)     // 1=A, 2=B
                 put("slot", i.slot)
             })
         }
         prefs.edit().putString(keyInstances, arr.toString()).apply()
     }
 
-    /** 分配最小空闲槽位（删除的实例释放后新实例可复用该槽）。 */
-    private fun nextFreeSlot(list: List<FixtureInstance>): Int? {
+    /**
+     * 分配一个板载**程序槽**（0..7）。
+     *
+     * 槽位是给"上传到板子运行的独立程序"用的，**不限制实例数量**：
+     * 槽位用满时返回 0（多个实例共用一个槽，后上传的覆盖先前的）。
+     * 这样实例可以照常建几百台，只是同时能跑的独立程序仍受固件 8 槽限制。
+     */
+    private fun nextFreeSlot(list: List<FixtureInstance>): Int {
         val used = list.map { it.slot }.toSet()
-        for (s in 0 until SLOT_COUNT) if (s !in used) return s
-        return null  // 槽位全满
+        for (s in 0 until PROG_SLOT_COUNT) if (s !in used) return s
+        return 0
     }
 
-    /** 添加实例。返回 null 表示成功，否则返回错误提示。 */
-    fun addInstance(fixtureId: String, name: String, startAddr: Int): String? {
-        val addr = startAddr.coerceIn(1, 512)
+    /** 添加单台（兼容旧调用）。 */
+    fun addInstance(fixtureId: String, name: String, addr: Int, universe: Int = 1): String? =
+        addInstances(fixtureId, name, addr, 1, universe)
+
+    /**
+     * 批量添加实例：在**同一个宇宙（A 或 B）内**按灯型通道数等距铺开。
+     *
+     * 第 k 台的地址 = `起始地址 + k × 灯型通道数`，全部落在本宇宙 1..512 内。
+     * 因为一台灯的通道不可能跨宇宙（现场每个宇宙是一条独立的 DMX 线，
+     * 一台灯只有一组 DMX 输入口），放不下就直接报错，不做自动挪动。
+     *
+     * @return null 表示成功；否则是错误提示（越界 / 重叠）。
+     *         先整体校验再落盘，避免"建了一半失败"。
+     */
+    fun addInstances(fixtureId: String, namePrefix: String,
+                     startAddr: Int, count: Int, universe: Int = 1): String? {
+        val uni = universe.coerceIn(1, DmxProtocol.UNIVERSES)
+        val band = if (uni == 1) "A" else "B"
         val def = fixtures.find { it.id == fixtureId } ?: return "灯型不存在"
-        // 校验范围：起始地址 + 通道数 - 1 不超过 512
-        if (addr + def.channelCount - 1 > 512) {
-            return "地址 ${addr} 超出范围（${def.channelCount}CH 需要 ${addr}~${addr + def.channelCount - 1}）"
+        // 单次最多建 64 台（受本宇宙地址空间自然限制，20ch 灯上限 25 台）
+        val n = count.coerceIn(1, MAX_BATCH_ADD)
+        val pitch = def.channelCount.coerceAtLeast(1)
+        if (pitch > DmxProtocol.UNIVERSE_SIZE) {
+            return "该灯型有 $pitch 个通道，超过单个宇宙的 ${DmxProtocol.UNIVERSE_SIZE} 通道，无法 patch"
         }
-        // 校验与已有实例重叠
+        val addr0 = startAddr.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+
+        // 先整体校验（都在本宇宙内 + 不与已有实例重叠），再落盘
         val list = instances().toMutableList()
-        for (it in list) {
-            val itDef = fixtures.find { f -> f.id == it.fixtureId } ?: continue
-            val a1 = it.startAddr
-            val a2 = it.startAddr + itDef.channelCount - 1
-            val b1 = addr
-            val b2 = addr + def.channelCount - 1
-            if (b1 <= a2 && a1 <= b2) {
-                return "与 ${it.name}（@${a1}~${a2}）地址重叠"
+        val occupied = list.filter { it.universe == uni }.mapNotNull { it ->
+            val d = fixtures.find { f -> f.id == it.fixtureId } ?: return@mapNotNull null
+            it.addr to (it.addr + d.channelCount - 1)
+        }
+        for (k in 0 until n) {
+            val b1 = addr0 + k * pitch
+            val b2 = b1 + pitch - 1
+            if (b2 > DmxProtocol.UNIVERSE_SIZE) {
+                return "$band 通道地址不足：第 ${k + 1} 台需要 $b1~$b2，" +
+                       "本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}（可减少数量或把起始地址提前）"
+            }
+            for ((a1, a2) in occupied) {
+                if (b1 <= a2 && a1 <= b2) return "$band 通道 $b1~$b2 与已有实例（$a1~$a2）重叠"
             }
         }
-        val id = "inst_${System.currentTimeMillis()}"
-        val slot = nextFreeSlot(list) ?: return "实例数已达上限（$SLOT_COUNT 个），请先删除部分实例"
-        list.add(FixtureInstance(id, fixtureId, name, addr, slot))
+
+        for (k in 0 until n) {
+            list.add(FixtureInstance("inst_${System.currentTimeMillis()}_$k", fixtureId,
+                                     "$namePrefix-${k + 1}", addr0 + k * pitch,
+                                     nextFreeSlot(list), uni))
+        }
         persistInstances(list)
         return null
     }
 
+    /** 删除多个实例（批量删除）。 */
+    fun removeInstances(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val set = ids.toSet()
+        persistInstances(instances().filterNot { it.id in set })
+    }
+
+    /** 清空全部实例。 */
+    fun removeAllInstances() = persistInstances(emptyList())
+
+    // 注：原先这里有一个 planAddInstances()（算预览地址），已删除 ——
+    // 该算法统一到 InstanceForm（纯逻辑 + 单测），避免预览与落盘两处算术漂移。
+    // 落盘仍走下面的 addInstances()，它自己会做一次完整的边界与重叠校验。
+
     fun updateInstance(inst: FixtureInstance) {
         val def = fixtures.find { it.id == inst.fixtureId } ?: return
-        if (inst.startAddr + def.channelCount - 1 > 512) return  // 越界，忽略
+        val pitch = def.channelCount.coerceAtLeast(1)
+        val uni = inst.universe.coerceIn(1, DmxProtocol.UNIVERSES)
+        val addr = inst.addr.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+        if (addr + pitch - 1 > DmxProtocol.UNIVERSE_SIZE) return   // 越界，忽略
+        val fixed = inst.copy(addr = addr, universe = uni)
         val list = instances().toMutableList()
-        // 校验与其它实例地址重叠（排除自身）
+        // 只与**同一个宇宙内**的实例比对重叠（A 和 B 是两条独立的线，可以重复）
         for (it in list) {
-            if (it.id == inst.id) continue
+            if (it.id == fixed.id || it.universe != uni) continue
             val itDef = fixtures.find { f -> f.id == it.fixtureId } ?: continue
-            val a1 = it.startAddr; val a2 = it.startAddr + itDef.channelCount - 1
-            val b1 = inst.startAddr; val b2 = inst.startAddr + def.channelCount - 1
-            if (b1 <= a2 && a1 <= b2) return  // 重叠，拒绝更新
+            val a1 = it.addr; val a2 = a1 + itDef.channelCount - 1
+            if (addr <= a2 && a1 <= addr + pitch - 1) return  // 重叠，拒绝更新
         }
-        persistInstances(list.map { if (it.id == inst.id) inst else it })
+        persistInstances(list.map { if (it.id == fixed.id) fixed else it })
     }
 
     fun deleteInstance(id: String) {
@@ -252,16 +353,22 @@ class FixtureStore(context: Context) {
 
     private fun importFromXml(raw: ByteArray, fileName: String): List<FixtureDef> {
         val xml = stripBom(raw)
-        val def = FixtureParser.parseMa2Xml(xml) ?: return emptyList()
-        saveRaw(def, ".xml", raw)
-        return listOf(def)
+        val defs = FixtureParser.parseMa2XmlAll(xml)
+        if (defs.isEmpty()) return emptyList()
+        // 原始文件按“首个灯型”的 id 保存一份（导出/上传时按灯型 id 查回）
+        saveRaw(defs.first(), ".xml", raw)
+        // 同一文件里的其它灯型（多模式）只写 json，原始文件共用同一份
+        for (d in defs.drop(1)) File(dir, "${d.id}.json").writeText(fixtureToJson(d).toString(2))
+        return defs
     }
 
     private fun importFromD4(raw: ByteArray, fileName: String): List<FixtureDef> {
         val txt = stripBom(raw)
-        val def = FixtureParser.parseD4(txt) ?: return emptyList()
-        saveRaw(def, ".d4", raw)
-        return listOf(def)
+        val defs = FixtureParser.parseD4All(txt)
+        if (defs.isEmpty()) return emptyList()
+        saveRaw(defs.first(), ".d4", raw)
+        for (d in defs.drop(1)) File(dir, "${d.id}.json").writeText(fixtureToJson(d).toString(2))
+        return defs
     }
 
     private fun importFromR20(raw: ByteArray, fileName: String): List<FixtureDef> {
@@ -314,8 +421,8 @@ class FixtureStore(context: Context) {
 
     /**
      * 检查是否需要因 App 升级而重新导入灯库。
-     * 当 versionCode 变化时，用所有已保存的 XML 重新生成 JSON，
-     * 确保 FixtureParser 的改进自动生效。
+     * 当 versionCode 变化时，用已保存的原始文件（xml/d4/r20）重新生成 JSON，
+     * 确保 FixtureParser 的改进自动生效（尤其是历史版本漏读通道的 D4/R20 灯库）。
      * @return 重新导入的数量，-1 表示首次运行无需操作
      */
     fun checkAndReimport(context: Context): Int {
@@ -332,17 +439,27 @@ class FixtureStore(context: Context) {
         if (savedVer >= curVer) return 0
 
         var count = 0
-        dir.listFiles()?.filter { it.extension == "xml" }?.forEach { xmlFile ->
-            try {
-                val raw = xmlFile.readBytes()
-                val xml = stripBom(raw)
-                val def = FixtureParser.parseMa2Xml(xml)
-                if (def != null) {
-                    File(dir, "${def.id}.json").writeText(fixtureToJson(def).toString(2))
-                    count++
-                }
-            } catch (_: Exception) {}
+        // 用原始文件重新解析。若解析出的灯型 id 与原始文件名不再一致（解析规则修正后常见），
+        // 说明旧 json 是错误解析的残留 → 删掉，避免灯库里出现重复/错位的灯型。
+        fun reparse(ext: String, parse: (String) -> List<FixtureDef>) {
+            dir.listFiles()?.filter { it.extension == ext }?.forEach { f ->
+                try {
+                    val defs = parse(stripBom(f.readBytes()))
+                    if (defs.isEmpty()) return@forEach
+                    defs.forEach { def ->
+                        File(dir, "${def.id}.json").writeText(fixtureToJson(def).toString(2))
+                        count++
+                    }
+                    val ids = defs.map { it.id }.toSet()
+                    if (!ids.contains(f.nameWithoutExtension)) {
+                        File(dir, "${f.nameWithoutExtension}.json").delete()
+                    }
+                } catch (_: Exception) {}
+            }
         }
+        reparse("xml") { FixtureParser.parseMa2XmlAll(it) }
+        reparse("d4") { FixtureParser.parseD4All(it) }
+        reparse("r20") { listOfNotNull(FixtureParser.parseR20(it)) }
         prefs.edit().putInt("last_version", curVer).apply()
         return count
     }

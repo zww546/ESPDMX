@@ -49,6 +49,13 @@ static FILE *s_upload_fp = NULL;
 #define MOUNT_POINT "/fw"
 #define CHUNK_SIZE   200   // BLE 每帧数据载荷（留空间给帧头）
 
+// 递归深度上限（list_dirs_rec / copy_tree）。
+// ⚠ 这两段代码跑在 NimBLE host task 上（CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192），
+//   每层递归在栈上开 ~1KB 缓冲，实测只容得下 6~7 层。若只靠"路径长度 ≤250"间接限制，
+//   攻击者用 0x37 MKDIR 建 125 级单字符目录、再发 0x3C 就能远程打爆栈
+//   （栈溢出会破坏 NimBLE 的 mbuf 池 → 随机崩溃）。这里给硬上限。
+#define XFER_MAX_DEPTH 8
+
 // ---- 路径辅助 ----
 // dir 允许多级，但不能以 '/' 开头/结尾、不含 ".." 与 '\'
 static bool path_valid(const char *p)
@@ -115,7 +122,11 @@ bool file_xfer_mount(void)
     }
 
     esp_vfs_fat_mount_config_t cfg = {
-        .format_if_mount_failed = true,
+        // ⚠ 必须为 false。设为 true 时，storage 分区 FAT 一旦损坏（掉电、
+        //   U 盘模式未安全弹出），挂载会静默 f_mkfs 重建 → 2MB 灯库全部丢失，
+        //   而 App 端只会看到一个空列表（0x92 count=0），用户无从察觉。
+        //   宁可让挂载失败（上层回错误）也不要静默销毁数据。
+        .format_if_mount_failed = false,
         .max_files = 4,
         .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
     };
@@ -219,10 +230,11 @@ void file_xfer_list(const char *dir, file_xfer_notify_t notify_cb)
 
 // ---- 全量目录树 ----
 // 递归收集 /fw 下所有目录（含多级），回 0x97 多帧（每帧 ≤8 条）+ 0x98 结束帧
-static void list_dirs_rec(const char *base, const char *rel,
+static void list_dirs_rec(const char *base, const char *rel, int depth,
                           file_xfer_notify_t notify_cb,
                           uint8_t *buf, int *pos, int *nframe)
 {
+    if (depth > XFER_MAX_DEPTH) return;   // 防远程栈溢出，见 XFER_MAX_DEPTH 说明
     DIR *d = opendir(base);
     if (!d) return;
     struct dirent *ent;
@@ -247,7 +259,7 @@ static void list_dirs_rec(const char *base, const char *rel,
 
         char child_base[512];
         snprintf(child_base, sizeof(child_base), "%s/%s", base, ent->d_name);
-        list_dirs_rec(child_base, child_rel, notify_cb, buf, pos, nframe);
+        list_dirs_rec(child_base, child_rel, depth + 1, notify_cb, buf, pos, nframe);
     }
     closedir(d);
 }
@@ -259,7 +271,7 @@ void file_xfer_list_dirs(file_xfer_notify_t notify_cb)
     buf[0] = 0x97;
     buf[1] = 0;   // 本帧目录数（发帧时填写）
     int pos = 2, nframe = 0;
-    list_dirs_rec(MOUNT_POINT, "", notify_cb, buf, &pos, &nframe);
+    list_dirs_rec(MOUNT_POINT, "", 0, notify_cb, buf, &pos, &nframe);
     if (nframe > 0) {
         buf[1] = (uint8_t)nframe;
         notify_cb(buf, pos);
@@ -459,8 +471,9 @@ static bool copy_one_file(const char *src, const char *dst)
     return ok;
 }
 
-static bool copy_tree(const char *src, const char *dst)
+static bool copy_tree(const char *src, const char *dst, int depth)
 {
+    if (depth > XFER_MAX_DEPTH) return false;   // 防远程栈溢出，见 XFER_MAX_DEPTH 说明
     struct stat st;
     if (stat(src, &st) != 0) return false;
     if (S_ISDIR(st.st_mode)) {
@@ -474,7 +487,7 @@ static bool copy_tree(const char *src, const char *dst)
             char sp[512], dp[512];
             snprintf(sp, sizeof(sp), "%s/%s", src, ent->d_name);
             snprintf(dp, sizeof(dp), "%s/%s", dst, ent->d_name);
-            ok = copy_tree(sp, dp);
+            ok = copy_tree(sp, dp, depth + 1);
         }
         closedir(d);
         return ok;
@@ -496,7 +509,7 @@ bool file_xfer_copy(const char *dir, const char *name, const char *dst_dir)
     size_t sl = strlen(src);
     if (strncmp(dst, src, sl) == 0 && dst[sl] == '/') return false;
 
-    bool ok = copy_tree(src, dst);
+    bool ok = copy_tree(src, dst, 0);
     if (!ok) {
         ESP_LOGW(TAG, "copy %s -> %s failed", src, dst);
         return false;

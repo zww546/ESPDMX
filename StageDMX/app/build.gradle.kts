@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.stagedmx"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "1.21"
+        versionCode = 25
+        versionName = "1.24"
     }
 
     buildTypes {
@@ -35,6 +35,9 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -44,6 +47,7 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // 注：kotlinx-coroutines-android 与 lifecycle-runtime-ktx 已移除 —— 全工程 0 引用，
+    // 属于死依赖（App 的异步全部走 Handler/Looper）。将来若引入协程/ViewModel 再加回来。
+    testImplementation("junit:junit:4.13.2")
 }

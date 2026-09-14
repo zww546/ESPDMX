@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 实例管理：三台叠放的灯具，表达"同一灯型的多个实例" -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M12,3L2,7.5l10,4.5l10,-4.5L12,3z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:fillAlpha="0.65"
+        android:pathData="M2,12l10,4.5L22,12l-2.2,-1L12,14.3L4.2,11L2,12z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:fillAlpha="0.4"
+        android:pathData="M2,16.5L12,21l10,-4.5l-2.2,-1L12,18.8L4.2,15.5L2,16.5z" />
+</vector>

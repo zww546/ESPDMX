@@ -11,8 +11,14 @@ app/build/
 # ===== ESP-IDF (stagedmx_std) =====
 stagedmx_std/build/
 stagedmx_std/managed_components/
+# sdkconfig 是 idf.py 生成的派生文件：入库会永久屏蔽 sdkconfig.defaults
+# （改 defaults 不生效）。只保留 sdkconfig.defaults。
+stagedmx_std/sdkconfig
 *.elf
 *.map
+# Python 工具链缓存
+__pycache__/
+*.pyc
 
 # ===== 备份文件 =====
 *.bak
@@ -23,6 +29,11 @@ stagedmx_std/managed_components/
 # ===== 发布产物（APK / 固件 bin，不入库，用 Release 分发）=====
 release_assets/
 app/release/
+
+# ===== 本地 UI 设计运行产物（截图 / 生成页面 / 设计工具导出）=====
+StageDMX/ui-design-runs/
+StageDMX/layout_backups/
+StageDMX/style.json
 
 # ===== 系统 =====
 .DS_Store

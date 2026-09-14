@@ -9,6 +9,14 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # 控制台走 USB-Serial/JTAG
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
+# ===== DMX 时序（承重配置，勿删）=====
+# dmx.c 顶部记录了历史故障：UART TX_DONE 中断被 cache 停顿饿死 → 驱动卡在
+# DMX_STATUS_SENDING → 之后 dmx_send() 恒返回 0，DMX 停发但 BLE 一切正常，
+# 只能重启恢复。把 DMX ISR 常驻 IRAM 后该故障彻底消失。
+# ⚠ 这条以前只存在于被提交的 sdkconfig（idf.py 生成的派生文件）里，改 defaults 不生效；
+#   现在显式写在这里，sdkconfig 已从版本控制移除。
+CONFIG_DMX_ISR_IN_IRAM=y
+
 # FATFS 长文件名（灯库文件名如 "omarte_ares_p7_34_channels.xml" 远超 8.3 限制）
 CONFIG_FATFS_LFN_NONE=n
 CONFIG_FATFS_LFN_HEAP=y

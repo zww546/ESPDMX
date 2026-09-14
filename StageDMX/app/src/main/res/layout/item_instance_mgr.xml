@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 实例行：选中状态用整行背景高亮表示（不用勾选框）。
+     点行 = 选中/取消选中（参与同时控制）；长按 = 进入多选删除模式。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -8,12 +10,6 @@
     android:paddingVertical="10dp"
     android:paddingHorizontal="12dp"
     android:layout_marginBottom="6dp">
-
-    <CheckBox
-        android:id="@+id/cbInstSel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:buttonTint="@color/ok" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -33,4 +29,30 @@
             android:textColor="@color/textDim"
             android:textSize="12sp" />
     </LinearLayout>
+
+    <!-- 选中标记（多选删除模式下也用它，文案由代码切换） -->
+    <TextView
+        android:id="@+id/tvInstCheck"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="34dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="@color/ok"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <!-- 编辑地址（非多选模式下显示） -->
+    <TextView
+        android:id="@+id/btnInstEdit"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:paddingHorizontal="10dp"
+        android:gravity="center"
+        android:text="改址"
+        android:textColor="@color/accent"
+        android:textSize="12sp"
+        android:background="@drawable/bg_pill"
+        android:clickable="true"
+        android:focusable="true" />
 </LinearLayout>

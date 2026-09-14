@@ -8,19 +8,27 @@
     android:layout_marginBottom="6dp"
     android:gravity="center_vertical">
 
+    <!-- 批量选择框：高度必须小于文字区高度(约 33dp)，否则进入批量模式时会把整行撑高，
+         导致列表行高在“普通/批量”之间跳变。 -->
     <CheckBox
         android:id="@+id/cbSelect"
         android:layout_width="36dp"
-        android:layout_height="36dp"
+        android:layout_height="24dp"
         android:layout_marginEnd="4dp"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:paddingVertical="0dp"
         android:visibility="gone" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:minHeight="24dp"
+        android:gravity="center_vertical"
         android:orientation="vertical">
 
+        <!-- 单行显示：灯名 + 通道数（第二行的模式/通道描述已移除） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -34,41 +42,18 @@
                 android:layout_weight="1"
                 android:textColor="#ffffff"
                 android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnToggleLang"
-                android:layout_width="36dp"
-                android:layout_height="24dp"
-                android:text="中"
-                android:textSize="11sp"
-                android:textColor="@color/accent"
                 android:textStyle="bold"
-                android:gravity="center"
-                android:background="@drawable/bg_pill_accent"
-                android:clickable="true"
-                android:focusable="true" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/tvFixtureMode"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColor="#aaaaaa"
-                android:textSize="12sp" />
+                android:maxLines="1"
+                android:ellipsize="end" />
 
             <TextView
                 android:id="@+id/tvFixtureChannels"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
                 android:textColor="#ff9800"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:maxLines="1" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

@@ -6,6 +6,49 @@
     android:padding="8dp"
     android:background="@color/bg">
 
+    <!-- 页签：内置效果 / 程序（与"灯具"页的 App灯库/设备灯库/文件管理 同一套交互） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:id="@+id/btnTabBuiltin"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="内置效果"
+            android:textSize="13sp"
+            android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bg_pill_outline_white"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:id="@+id/btnTabProgram"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="程序"
+            android:textSize="13sp"
+            android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bg_pill_outline_white" />
+    </LinearLayout>
+
+    <!-- ================= 内置效果 ================= -->
+    <LinearLayout
+        android:id="@+id/layoutFxBuiltin"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
     <!-- 当前效果 -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -41,6 +84,91 @@
         android:textSize="12sp"
         android:paddingBottom="4dp" />
 
+    <!-- 效果预设：一键保存/恢复当前所有内置效果的数值与开关状态 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_card"
+        android:padding="6dp"
+        android:layout_marginBottom="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="效果预设"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/spFxPreset"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFxPresetSave"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="34dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="11sp"
+                android:text="保存当前" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFxPresetApply"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="11sp"
+                android:text="一键应用" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFxPresetOff"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="11sp"
+                android:text="全部关闭" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFxPresetDel"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="11sp"
+                android:text="删除" />
+        </LinearLayout>
+    </LinearLayout>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvFxPresets"
         android:layout_width="match_parent"
@@ -54,6 +182,16 @@
         android:orientation="vertical"
         android:paddingTop="4dp"
         android:visibility="gone">
+
+        <!-- 作用范围（v6 阵列） -->
+        <TextView
+            android:id="@+id/tvFxArray"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="作用范围：单台"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:paddingBottom="2dp" />
 
         <TextView
             android:id="@+id/tvAmplitude"
@@ -77,7 +215,7 @@
             android:text="速度: 128"
             android:textColor="@color/text"
             android:textSize="13sp"
-            android:paddingTop="4dp" />
+            android:paddingTop="2dp" />
 
         <SeekBar
             android:id="@+id/seekSpeed"
@@ -85,5 +223,109 @@
             android:layout_height="wrap_content"
             android:max="255"
             android:progress="128" />
+
+        <!-- v6：相位扩散（波浪的唯一来源） -->
+        <TextView
+            android:id="@+id/tvSpread"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="扩散: 0°"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:paddingTop="2dp" />
+
+        <SeekBar
+            android:id="@+id/seekSpread"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="255"
+            android:progress="0" />
+
+        <!-- v6：整体相位 -->
+        <TextView
+            android:id="@+id/tvPhase"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="相位: 0°"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:paddingTop="2dp" />
+
+        <SeekBar
+            android:id="@+id/seekPhase"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="255"
+            android:progress="0" />
+
+        <!-- v6：波形 / 方向 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="2dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="波形"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/spShape"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="方向"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/spDirection"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <!-- v6：阵列包络 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="包络"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/spEnvelope"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
     </LinearLayout>
+    </LinearLayout><!-- /layoutFxBuiltin -->
+
+    <!-- ================= 程序（内容由代码把 page_program 的根视图装进来） ================= -->
+    <LinearLayout
+        android:id="@+id/layoutProgram"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone" />
 </LinearLayout>

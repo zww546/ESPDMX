@@ -11,14 +11,36 @@
         android:orientation="vertical">
 
         <!-- 基本信息 -->
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="灯库编辑器"
-            android:textColor="@color/text"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:paddingBottom="8dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/btnBackFromEditor"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:paddingHorizontal="12dp"
+                android:gravity="center"
+                android:text="← 返回设置"
+                android:textColor="@color/accent"
+                android:textSize="13sp"
+                android:background="@drawable/bg_pill"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="灯库编辑器"
+                android:textColor="@color/text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:gravity="center" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

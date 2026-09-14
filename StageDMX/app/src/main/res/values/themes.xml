@@ -5,6 +5,14 @@
         <item name="colorSecondary">@color/accent2</item>
         <item name="android:colorBackground">@color/bg</item>
         <item name="colorSurface">@color/surface</item>
+        <!-- 覆盖 Material3 默认配色，否则未定义的角色会漏出浅紫/绿等默认色：
+             TonalButton（记录/删除选中/编辑顺序/一键应用）与底部导航选中指示器都用
+             colorSecondaryContainer，这里统一到深色 surface2 + 蓝色文字。 -->
+        <item name="colorSecondaryContainer">@color/surface2</item>
+        <item name="colorOnSecondaryContainer">@color/accent</item>
+        <item name="colorSurfaceVariant">@color/surface2</item>
+        <item name="colorOnSurfaceVariant">@color/textDim</item>
+        <item name="colorOutline">@color/textDim</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>

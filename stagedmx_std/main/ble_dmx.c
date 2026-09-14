@@ -3,10 +3,15 @@
 #include "dmx.h"
 #include "program.h"
 #include "fx.h"
+#include "fx_proto.h"
 #include "usb_msc.h"
 #include "file_xfer.h"
 #include <string.h>
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -24,9 +29,84 @@ static volatile bool s_connected = false;
 
 static void advertise(void);
 static void file_notify_cb(const uint8_t *data, uint16_t len);
+static void state_sync_request(void);
 
 bool ble_dmx_is_connected(void) { return s_connected; }
 const char *ble_dmx_name(void)  { return DEVICE_NAME; }
+
+// ---------- 状态同步（App 重启 / 单片机重启后保持一致）----------
+// App 写 0x05 请求整机状态，固件回：
+//   0x82 flags(1) uptime(4, 秒, 大端) fxCount(1) progMask(1)
+//   0x83 seq(1) startHi startLo count(1) data[count]      （1024 通道分块，每块 ≤255 → 5 帧）
+//   0x84 slot(1) fxId(1) ampHi ampLo speedHi speedLo      （每个运行中的效果一帧）
+//   0x85                                                   （结束）
+// App 用 uptime 判断单片机是否重启过：重启过 → 用 App 状态覆盖；
+// 否则（App 自己重启/重连）→ 采纳设备状态，使开关与数值显示与单片机一致。
+#define STATE_MAX_PAYLOAD 260
+
+static SemaphoreHandle_t s_state_sem = NULL;
+static uint8_t s_state_buf[STATE_MAX_PAYLOAD];
+static volatile uint8_t s_state_seq = 0;
+
+static void state_sync_request(void)
+{
+    if (s_state_sem) xSemaphoreGive(s_state_sem);
+}
+
+static void state_sync_task(void *arg)
+{
+    static uint8_t frame[DMX_CHANNELS];
+    while (1) {
+        if (xSemaphoreTake(s_state_sem, portMAX_DELAY) != pdTRUE) continue;
+        if (!s_connected) continue;
+
+        uint32_t up_s = (uint32_t)(esp_timer_get_time() / 1000000);
+        uint8_t prog_mask = 0;
+        for (int i = 0; i < PROG_MAX_COUNT && i < 8; i++) {
+            if (program_is_playing(i)) prog_mask |= (uint8_t)(1u << i);
+        }
+        int fx_count = fx_running_count();
+
+        uint8_t *h = s_state_buf;
+        h[0] = 0x82; h[1] = 0x00;
+        h[2] = (uint8_t)(up_s >> 24); h[3] = (uint8_t)(up_s >> 16);
+        h[4] = (uint8_t)(up_s >> 8);  h[5] = (uint8_t)up_s;
+        h[6] = (uint8_t)fx_count;
+        h[7] = prog_mask;
+        ble_dmx_notify(h, 8);
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        // 1024 通道快照（纯通道数组，buf[0] = 全局通道 1；无起始码）
+        dmx_state_snapshot(frame);
+        for (uint16_t start = 1; start <= DMX_CHANNELS; start += 255) {
+            uint16_t count = (uint16_t)(DMX_CHANNELS - start + 1);
+            if (count > 255) count = 255;
+            s_state_buf[0] = 0x83;
+            s_state_buf[1] = s_state_seq++;
+            s_state_buf[2] = (uint8_t)(start >> 8);
+            s_state_buf[3] = (uint8_t)(start & 0xFF);
+            s_state_buf[4] = (uint8_t)count;
+            memcpy(&s_state_buf[5], &frame[start - 1], count);
+            ble_dmx_notify(s_state_buf, (uint16_t)(5 + count));
+            vTaskDelay(pdMS_TO_TICKS(8));
+        }
+
+        for (int s = 0; s < FX_MAX_COUNT; s++) {
+            uint8_t id = 0; uint16_t amp = 0, spd = 0;
+            if (!fx_get_info((uint8_t)s, &id, &amp, &spd)) continue;
+            uint8_t *b = s_state_buf;
+            b[0] = 0x84; b[1] = (uint8_t)s; b[2] = id;
+            b[3] = (uint8_t)(amp >> 8); b[4] = (uint8_t)(amp & 0xFF);
+            b[5] = (uint8_t)(spd >> 8); b[6] = (uint8_t)(spd & 0xFF);
+            ble_dmx_notify(b, 7);
+            vTaskDelay(pdMS_TO_TICKS(8));
+        }
+
+        uint8_t end = 0x85;
+        ble_dmx_notify(&end, 1);
+        ESP_LOGI(TAG, "state sync sent (uptime=%us fx=%d prog=0x%02x)", (unsigned)up_s, fx_count, prog_mask);
+    }
+}
 
 // ---------- 指令帧解析 ----------
 // 工具: 解析帧内 "lenX data…" 可变长字符串段，消除 0x31-0x3C 文件命令的重复样板。
@@ -82,11 +162,15 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         if (count == 0) count = 256;           // count 字段 0 视为 256（协议上限 255，防御）
         if (len < 4 + count) count = len - 4;
         if (count > 0) dmx_state_set_range(start, &d[4], count);
+#ifdef RX_TRACE
+        ESP_LOGI(TAG, "RX 0x01 start=%u count=%u v0=%u", start, count, count ? d[4] : 0);
+#endif
         break;
     }
     case 0x02: dmx_state_set_all(0);   break;   // blackout
     case 0x03: dmx_state_set_all(255); break;   // full on
     case 0x04: break;                            // ping
+    case 0x05: state_sync_request();  break;     // 请求整机状态（App 重连/重启后同步）
     case 0x10: { // 清空程序: 0x10 prog_id
         uint8_t pid = (len >= 2) ? d[1] : 0;
         program_clear(pid);
@@ -121,34 +205,11 @@ static void handle_frame(const uint8_t *d, uint16_t len)
     case 0x15: program_stop_all(); break; // 全部停止
 
     // ---- 效果层（板载离线运行）----
-    case 0x20: { // 配置+启动效果(v5): 0x20 slot fx_id pan panF tilt tiltF dim dimF r g b zoom zoomF focus focusF color gobo goboRot amp speed + blade[8] shaper_rot
-        if (len < 57) return;
-        uint8_t slot = d[1];
-        if (slot >= FX_MAX_COUNT) return;
+    case 0x20: { // 配置+启动效果：解析抽到 fx_proto.c（可在宿主端测协议契约）
+        uint8_t slot = 0;
         fx_cfg_t cfg;
-        memset(&cfg, 0, sizeof(cfg));
-        cfg.fx_id   = d[2];
-        int i = 3;
-        #define RD16() (((uint16_t)d[i] << 8) | d[i+1]); i += 2
-        cfg.pan_ch      = RD16(); cfg.pan_fine_ch  = RD16();
-        cfg.tilt_ch     = RD16(); cfg.tilt_fine_ch = RD16();
-        cfg.dim_ch      = RD16(); cfg.dim_fine_ch  = RD16();
-        cfg.r_ch        = RD16(); cfg.g_ch         = RD16();
-        cfg.b_ch        = RD16();
-        cfg.zoom_ch     = RD16(); cfg.zoom_fine_ch = RD16();
-        cfg.focus_ch    = RD16(); cfg.focus_fine_ch = RD16();
-        cfg.color_ch    = RD16();
-        cfg.gobo_ch     = RD16();
-        cfg.gobo_rot_ch = RD16();
-        cfg.amp16       = RD16();
-        cfg.speed       = RD16();
-        // v5：切割片 + 切割旋转（0x20 帧尾追加 18 字节）
-        for (int b = 0; b < FX_BLADE_COUNT; b++) {
-            cfg.blade_ch[b] = RD16();
-        }
-        cfg.shaper_rot_ch = RD16();
-        #undef RD16
-        if (cfg.fx_id >= 1 && cfg.fx_id <= 13) fx_set(slot, &cfg);
+        if (!fx_cfg_parse(d, len, &slot, &cfg)) return;
+        fx_set(slot, &cfg);
         break;
     }
     case 0x21: { // 停止效果: 0x21 slot
@@ -181,9 +242,12 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         ble_dmx_notify(resp, 2);
         break;
     }
-    case 0x34: { // LIST_FILES: 0x34 [dirLen dir…]（无参数 = 根目录）
+    case 0x34: { // LIST_FILES: 0x34 [dirLen dir…]（无参数 = 根目录，回 0x92）
         char dir[256]; dir[0] = '\0';
-        if (parse_dir(d, len, 1, dir, 256) < 0) return;
+        // ⚠ 无参数（len==1）也是合法的“根目录”请求：旧代码无条件调用 parse_dir，
+        //   而 parse_dir 在缺少 dirLen 字节时会失败 → 整个 case 直接 return，
+        //   App 请求根目录（发裸 0x34）时永远收不到 0x92，表现为“设备灯库/文件管理 加载不出”。
+        if (len > 1 && parse_dir(d, len, 1, dir, 256) < 0) return;
         file_xfer_list(dir, file_notify_cb);
         break;
     }
@@ -334,7 +398,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
             s_connected = true;
-            dmx_force_sync();   // BLE重连: 通知DMX强制刷新
             ESP_LOGI(TAG, "connected");
         } else {
             advertise();
@@ -436,5 +499,10 @@ void ble_dmx_init(void)
 
     ble_svc_gap_device_name_set(DEVICE_NAME);
     nimble_port_freertos_init(host_task);
+
+    // 状态同步发送任务：显式钉在 core 0（射频/协议栈那一核），
+    // 它的 512 通道突发上报 + 文件操作绝不能跑到 core 1 干扰 DMX。
+    if (!s_state_sem) s_state_sem = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(state_sync_task, "ble_state", 4096, NULL, 4, NULL, 0);
     ESP_LOGI(TAG, "BLE init done");
 }

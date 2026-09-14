@@ -11,6 +11,7 @@
 #include "ble_dmx.h"
 #include "program.h"
 #include "fx.h"
+#include "render.h"
 #include "usb_msc.h"
 
 static const char *TAG = "stagedmx_std";
@@ -26,10 +27,10 @@ void app_main(void)
 
     dmx_state_init();
     dmx_start();
-    program_start_task();
-    fx_start_task();
+    render_start_task();   // v6：程序层 + 效果层 合成在同一个渲染管线里
     ble_dmx_init();
 
     ESP_LOGI(TAG, "StageDMX Std ready.");
-    ESP_LOGI(TAG, "BLE: StageDMX-01  |  DMX: TX=%d DE=%d", DMX_TX_PIN, DMX_DE_PIN);
+    ESP_LOGI(TAG, "BLE: StageDMX-01  |  DMX: TX1=%d TX2=%d DE=%d  |  %d universes",
+             DMX_TX_PIN, DMX_TX2_PIN, DMX_DE_PIN, DMX_UNIVERSES);
 }

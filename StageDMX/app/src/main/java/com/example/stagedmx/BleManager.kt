@@ -39,22 +39,32 @@ class BleManager(private val ctx: Context) {
     }
 
     var listener: Listener? = null
-    var state: State = State.IDLE
+    // ⚠ 这几个字段会被 GATT binder 线程写、主线程读，必须 @Volatile，
+    //   否则主线程可能永远读到旧的 null（表现为"连上了但一帧都发不出去"）。
+    @Volatile var state: State = State.IDLE
         private set
+    @Volatile private var gatt: BluetoothGatt? = null
+    @Volatile private var writeChar: BluetoothGattCharacteristic? = null
+    @Volatile private var connectedDevice: BluetoothDevice? = null
+    @Volatile private var deviceAddress: String? = null
 
     private val main = Handler(Looper.getMainLooper())
     private val btManager = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter: BluetoothAdapter? = btManager.adapter
 
     private val scanner get() = adapter?.bluetoothLeScanner
-    private var scanning = false
-    private var gatt: BluetoothGatt? = null
-    private var deviceAddress: String? = null
-    private var connectedDevice: BluetoothDevice? = null
-    private var writeChar: BluetoothGattCharacteristic? = null
+    @Volatile private var scanning = false
 
-    // 写队列
-    private val writeQueue = ArrayDeque<ByteArray>()
+    // ---- 写队列 ----
+    // 链路层优先级：Control = 可被更新的同类帧取代（丢弃永远以"整帧"为单位）；
+    //               Reliable = 绝不丢弃（文件传输 / 程序上传等有状态序列）。
+    enum class FrameKind { Control, Reliable }
+
+    private class Queued(val data: ByteArray, val kind: FrameKind)
+
+    /** ⚠ writeQueue / writeInFlight / writeFailCount 的一切访问都必须在 writeLock 内。 */
+    private val writeLock = Any()
+    private val writeQueue = ArrayDeque<Queued>()
     private var writeInFlight = false
     private var writeFailCount = 0          // 连续提交失败计数
     private val writeFailMax = 3            // 超过则丢弃，避免死循环
@@ -163,32 +173,54 @@ class BleManager(private val ctx: Context) {
     }
 
     fun close() {
-        try { gatt?.close() } catch (_: Exception) {}
+        val old = gatt
         gatt = null
         writeChar = null
-        writeQueue.clear()
-        writeInFlight = false
+        synchronized(writeLock) {
+            writeQueue.clear()
+            writeInFlight = false
+            writeFailCount = 0
+        }
+        // ⚠ 不能在 synchronized 块里调 gatt.close()：回调可能在别的线程进来。
+        try { old?.close() } catch (_: Exception) {}
+    }
+
+    /** 断开/关闭时清空共享连接状态。 */
+    private fun clearLinkState() {
+        connectedDevice = null
+        close()
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
+        // ⚠ 所有回调第一件事：确认这个 g 是否仍是"当前连接"。
+        //   重连时 connect() 会 close() 旧的 GATT 再 connectGatt()，而旧 GATT 的
+        //   滞后回调仍会到达。若不校验，旧连接的 DISCONNECTED 会把刚建立的新连接
+        //   清空（writeChar=null / queue.clear / setState(DISCONNECTED)）→
+        //   表现为"重连后能用但一帧都不输出"。
+        private fun isStale(g: BluetoothGatt): Boolean {
+            if (g === gatt) return false
+            try { g.close() } catch (_: Exception) {}
+            return true
+        }
+
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+            if (isStale(g)) return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 // 先协商更大 MTU，回调里再发现服务
                 if (!g.requestMtu(517)) g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                connectedDevice = null
-                writeChar = null
-                writeQueue.clear()
-                writeInFlight = false
+                clearLinkState()
                 setState(State.DISCONNECTED, "status=$status")
             }
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            if (isStale(g)) return
             g.discoverServices()
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+            if (isStale(g)) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 setState(State.DISCONNECTED, "服务发现失败 $status"); return
             }
@@ -197,13 +229,14 @@ class BleManager(private val ctx: Context) {
                 setState(State.DISCONNECTED, "未找到 DMX 服务")
                 disconnect(); return
             }
-            writeChar = svc.getCharacteristic(DmxProtocol.CHAR_WRITE_UUID)
+            val wc = svc.getCharacteristic(DmxProtocol.CHAR_WRITE_UUID)
             val notifyChar = svc.getCharacteristic(DmxProtocol.CHAR_NOTIFY_UUID)
             if (notifyChar != null) enableNotify(g, notifyChar)
-            if (writeChar == null) {
+            if (wc == null) {
                 setState(State.DISCONNECTED, "未找到写特征")
                 disconnect(); return
             }
+            writeChar = wc
             setState(State.CONNECTED, deviceAddress)
         }
 
@@ -221,18 +254,21 @@ class BleManager(private val ctx: Context) {
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
-            writeInFlight = false
+            if (isStale(g)) return
+            synchronized(writeLock) { writeInFlight = false }
             pump()
         }
 
         // API 33+
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
+            if (isStale(g)) return
             main.post { listener?.onNotify(value) }
         }
 
         // API <33
         @Deprecated("Deprecated in API 33")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+            if (isStale(g)) return
             @Suppress("DEPRECATION")
             val v = ch.value ?: return
             main.post { listener?.onNotify(v) }
@@ -240,38 +276,51 @@ class BleManager(private val ctx: Context) {
     }
 
     // ---------------- 写（串行队列） ----------------
-    /** 排队发送一帧；drop=true 时若队列积压则丢弃旧帧（实时滑条场景）。 */
-    fun send(frame: ByteArray, coalesceRealtime: Boolean = false) {
-        val g = gatt ?: return
-        if (writeChar == null) return
-        synchronized(writeQueue) {
-            if (coalesceRealtime && writeQueue.size > 6) {
-                // 实时数据积压：清掉旧的，保留最新，避免延迟越滚越大
-                writeQueue.clear()
+    /**
+     * 排队发送一帧。
+     *
+     * @param kind Control 表示这一帧是"绝对状态覆盖"（如 0x01 通道段设置），当队列积压时
+     *             可以被更新的同类帧取代 —— 丢弃**以整帧为单位**。
+     *             Reliable 用于文件传输/程序上传这类有状态序列，永不丢弃。
+     *
+     * ⚠ 历史 bug：旧实现按"帧"做时延合并（队列 >6 就 clear），而 App 一次整帧刷新会拆成
+     *   多个 ≤255 字节的分块，于是清队列会把整帧刷新的前半段丢掉、只留最后一块 →
+     *   固件收到半帧，舞台灯跳到错值。现在合并整帧：被取代的那些 setRange 块全部丢掉，
+     *   但**最新一次刷新的所有块完整保留**。
+     */
+    fun send(frame: ByteArray, kind: FrameKind = FrameKind.Reliable) {
+        if (gatt == null || writeChar == null) return
+        synchronized(writeLock) {
+            if (kind == FrameKind.Control) {
+                // 去掉排队中所有尚未发出的 Control 帧（它们已被本次状态取代）
+                val it = writeQueue.iterator()
+                while (it.hasNext()) if (it.next().kind == FrameKind.Control) it.remove()
             }
-            writeQueue.addLast(frame)
+            writeQueue.addLast(Queued(frame, kind))
         }
         pump()
     }
 
     private fun pump() {
-        val g = gatt ?: return
         val ch = writeChar ?: return
-        synchronized(writeQueue) {
+        synchronized(writeLock) {
             if (writeInFlight) return
-            val frame = writeQueue.pollFirst() ?: return
+            val g = gatt ?: return
+            val item = writeQueue.pollFirst() ?: return
             writeInFlight = true
             val type = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                g.writeCharacteristic(ch, frame, type) == BluetoothGatt.GATT_SUCCESS
-            } else {
-                @Suppress("DEPRECATION")
-                run {
-                    ch.writeType = type
-                    ch.value = frame
-                    g.writeCharacteristic(ch)
+            val ok = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    g.writeCharacteristic(ch, item.data, type) == BluetoothGatt.GATT_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    run {
+                        ch.writeType = type
+                        ch.value = item.data
+                        g.writeCharacteristic(ch)
+                    }
                 }
-            }
+            } catch (_: Exception) { false }
             if (!ok) {
                 // 提交失败：有限重试，超限丢弃避免死循环
                 writeInFlight = false
@@ -280,7 +329,7 @@ class BleManager(private val ctx: Context) {
                     writeQueue.clear()
                     return
                 }
-                writeQueue.addFirst(frame)
+                writeQueue.addFirst(item)
                 main.postDelayed({ pump() }, 15)
             } else {
                 writeFailCount = 0

@@ -5,6 +5,8 @@ idf_component_register(
          "ble_dmx.c"
          "program.c"
          "fx.c"
+         "fx_proto.c"
+         "render.c"
          "usb_msc.c"
          "file_xfer.c"
     INCLUDE_DIRS "."

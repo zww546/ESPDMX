@@ -41,15 +41,42 @@ object FxEngine {
     /** 板载效果槽总数（固件 FX_MAX_COUNT=8，全局共享）。 */
     const val SLOT_COUNT = 8
 
+    /** 阵列最大台数（固件 FX_MAX_TARGETS=64）。 */
+    const val MAX_TARGETS = 64
+
+    // ---- v6 阵列参数取值 ----
+    /** 波形 shape：0正弦 1三角 2方波 3脉冲 4随机 5锯齿 */
+    val SHAPE_NAMES = listOf("正弦", "三角", "方波", "脉冲", "随机", "锯齿")
+    /** 方向 direction：0正序 1反序 2往返 */
+    val DIR_NAMES = listOf("正序", "反序", "往返")
+    /** 阵列包络 envelope：0无 1渐入 2渐出 3对称 4两端强 */
+    val ENV_NAMES = listOf("无", "渐入", "渐出", "对称(中间强)", "两端强")
+
     /** 每个效果状态（占用一个固件 slot）。 */
     data class FxState(
         val fxId: Int,
-        val amplitude: Int,
-        val speed: Int,
+        val amplitude: Int,     // 普通效果：0..255；切割循环：循环间隔(ms)
+        val speed: Int,         // 普通效果：33..3277；切割循环：每步时长(ms)
         val slot: Int,
+        // ---- v6 阵列参数 ----
+        val stride: Int = 0,    // 相邻实例地址差（0 = 单台）
+        val count: Int = 1,     // 台数 1..MAX_TARGETS
+        val spread: Int = 0,    // 相位扩散 0..255（0=全排同步，128=奇偶交替）
+        val shape: Int = 0,     // 波形
+        val direction: Int = 0, // 方向
+        val phase: Int = 0,     // 整体相位偏移 0..255
+        val envelope: Int = 0,  // 阵列包络
         val ptSpeedCh: Int? = null,   // 该实例的 PT Speed 通道（真实地址），停止时恢复
         val ptSpeedReal: Int = 0      // PT Speed 真实通道号
     )
+
+    /** 设备上报的运行中效果（用于 APP 重启后同步开关状态）。 */
+    data class DeviceFx(val slot: Int, val fxId: Int, val amp16: Int, val speed: Int)
+
+    /** 内置效果预设里的一项：某效果的数值 + 开关状态。 */
+    data class FxParam(val fxId: Int, val amplitude: Int, val speed: Int, val on: Boolean,
+                       val spread: Int = 0, val shape: Int = 0, val direction: Int = 0,
+                       val phase: Int = 0, val envelope: Int = 0)
 
     // ---- 由 MainActivity 在应用灯具后更新（当前实例配置）----
     var panCh = 28; var panFineCh = 0; var tiltCh = 30; var tiltFineCh = 0
@@ -64,56 +91,80 @@ object FxEngine {
     val bladeCh: IntArray = IntArray(8)     // 切割片通道（灯内号，0=该片不存在）
     var shaperRotCh = 0                     // 切割旋转
     var ptSpeedCh: Int? = null       // PT Speed 通道号
-    var startAddr = 1                // 当前实例 DMX 起始地址（效果通道偏移基准）
+    var startAddr = 1                // 当前阵列**第 0 台**的全局起始通道（效果通道偏移基准）
+    var targetStride = 0             // 阵列相邻实例地址差（0 = 单台）
+    var targetCount = 1              // 阵列台数
     // 未激活时的预览参数（点击预设项后，滑块可先调，开关启动才生效）。
-    // 按预设 id 分别记忆：否则“切割循环”会继承上一个效果的速度，默认 512(=12.8s/步)，
-    // 启动后长时间没有任何动作，看起来像“效果无法使用”。
+    // 按预设 id 分别记忆：否则“切割循环”会继承上一个效果的速度。
     private val previewAmpById = mutableMapOf<Int, Int>()
     private val previewSpeedById = mutableMapOf<Int, Int>()
+    private val previewSpreadById = mutableMapOf<Int, Int>()
+    private val previewShapeById = mutableMapOf<Int, Int>()
+    private val previewDirById = mutableMapOf<Int, Int>()
+    private val previewPhaseById = mutableMapOf<Int, Int>()
+    private val previewEnvById = mutableMapOf<Int, Int>()
     private const val FX_CUT_LOOP = 13
 
-    /** 切割循环默认每步时长 500ms（speed = 65536/500 ≈ 131，在固件 33..3277 合法区间内）。 */
+    /** 切割循环默认每步时长 500ms、循环间隔 2s。 */
     private const val CUT_DEFAULT_STEP_MS = 500
     private const val CUT_DEFAULT_GAP_MS = 2000
 
-    /** 各效果的默认预览速度（8.8 定点）。 */
+    /** 各效果的默认预览速度。 */
     private fun defaultPreviewSpeed(fxId: Int): Int = when (fxId) {
-        FX_CUT_LOOP -> cutStepMsToSpeed(CUT_DEFAULT_STEP_MS)
+        FX_CUT_LOOP -> CUT_DEFAULT_STEP_MS      // 切割循环：每步时长(ms)
         else -> SPEED_DEFAULT
     }
 
-    /** 各效果的默认预览幅度。切割循环的幅度字段 = 循环间隔，按 128ms/档换算。 */
+    /** 各效果的默认预览幅度。 */
     private fun defaultPreviewAmp(fxId: Int): Int = when (fxId) {
-        FX_CUT_LOOP -> cutGapMsToAmp(CUT_DEFAULT_GAP_MS)
+        FX_CUT_LOOP -> CUT_DEFAULT_GAP_MS       // 切割循环：循环间隔(ms)
         else -> 128
     }
 
     // ---- 切割循环（fx_id=13）参数换算 ----
-    // 固件把 amp16/speed 复用为时间参数（见 fx.c case 13），App 端在这里做物理时间换算，
-    // 使滑条显示的是“秒”而不是无意义的原始值，且启动即用合理默认值：
-    //   每步时长: speed = 65536 / 步时长(ms)      （固件 step_ticks = 655360/speed）
-    //   循环间隔: amp16 = 间隔(ms)                （固件 gap_ticks = amp16/10）
+    // 固件把 amp16/speed 复用为时间参数（见 fx.c case 13）：**单位是 10ms tick**
+    //   speed  = 每步时长 / 10ms      （固件 step_ticks = speed）
+    //   amp16  = 循环间隔 / 10ms      （固件 gap_ticks  = amp16）
+    // App 侧统一用“毫秒”存储/显示（FxState.amplitude=间隔ms, .speed=每步ms），下发时除以 10。
+    //
+    // ⚠ 历史 BUG：旧版 App 用 speed = 65536/步时长(ms)，而固件在同一公式上又乘了 tick(10ms)，
+    // 导致实际每步时长是滑条显示值的 100 倍（0.5s 显示 → 实际 50s），看起来“切割循环不动”。
     const val CUT_STEP_MS_MIN = 100
     const val CUT_STEP_MS_MAX = 5000
     const val CUT_GAP_MS_MIN = 0
     const val CUT_GAP_MS_MAX = 20000
 
+    /** 每步时长(ms) → 固件 speed（10ms tick 数）。 */
     fun cutStepMsToSpeed(ms: Int): Int =
-        (65536 / ms.coerceIn(CUT_STEP_MS_MIN, CUT_STEP_MS_MAX)).coerceIn(SPEED_MIN, SPEED_MAX)
+        (ms.coerceIn(CUT_STEP_MS_MIN, CUT_STEP_MS_MAX) / 10).coerceIn(1, 65535)
 
+    /** 固件 speed → 每步时长(ms)。 */
     fun cutSpeedToStepMs(speed: Int): Int =
-        (65536 / speed.coerceAtLeast(1)).coerceIn(CUT_STEP_MS_MIN, CUT_STEP_MS_MAX)
+        (speed.coerceAtLeast(1) * 10).coerceIn(CUT_STEP_MS_MIN, CUT_STEP_MS_MAX)
 
-    fun cutGapMsToAmp(ms: Int): Int {
-        val m = ms.coerceIn(CUT_GAP_MS_MIN, CUT_GAP_MS_MAX)
-        if (m <= 0) return 0                        // 0 = 无间隔
-        return ((m / 128) + 1).coerceIn(1, 255)
-    }
+    /** 循环间隔(ms) → 固件 amp16（10ms tick 数）。 */
+    fun cutGapMsToAmp(ms: Int): Int = ms.coerceIn(CUT_GAP_MS_MIN, CUT_GAP_MS_MAX) / 10
 
-    fun cutAmpToGapMs(amp: Int): Int =
-        if (amp <= 0) 0 else amp.coerceIn(1, 255) * 128
+    /** 固件 amp16 → 循环间隔(ms)。 */
+    fun cutAmpToGapMs(amp: Int): Int = amp.coerceAtLeast(0) * 10
 
+    /**
+     * 当前用于下发 BLE 命令的引擎。
+     *
+     * ⚠ 本类是进程级 `object` 单例，而 [DmxEngine] 绑定在某个 Activity 的 BleManager 上。
+     *   Activity 重建（语言/深色/字体缩放 → manifest 的 configChanges 覆盖不到）时，
+     *   旧引擎的 gatt 已被 onDestroy 关闭。若不在这里重新挂接，`engine?.let{...}` 会一直
+     *   往**死链路**发命令 —— 参数改动全部丢弃，而 UI 却显示已生效。
+     *   所以：MainActivity.onCreate 末尾 attach，onDestroy 里 detach。
+     */
     private var engine: DmxEngine? = null
+
+    /** 挂接到当前 Activity 的引擎（onCreate）。 */
+    fun attachEngine(e: DmxEngine) { engine = e }
+
+    /** 解除挂接（onDestroy），避免单例持有已销毁 Activity 的 DmxEngine/BleManager。 */
+    fun detachEngine() { engine = null }
+
     // 每个实例 → 效果列表（按添加顺序）。可叠加多个，各占一个固件 slot。
     private val states = linkedMapOf<String, MutableList<FxState>>()
     // 每个实例当前聚焦的效果 slot（滑条/参数编辑对象）；缺省 = 最后添加的。
@@ -196,10 +247,6 @@ object FxEngine {
         selectedPresetByKey[key(instanceId)] = fxId
     }
 
-    /** 是否有选中预设。 */
-    fun hasSelectedPreset(instanceId: String? = null): Boolean =
-        selectedPresetByKey[key(instanceId)] != null
-
     /** 设定某实例的聚焦效果（参数编辑对象，兼容旧接口）。 */
     fun setFocused(instanceId: String?, slot: Int) {
         focusedSlotByKey[key(instanceId)] = slot
@@ -244,15 +291,23 @@ object FxEngine {
         }
     }
 
-    /** 取当前聚焦效果（作为默认聚焦），用于兼容旧单参调用。 */
-    @Deprecated("由 start() 内部自动聚焦，保留以兼容外部调用")
-    var slotAllocator: ((String) -> Int)? = null
-
     // ---------- 通道映射 ----------
 
-    /** 应用灯具配置（当前实例）。可在效果运行中调用。 */
-    fun applyFixture(def: FixtureDef, startAddress: Int = 1) {
-        startAddr = startAddress.coerceIn(1, 512)
+    /** 兼容旧调用：单台效果（无阵列）。 */
+    fun applyFixture(def: FixtureDef, startAddress: Int = 1) =
+        applyTargets(def, startAddress, 0, 1)
+
+    /**
+     * 应用灯具 + 阵列配置（当前选中的一组实例）。可在效果运行中调用。
+     *
+     * @param firstGlobalAddr 阵列第 0 台的**全局**起始通道（1..1024）
+     * @param stride 相邻实例的全局起始地址差（等间距；count<=1 时忽略）
+     * @param count  台数
+     */
+    fun applyTargets(def: FixtureDef, firstGlobalAddr: Int = 1, stride: Int = 0, count: Int = 1) {
+        startAddr = firstGlobalAddr.coerceIn(1, DmxProtocol.MAX_CHANNELS)
+        targetStride = if (count > 1) stride.coerceIn(0, DmxProtocol.MAX_CHANNELS) else 0
+        targetCount = count.coerceIn(1, MAX_TARGETS)
         // 优先按 attribute（MA2 标准，如 COLOR1/GOBO1/PAN）精确匹配，其次按通道名模糊匹配
         fun byAttr(key: String): Pair<Int, Int?>? {
             val k = key.lowercase()
@@ -322,16 +377,32 @@ object FxEngine {
 
     /** 生成并发送一个效果配置给固件。 */
     private fun sendFxSetFor(eng: DmxEngine, st: FxState) {
-        val amp16 = st.amplitude * 128
+        // 切割循环把幅度/速度复用为时间参数（单位 10ms tick），其它效果幅度是 16bit 偏移
+        val amp16 = if (st.fxId == FX_CUT_LOOP) cutGapMsToAmp(st.amplitude)
+                    else st.amplitude.coerceIn(0, 255) * 128
+        val speed16 = if (st.fxId == FX_CUT_LOOP) cutStepMsToSpeed(st.speed)
+                      else st.speed.coerceIn(SPEED_MIN, SPEED_MAX)
         eng.sendFxSet(st.slot, st.fxId,
             real(panCh), real(panFineCh), real(tiltCh), real(tiltFineCh),
             real(dimCh), real(dimFineCh), real(rCh), real(gCh), real(bCh),
             real(zoomCh), real(zoomFineCh), real(focusCh), real(focusFineCh),
             real(colorCh), real(goboCh), real(goboRotCh),
-            amp16, st.speed,
+            amp16, speed16,
             blades = bladeCh.map { real(it) },   // v5：切割片真实地址
-            shaperRot = real(shaperRotCh))       // v5：切割旋转真实地址
+            shaperRot = real(shaperRotCh),       // v5：切割旋转真实地址
+            // v6：阵列参数
+            stride = st.stride, count = st.count, spread = st.spread,
+            shape = st.shape, direction = st.direction, phase = st.phase,
+            envelope = st.envelope)
     }
+
+    /** 参数取值区间：切割循环用毫秒，其它效果用幅度 0..255 / 速度 33..3277。 */
+    private fun clampAmp(fxId: Int, v: Int): Int =
+        if (fxId == FX_CUT_LOOP) v.coerceIn(CUT_GAP_MS_MIN, CUT_GAP_MS_MAX) else v.coerceIn(0, 255)
+
+    private fun clampSpeed(fxId: Int, v: Int): Int =
+        if (fxId == FX_CUT_LOOP) v.coerceIn(CUT_STEP_MS_MIN, CUT_STEP_MS_MAX)
+        else v.coerceIn(SPEED_MIN, SPEED_MAX)
 
     /**
      * 启动指定实例的效果（叠加到新 slot）。
@@ -345,16 +416,30 @@ object FxEngine {
         engine = eng
         val k = key(instanceId)
         val list = states.getOrPut(k) { mutableListOf() }
-        val amplitude = amp.coerceIn(0, 255)
-        // 速度仍走 33..3277 的合法区间（切割循环的“每步时长”换算后落在这个区间内）
-        val spd = speed.coerceIn(SPEED_MIN, SPEED_MAX)
+        val amplitude = clampAmp(fxId, amp)
+        val spd = clampSpeed(fxId, speed)
         previewAmpById[fxId] = amplitude
         previewSpeedById[fxId] = spd
+        // v6 阵列参数（聚焦中取运行值，否则取预览值），并回写预览
+        val spread = getSpread(instanceId)
+        val shape = getShape(instanceId)
+        val dir = getDirection(instanceId)
+        val phase = getPhase(instanceId)
+        val env = getEnvelope(instanceId)
+        previewSpreadById[fxId] = spread
+        previewShapeById[fxId] = shape
+        previewDirById[fxId] = dir
+        previewPhaseById[fxId] = phase
+        previewEnvById[fxId] = env
 
         // 同类型已激活 → 只更新参数
         val existing = list.find { it.fxId == fxId }
         if (existing != null) {
-            val st = existing.copy(amplitude = amplitude, speed = spd)
+            val st = existing.copy(
+                amplitude = amplitude, speed = spd,
+                stride = targetStride, count = targetCount,
+                spread = spread, shape = shape, direction = dir,
+                phase = phase, envelope = env)
             list[list.indexOf(existing)] = st
             focusedSlotByKey[k] = st.slot
             selectedPresetByKey[k] = fxId
@@ -370,7 +455,11 @@ object FxEngine {
 
         val slot = nextFreeSlot() ?: return false
         val ptReal = ptSpeedCh?.let { real(it) } ?: 0
-        val st = FxState(fxId, amplitude, spd, slot, ptSpeedCh, ptReal)
+        val st = FxState(fxId, amplitude, spd, slot,
+            stride = targetStride, count = targetCount,
+            spread = spread, shape = shape, direction = dir,
+            phase = phase, envelope = env,
+            ptSpeedCh = ptSpeedCh, ptSpeedReal = ptReal)
         list.add(st)
         focusedSlotByKey[k] = slot
         selectedPresetByKey[k] = fxId
@@ -424,15 +513,17 @@ object FxEngine {
         val k = key(instanceId)
         val list = states[k]
         val f = focused(instanceId)
+        val fxId = f?.fxId ?: (selectedPresetByKey[k] ?: 0)
+        val val0 = clampAmp(fxId, v)
         if (list != null && f != null && list.contains(f)) {
             val idx = list.indexOf(f)
             if (idx < 0) return
-            val st = f.copy(amplitude = v.coerceIn(0, 255))
+            val st = f.copy(amplitude = val0)
             list[idx] = st
             engine?.let { sendFxSetFor(it, st) }
         } else {
             // 未激活（预览选中）→ 只改该预设自己的预览值，开关启动时生效
-            previewAmpById[selectedPresetByKey[k] ?: 0] = v.coerceIn(0, 255)
+            previewAmpById[selectedPresetByKey[k] ?: 0] = val0
         }
     }
 
@@ -440,22 +531,18 @@ object FxEngine {
         val k = key(instanceId)
         val list = states[k]
         val f = focused(instanceId)
+        val fxId = f?.fxId ?: (selectedPresetByKey[k] ?: 0)
+        val val0 = clampSpeed(fxId, v)
         if (list != null && f != null && list.contains(f)) {
             val idx = list.indexOf(f)
             if (idx < 0) return
-            val st = f.copy(speed = v.coerceIn(SPEED_MIN, SPEED_MAX))
+            val st = f.copy(speed = val0)
             list[idx] = st
             engine?.let { sendFxSetFor(it, st) }
         } else {
             // 未激活（预览选中）→ 只改该预设自己的预览值
-            previewSpeedById[selectedPresetByKey[k] ?: 0] = v.coerceIn(SPEED_MIN, SPEED_MAX)
+            previewSpeedById[selectedPresetByKey[k] ?: 0] = val0
         }
-    }
-
-    /** 启动当前选中的预设（开关打开）。返回是否成功（false=冲突/满槽/未选中）。 */
-    fun startSelected(eng: DmxEngine, instanceId: String?): Boolean {
-        val sel = selectedPresetByKey[key(instanceId)] ?: return false
-        return start(eng, sel, instanceId, getAmplitude(instanceId), getSpeed(instanceId))
     }
 
     /** 停止当前选中的预设（若已激活）。 */
@@ -466,6 +553,152 @@ object FxEngine {
         }
     }
 
-    /** 由 FxEngine.setAmplitude/setSpeed 调用，取当前实例 id（兼容旧接口）。 */
-    var currentInstanceId: (() -> String?)? = null
+    // ---------- v6 阵列参数（作用于聚焦/选中预设） ----------
+
+    /** 聚焦中的运行态（未激活则 null）。 */
+    private fun focusedOrNull(instanceId: String?): FxState? {
+        val list = states[key(instanceId)] ?: return null
+        val f = focused(instanceId) ?: return null
+        return if (list.contains(f)) f else null
+    }
+
+    /** 通用：更新一个阵列参数（运行中改状态并下发；未激活只改该预设的预览值）。 */
+    private inline fun updateArray(
+        instanceId: String?, v: Int,
+        preview: MutableMap<Int, Int>,
+        copy: (FxState, Int) -> FxState
+    ) {
+        val k = key(instanceId)
+        val list = states[k]
+        val f = focused(instanceId)
+        if (list != null && f != null && list.contains(f)) {
+            val idx = list.indexOf(f)
+            if (idx < 0) return
+            val st = copy(f, v)
+            list[idx] = st
+            engine?.let { sendFxSetFor(it, st) }
+        } else {
+            preview[selectedPresetByKey[k] ?: 0] = v
+        }
+    }
+
+    private fun previewSpread(instanceId: String?): Int =
+        previewSpreadById[selectedPresetByKey[key(instanceId)] ?: 0] ?: 0
+    private fun previewShape(instanceId: String?): Int =
+        previewShapeById[selectedPresetByKey[key(instanceId)] ?: 0] ?: 0
+    private fun previewDir(instanceId: String?): Int =
+        previewDirById[selectedPresetByKey[key(instanceId)] ?: 0] ?: 0
+    private fun previewPhase(instanceId: String?): Int =
+        previewPhaseById[selectedPresetByKey[key(instanceId)] ?: 0] ?: 0
+    private fun previewEnv(instanceId: String?): Int =
+        previewEnvById[selectedPresetByKey[key(instanceId)] ?: 0] ?: 0
+
+    /** 相位扩散 0..255（0=全排同步，128=奇偶交替） */
+    fun getSpread(instanceId: String? = null): Int =
+        focusedOrNull(instanceId)?.spread ?: previewSpread(instanceId)
+    fun setSpread(v: Int, instanceId: String? = null) =
+        updateArray(instanceId, v.coerceIn(0, 255), previewSpreadById) { s, x -> s.copy(spread = x) }
+
+    /** 波形 0..5（INDEX of SHAPE_NAMES） */
+    fun getShape(instanceId: String? = null): Int =
+        focusedOrNull(instanceId)?.shape ?: previewShape(instanceId)
+    fun setShape(v: Int, instanceId: String? = null) =
+        updateArray(instanceId, v.coerceIn(0, SHAPE_NAMES.size - 1), previewShapeById) { s, x -> s.copy(shape = x) }
+
+    /** 方向 0..2（正序/反序/往返） */
+    fun getDirection(instanceId: String? = null): Int =
+        focusedOrNull(instanceId)?.direction ?: previewDir(instanceId)
+    fun setDirection(v: Int, instanceId: String? = null) =
+        updateArray(instanceId, v.coerceIn(0, DIR_NAMES.size - 1), previewDirById) { s, x -> s.copy(direction = x) }
+
+    /** 整体相位偏移 0..255 */
+    fun getPhase(instanceId: String? = null): Int =
+        focusedOrNull(instanceId)?.phase ?: previewPhase(instanceId)
+    fun setPhase(v: Int, instanceId: String? = null) =
+        updateArray(instanceId, v.coerceIn(0, 255), previewPhaseById) { s, x -> s.copy(phase = x) }
+
+    /** 阵列包络 0..4（无/渐入/渐出/对称/两端强） */
+    fun getEnvelope(instanceId: String? = null): Int =
+        focusedOrNull(instanceId)?.envelope ?: previewEnv(instanceId)
+    fun setEnvelope(v: Int, instanceId: String? = null) =
+        updateArray(instanceId, v.coerceIn(0, ENV_NAMES.size - 1), previewEnvById) { s, x -> s.copy(envelope = x) }
+
+    // ---------- 与设备状态同步（APP 重启后恢复开关/参数） ----------
+
+    /**
+     * 采纳设备上报的运行中效果：让效果页的开关与设备真实运行状态一致。
+     * 已在本地记录的同类效果不覆盖（避免打断正在编辑的参数）。
+     */
+    fun adoptFromDevice(instanceId: String?, dev: List<DeviceFx>) {
+        if (dev.isEmpty()) return
+        val k = key(instanceId)
+        val list = states.getOrPut(k) { mutableListOf() }
+        for (d in dev) {
+            if (d.fxId !in presets.map { it.id }) continue
+            if (list.any { it.fxId == d.fxId }) continue
+            if (list.any { it.slot == d.slot }) continue
+            val isCut = d.fxId == FX_CUT_LOOP
+            val amp = if (isCut) cutAmpToGapMs(d.amp16) else (d.amp16 / 128).coerceIn(0, 255)
+            val spd = if (isCut) cutSpeedToStepMs(d.speed) else d.speed.coerceIn(SPEED_MIN, SPEED_MAX)
+            list.add(FxState(d.fxId, amp, spd, d.slot))
+            previewAmpById[d.fxId] = amp
+            previewSpeedById[d.fxId] = spd
+        }
+        if (list.isNotEmpty()) selectedPresetByKey[k] = list.last().fxId
+    }
+
+    // ---------- 内置效果预设（一键保存 / 一键恢复） ----------
+
+    /** 当前所有内置效果的数值 + 开关状态（含未启动效果的预览值）。 */
+    fun snapshotParams(instanceId: String?): List<FxParam> {
+        val k = key(instanceId)
+        return presets.map { def ->
+            val st = states[k]?.find { it.fxId == def.id }
+            if (st != null) FxParam(def.id, st.amplitude, st.speed, true,
+                spread = st.spread, shape = st.shape, direction = st.direction,
+                phase = st.phase, envelope = st.envelope)
+            else FxParam(def.id,
+                previewAmpById[def.id] ?: defaultPreviewAmp(def.id),
+                previewSpeedById[def.id] ?: defaultPreviewSpeed(def.id),
+                false,
+                spread = previewSpreadById[def.id] ?: 0,
+                shape = previewShapeById[def.id] ?: 0,
+                direction = previewDirById[def.id] ?: 0,
+                phase = previewPhaseById[def.id] ?: 0,
+                envelope = previewEnvById[def.id] ?: 0)
+        }
+    }
+
+    /**
+     * 一键应用预设：数值全部写回，并按 on 启动/停止。
+     * @return 未能启动的效果 id（通道冲突或槽位已满）
+     */
+    fun applyParams(eng: DmxEngine, params: List<FxParam>, instanceId: String?): List<Int> {
+        engine = eng
+        val k = key(instanceId)
+        val failed = mutableListOf<Int>()
+        val byId = presets.map { it.id }.toSet()
+        for (p in params) {
+            if (p.fxId !in byId) continue
+            previewAmpById[p.fxId] = clampAmp(p.fxId, p.amplitude)
+            previewSpeedById[p.fxId] = clampSpeed(p.fxId, p.speed)
+            previewSpreadById[p.fxId] = p.spread.coerceIn(0, 255)
+            previewShapeById[p.fxId] = p.shape.coerceIn(0, SHAPE_NAMES.size - 1)
+            previewDirById[p.fxId] = p.direction.coerceIn(0, DIR_NAMES.size - 1)
+            previewPhaseById[p.fxId] = p.phase.coerceIn(0, 255)
+            previewEnvById[p.fxId] = p.envelope.coerceIn(0, ENV_NAMES.size - 1)
+        }
+        // 先关掉预设里标记为“关”的效果
+        val offIds = params.filter { !it.on }.map { it.fxId }.toSet()
+        states[k]?.toList()?.forEach { st -> if (st.fxId in offIds) stopSlot(instanceId, st.slot) }
+        // 再按预设启动/更新
+        for (p in params) {
+            if (!p.on) continue
+            selectedPresetByKey[k] = p.fxId
+            val ok = start(eng, p.fxId, instanceId, p.amplitude, p.speed)
+            if (!ok) failed.add(p.fxId)
+        }
+        (params.lastOrNull { it.on }?.fxId ?: params.firstOrNull()?.fxId)?.let { selectedPresetByKey[k] = it }
+        return failed
+    }
 }

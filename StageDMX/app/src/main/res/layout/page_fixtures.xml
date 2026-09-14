@@ -6,53 +6,21 @@
     android:padding="8dp"
     android:background="@color/bg">
 
-    <!-- 当前灯具 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="8dp">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="当前灯具"
-            android:textColor="#cccccc"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/tvCurrentFixture"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="无"
-            android:textColor="#ff9800"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- 灯具列表 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="已加载灯具"
-        android:textColor="#888888"
-        android:textSize="13sp"
-        android:paddingBottom="4dp" />
-
-    <!-- 格式筛选标签（XML / D4 / R20，统一风格 + 选中高亮） -->
+    <!-- ===== 主导航：App灯库 / 设备灯库 / 文件管理 =====
+         原来"文件"是独立的一页（底部导航第 6 项），而它的"App灯库"页签和本页列表
+         其实是同一份数据（fixtureStore.fixtures）。合并后：一份数据一个入口，
+         底部导航回到 Material 标准的 5 项上限内。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginBottom="6dp">
         <TextView
-            android:id="@+id/btnFmtXml"
+            android:id="@+id/btnAppLibs"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="36dp"
-            android:text="XML"
+            android:layout_height="40dp"
+            android:text="App灯库"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -61,11 +29,11 @@
             android:background="@drawable/bg_pill_outline_white"
             android:layout_marginEnd="4dp" />
         <TextView
-            android:id="@+id/btnFmtD4"
+            android:id="@+id/btnDeviceLibs"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="36dp"
-            android:text="D4"
+            android:layout_height="40dp"
+            android:text="设备灯库"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -74,11 +42,11 @@
             android:background="@drawable/bg_pill_outline_white"
             android:layout_marginEnd="4dp" />
         <TextView
-            android:id="@+id/btnFmtR20"
+            android:id="@+id/btnFileMgr"
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="36dp"
-            android:text="R20"
+            android:layout_height="40dp"
+            android:text="文件管理"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -87,82 +55,276 @@
             android:background="@drawable/bg_pill_outline_white" />
     </LinearLayout>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvFixtures"
+    <!-- ================= App 灯库 ================= -->
+    <LinearLayout
+        android:id="@+id/layoutAppLibs"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-    <!-- 批量操作栏（选灯模式下显示） -->
-    <LinearLayout
-        android:id="@+id/batchBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:visibility="gone">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSelectAll"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="全选"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/tvSelectedCount"
-            android:layout_width="0dp"
+        <!-- 当前灯具 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="已选 0"
-            android:textColor="@color/warn"
-            android:textSize="13sp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="4dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnDeleteSelected"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="删除选中"
-            android:textSize="13sp"
-            android:textColor="@color/err" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="当前灯具"
+                android:textColor="#cccccc"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/tvCurrentFixture"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="无"
+                android:textColor="#ff9800"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <!-- 格式筛选（XML / D4 / R20） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="6dp">
+            <TextView
+                android:id="@+id/btnFmtXml"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="32dp"
+                android:text="XML"
+                android:textSize="12sp"
+                android:textColor="@color/text"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/bg_pill_outline_white"
+                android:layout_marginEnd="4dp" />
+            <TextView
+                android:id="@+id/btnFmtD4"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="32dp"
+                android:text="D4"
+                android:textSize="12sp"
+                android:textColor="@color/text"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/bg_pill_outline_white"
+                android:layout_marginEnd="4dp" />
+            <TextView
+                android:id="@+id/btnFmtR20"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="32dp"
+                android:text="R20"
+                android:textSize="12sp"
+                android:textColor="@color/text"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@drawable/bg_pill_outline_white" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvFixtures"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- 批量操作栏（选灯模式下显示） -->
+        <LinearLayout
+            android:id="@+id/batchBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSelectAll"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="全选"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvSelectedCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="已选 0"
+                android:textColor="@color/warn"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDeleteSelected"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="删除选中"
+                android:textSize="13sp"
+                android:textColor="@color/err" />
+        </LinearLayout>
+
+        <!-- 操作按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="8dp">
+
+            <Button
+                android:id="@+id/btnImport"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="导入灯库"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddInstance"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:text="加实例"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEdit"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:text="批量"
+                android:textSize="14sp" />
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- 操作按钮 -->
+    <!-- ================= 设备灯库 / 文件管理 ================= -->
     <LinearLayout
+        android:id="@+id/layoutDeviceFiles"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingTop="8dp">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
 
+        <!-- USB MSC 开关（只有要访问设备存储时才用得上） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_card"
+            android:padding="10dp"
+            android:layout_marginBottom="6dp">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="U盘模式"
+                    android:textColor="@color/text"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvMscStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="关闭"
+                    android:textColor="@color/textDim"
+                    android:textSize="12sp" />
+            </LinearLayout>
+            <Button
+                android:id="@+id/swMsc"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="开启"
+                android:textSize="12sp"
+                android:textColor="@color/text"
+                android:background="@drawable/bg_pill"
+                android:backgroundTint="@null" />
+        </LinearLayout>
+
+        <!-- 文件管理操作（仅文件管理页签显示） -->
         <Button
-            android:id="@+id/btnImport"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:text="导入灯库"
-            android:textSize="14sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAddInstance"
+            android:id="@+id/btnNewFolder"
             style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="8dp"
-            android:text="加实例"
-            android:textSize="14sp" />
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:text="＋ 新建文件夹"
+            android:textSize="12sp"
+            android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnEdit"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="8dp"
-            android:text="编辑"
-            android:textSize="14sp" />
+        <!-- 列表标题 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="4dp">
+            <TextView
+                android:id="@+id/tvListTitle"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="ESP32 设备灯库"
+                android:textColor="@color/text"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+            <Button
+                android:id="@+id/btnGoUp"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingTop="0dp"
+                android:paddingBottom="0dp"
+                android:includeFontPadding="false"
+                android:text="⬆ 上级"
+                android:textSize="11sp"
+                android:textColor="@color/text"
+                android:background="@drawable/bg_pill"
+                android:backgroundTint="@null"
+                android:visibility="gone"
+                android:layout_marginEnd="8dp" />
+            <TextView
+                android:id="@+id/tvListHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="点按下载到 App"
+                android:textColor="@color/textDim"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvFileList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
     </LinearLayout>
 </LinearLayout>

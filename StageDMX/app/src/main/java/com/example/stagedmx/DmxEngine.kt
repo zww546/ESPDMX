@@ -7,6 +7,12 @@ import android.os.Looper
  * 512 通道 DMX 状态机 + 发送节流 + 主控(Grand Master)缩放。
  * values[] 保存原始通道值(0..255，UI 显示的就是它)；实际下发时按 master 缩放：
  *   输出 = raw * master / 255
+ *
+ * **主控亮度只作用于“调光(DIM)”通道**（各实例灯库中 attribute=dim 的真实 DMX 地址）。
+ * 早期版本对所有通道统一缩放，导致拉总控时摇头灯的水平/垂直、图案、棱镜等一起变小，
+ * 属于明显的功能错误；现在只有被登记的调光通道参与缩放，其它通道原值下发。
+ * 若一盏灯都没登记（纯裸通道模式，无灯库），退回“全部通道缩放”的旧行为。
+ *
  * 滑条高频改值时以 ~30Hz 把"脏"通道段批量下发，避免刷爆 BLE。
  */
 class DmxEngine(private val ble: BleManager) {
@@ -20,11 +26,27 @@ class DmxEngine(private val ble: BleManager) {
     private var flushScheduled = false
     private var usedMax = 0               // 已用到的最高通道(1-based)，主控缩放范围
 
+    /** 参与主控亮度缩放的通道（1-based 真实 DMX 地址）。空 = 裸通道模式，全通道缩放。 */
+    private val dimmerChannels = mutableSetOf<Int>()
+
     @Volatile private var master = 255    // 0..255
 
     private val flushIntervalMs = 33L     // ~30fps
 
-    private fun scale(raw: Int): Int = (raw and 0xFF) * master / 255
+    /** 按主控缩放：只有调光通道参与。 */
+    private fun scale(ch: Int, raw: Int): Int =
+        if (dimmerChannels.isEmpty() || dimmerChannels.contains(ch)) (raw and 0xFF) * master / 255
+        else (raw and 0xFF)
+
+    /** 登记参与主控亮度的调光通道（由 MainActivity 按当前所有实例的灯库刷新）。 */
+    fun setDimmerChannels(channels: Collection<Int>) {
+        synchronized(lock) {
+            dimmerChannels.clear()
+            channels.forEach { if (it in 1..DmxProtocol.MAX_CHANNELS) dimmerChannels.add(it) }
+            if (usedMax > 0) { if (0 < dirtyLo) dirtyLo = 0; if (usedMax - 1 > dirtyHi) dirtyHi = usedMax - 1 }
+        }
+        scheduleFlush()
+    }
 
     /** 读取通道原始值 (1-based)。 */
     fun get(ch: Int): Int = synchronized(lock) {
@@ -34,14 +56,6 @@ class DmxEngine(private val ble: BleManager) {
 
     fun snapshot(): IntArray = synchronized(lock) { IntArray(values.size) { values[it].toInt() and 0xFF } }
 
-    /** 仅写内部值, 不发 BLE——供本地镜像播放更新 UI 推子用。 */
-    fun applyAllLocal(newValues: IntArray) {
-        synchronized(lock) {
-            val n = minOf(newValues.size, values.size)
-            for (i in 0 until n) values[i] = newValues[i].coerceIn(0, 255).toByte()
-        }
-    }
-
     /** 主控百分比 0..100。 */
     fun masterPct(): Int = (master * 100 + 127) / 255
 
@@ -49,7 +63,7 @@ class DmxEngine(private val ble: BleManager) {
         val m = (pct.coerceIn(0, 100) * 255 / 100)
         synchronized(lock) {
             master = m
-            if (usedMax > 0) {            // 全体已用通道重发(缩放后)
+            if (usedMax > 0) {            // 重发受影响的通道（调光通道 / 或全部）
                 if (0 < dirtyLo) dirtyLo = 0
                 if (usedMax - 1 > dirtyHi) dirtyHi = usedMax - 1
             }
@@ -83,19 +97,6 @@ class DmxEngine(private val ble: BleManager) {
         sendFullFrame()
     }
 
-    /** 将前 count 个通道(1..count)统一置为 value，仅下发这些通道（全黑/全亮只管当前通道数）。 */
-    fun setUniform(count: Int, value: Int) {
-        val n = count.coerceIn(1, DmxProtocol.MAX_CHANNELS)
-        val v = value.coerceIn(0, 255).toByte()
-        synchronized(lock) {
-            for (i in 0 until n) values[i] = v
-            if (0 < dirtyLo) dirtyLo = 0
-            if (n - 1 > dirtyHi) dirtyHi = n - 1
-            if (n > usedMax) usedMax = n
-        }
-        scheduleFlush()
-    }
-
     /** 将 [lo..hi]（1-based 闭区间）统一置为 value。 */
     fun setRangeUniform(lo: Int, hi: Int, value: Int) {
         val l = lo.coerceIn(1, DmxProtocol.MAX_CHANNELS)
@@ -118,6 +119,13 @@ class DmxEngine(private val ble: BleManager) {
         main.postDelayed({ flushDirty() }, flushIntervalMs)
     }
 
+    /**
+     * 下发脏区间。
+     *
+     * ⚠ 合并语义交给 BleManager 的 FrameKind.Control：一次刷新的所有分块都是 Control，
+     *   队列积压时被取代的永远是**整个**旧帧（不是旧帧的前半段）。
+     *   旧实现在这里逐块传 coalesceRealtime=true，导致整帧刷新会被拦腰截断 → 固件收到半帧。
+     */
     private fun flushDirty() {
         val lo: Int; val hi: Int
         val chunk: ByteArray
@@ -131,37 +139,47 @@ class DmxEngine(private val ble: BleManager) {
         var offset = 0
         while (offset < chunk.size) {
             val len = minOf(255, chunk.size - offset)
-            val seg = ByteArray(len) { scale(chunk[offset + it].toInt()).toByte() }
-            ble.send(DmxProtocol.encodeSetRange(lo + offset + 1, seg), coalesceRealtime = true)
+            val seg = ByteArray(len) { scale(lo + offset + it + 1, chunk[offset + it].toInt()).toByte() }
+            ble.send(DmxProtocol.encodeSetRange(lo + offset + 1, seg), BleManager.FrameKind.Control)
             offset += len
         }
     }
 
-    /** 整帧下发全部 512 通道（缩放后，分块）。 */
+    /** 整帧下发全部通道（缩放后，分块）。 */
     fun sendFullFrame() {
         val copy = synchronized(lock) { values.copyOf() }
         var start = 0
         while (start < copy.size) {
             val len = minOf(255, copy.size - start)
-            val seg = ByteArray(len) { scale(copy[start + it].toInt()).toByte() }
-            ble.send(DmxProtocol.encodeSetRange(start + 1, seg))
-            start += len
-        }
-    }
-
-    /** 整帧原始值(不经主控缩放)下发到板子——供程序上传用(板载存储需全域值)。 */
-    fun sendRawFrame(values: IntArray) {
-        var start = 0
-        while (start < values.size && start < DmxProtocol.MAX_CHANNELS) {
-            val len = minOf(255, values.size - start)
-            val seg = ByteArray(len) { values[start + it].coerceIn(0, 255).toByte() }
-            ble.send(DmxProtocol.encodeSetRange(start + 1, seg))
+            val seg = ByteArray(len) { scale(start + it + 1, copy[start + it].toInt()).toByte() }
+            ble.send(DmxProtocol.encodeSetRange(start + 1, seg), BleManager.FrameKind.Control)
             start += len
         }
     }
 
     fun sendProgClear(progId: Int = 0) = ble.send(DmxProtocol.encodeProgClear(progId))
 
+    /** 请求固件上报整机状态（0x05）。 */
+    fun sendRequestState() = ble.send(DmxProtocol.encodeRequestState())
+
+    /**
+     * 采纳固件上报的通道状态（仅改本地值，不回发）。
+     * 固件里的调光通道值是“主控缩放后”的，这里按当前主控反算回原始值，
+     * 否则主控 <100% 时会被二次缩放。
+     */
+    fun adoptDeviceState(dev: IntArray) {
+        synchronized(lock) {
+            val n = minOf(dev.size, values.size)
+            for (i in 0 until n) {
+                val ch = i + 1
+                var v = dev[i].coerceIn(0, 255)
+                if (master in 1..254 && (dimmerChannels.isEmpty() || dimmerChannels.contains(ch))) {
+                    v = ((v * 255 + master / 2) / master).coerceIn(0, 255)
+                }
+                values[i] = v.toByte()
+            }
+        }
+    }
     /** 稀疏存步：只上传动过的通道 (ch,val) 列表。 */
     fun sendProgAppendSparse(progId: Int, timeMs: Int, changes: List<Pair<Int, Int>>) =
         ble.send(DmxProtocol.encodeProgAppendSparse(progId, timeMs, changes))
@@ -176,10 +194,14 @@ class DmxEngine(private val ble: BleManager) {
                   zoom: Int, zoomFine: Int, focus: Int, focusFine: Int,
                   color: Int, gobo: Int, goboRot: Int,
                   amp16: Int, speed: Int,
-                  blades: List<Int> = emptyList(), shaperRot: Int = 0) =
+                  blades: List<Int> = emptyList(), shaperRot: Int = 0,
+                  stride: Int = 0, count: Int = 1, spread: Int = 0,
+                  shape: Int = 0, direction: Int = 0, phase: Int = 0,
+                  envelope: Int = 0) =
         ble.send(DmxProtocol.encodeFxSet(slot, fxId, pan, panFine, tilt, tiltFine,
             dim, dimFine, r, g, b, zoom, zoomFine, focus, focusFine,
-            color, gobo, goboRot, amp16, speed, blades, shaperRot))
+            color, gobo, goboRot, amp16, speed, blades, shaperRot,
+            stride, count, spread, shape, direction, phase, envelope))
     fun sendFxStop(slot: Int) = ble.send(DmxProtocol.encodeFxStop(slot))
     fun sendFxStopAll() = ble.send(DmxProtocol.encodeFxStopAll())
 

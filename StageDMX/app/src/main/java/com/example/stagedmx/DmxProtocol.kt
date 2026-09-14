@@ -13,14 +13,15 @@ import java.util.UUID
  *
  * 指令帧（App -> ESP32，写入 0xFF01）：
  *   [0x01] 设置连续通道段: 0x01, startHi, startLo, count, v0, v1, ... v(count-1)
- *          startHi/startLo = 起始通道号(1..512) 的大端 16 位
- *          count           = 本段通道数 (1..512)
+ *          startHi/startLo = 起始通道号(1..1024) 的大端 16 位
+ *          count           = 本段通道数 (1..255；256 会溢出为 0，上层必须分块 <=255)
  *   [0x02] 全黑     : 0x02              （所有通道置 0）
  *   [0x03] 全亮     : 0x03              （所有通道置 255）
  *   [0x04] 心跳/保活 : 0x04
  *
- * 通知帧（ESP32 -> App，来自 0xFF02，可选）：
+ * 通知帧（ESP32 -> App，来自 0xFF02）：
  *   [0x81] 状态: 0x81, statusByte   （bit0=DMX输出中）
+ *   其余响应见 PROTOCOL.md；解析器在 DeviceMessages（纯函数，带单测）。
  */
 object DmxProtocol {
 
@@ -36,6 +37,7 @@ object DmxProtocol {
     const val CMD_BLACKOUT: Int = 0x02
     const val CMD_FULL_ON: Int = 0x03
     const val CMD_PING: Int = 0x04
+    const val CMD_REQ_STATE: Int = 0x05   // 请求整机状态（重连/重启后同步）
 
     // 板载程序(多程序并行): 0x10-0x15 带 prog_id
     const val CMD_PROG_CLEAR: Int  = 0x10  // + prog_id
@@ -73,7 +75,30 @@ object DmxProtocol {
     const val RESP_DIRS_LIST: Int = 0x97
     const val RESP_DIRS_END: Int = 0x98
 
-    const val MAX_CHANNELS = 512
+    // ---- 状态同步（0x05 的应答，固件 → App）----
+    // 0x82 flags(1) uptime(4,秒,大端) fxCount(1) progMask(1)
+    const val RESP_STATE_HEAD: Int = 0x82
+    // 0x83 seq(1) startHi startLo count(1) data[count]
+    const val RESP_STATE_CHUNK: Int = 0x83
+    // 0x84 slot(1) fxId(1) ampHi ampLo speedHi speedLo
+    const val RESP_STATE_FX: Int = 0x84
+    // 0x85 （结束）
+    const val RESP_STATE_END: Int = 0x85
+
+    /** 单个宇宙的通道数。 */
+    const val UNIVERSE_SIZE = 512
+    /** 支持的宇宙数（v6：双宇宙）。 */
+    const val UNIVERSES = 2
+    /** 全局通道数 = 宇宙数 × 512。ch 1..512 = 宇宙1，513..1024 = 宇宙2。 */
+    const val MAX_CHANNELS = UNIVERSE_SIZE * UNIVERSES
+
+    /** 全局通道 → 宇宙号（1-based）。 */
+    fun universeOf(globalCh: Int): Int = ((globalCh - 1) / UNIVERSE_SIZE) + 1
+    /** 全局通道 → 宇宙内地址（1-based）。 */
+    fun addrInUniverse(globalCh: Int): Int = ((globalCh - 1) % UNIVERSE_SIZE) + 1
+    /** 宇宙号 + 宇宙内地址 → 全局通道。 */
+    fun toGlobal(universe: Int, addr: Int): Int =
+        (universe.coerceIn(1, UNIVERSES) - 1) * UNIVERSE_SIZE + addr
 
     /** 效果类型（与 FxEngine.presets 对齐）。 */
     const val FX_CIRCLE = 1
@@ -103,6 +128,9 @@ object DmxProtocol {
     fun encodeFullOn(): ByteArray = byteArrayOf(CMD_FULL_ON.toByte())
     fun encodePing(): ByteArray = byteArrayOf(CMD_PING.toByte())
 
+    /** 0x05: 请求固件上报整机状态（512 通道 + 运行中效果 + 正在播放的程序）。 */
+    fun encodeRequestState(): ByteArray = byteArrayOf(CMD_REQ_STATE.toByte())
+
     fun encodeProgClear(progId: Int = 0): ByteArray = byteArrayOf(CMD_PROG_CLEAR.toByte(), progId.toByte())
     fun encodeProgPlay(progId: Int = 0, loop: Boolean = true): ByteArray =
         byteArrayOf(CMD_PROG_PLAY.toByte(), progId.toByte(), (if (loop) 1 else 0).toByte())
@@ -113,9 +141,18 @@ object DmxProtocol {
      * 稀疏存步: 只记录动过的通道 (ch,val) 列表。
      * 帧: 0x12 prog_id timeHi timeLo count (chHi chLo val)*
      */
+    /**
+     * 程序"每步最多通道项数"。
+     *
+     * 协议里 count 只占 1 字节 → 上限 255；固件 `PROG_MAX_ITEMS_STEP` 与之一致。
+     * 早期双方都是 64 且都**静默截断**：录制多台灯时超过 64 条的变化会被悄悄丢掉。
+     * 现在 App 侧超限会明确提示（见 MainActivity.uploadProgramAndPlay）。
+     */
+    const val MAX_PROG_ITEMS_STEP = 255
+
     fun encodeProgAppendSparse(progId: Int, timeMs: Int, changes: List<Pair<Int, Int>>): ByteArray {
         val t = timeMs.coerceIn(0, 65535)
-        val count = changes.size.coerceAtMost(64)
+        val count = changes.size.coerceAtMost(MAX_PROG_ITEMS_STEP)
         val out = ByteArray(5 + count * 3)
         out[0] = CMD_PROG_APPEND.toByte()
         out[1] = progId.toByte()
@@ -132,12 +169,20 @@ object DmxProtocol {
     }
 
     /**
-     * 配置并启动板载效果 v4（支持 fine 通道 + 16bit 幅度 + 速度 + 属性通道）。
+     * 配置并启动板载效果 v6（阵列目标 + 相位扩散）。
      * 帧: 0x20 slot fx_id
      *     pan panF tilt tiltF dim dimF r g b
      *     zoom zoomF focus focusF color gobo goboRot
      *     amp speed
-     * speed：速度 0..65535，越大越快（8.8 定点：速度/256 = 每 10ms tick 推进的 1/256 相位步数）。
+     *     blade[0..7] shaperRot                       ← 到这里 57 字节（v5）
+     *     stride count spread shape direction phase envelope   ← v6 追加 8 字节，共 65
+     *
+     * 阵列语义：第 i 台的某属性通道 = 该属性通道 + i×stride （i = 0..count-1）
+     * 相位：第 i 台 = 基准 + step(i)×spread（direction: 0正序 1反序 2往返）
+     * shape: 0正弦 1三角 2方波 3脉冲 4随机 5锯齿
+     * envelope: 0无 1渐入 2渐出 3对称(中间强) 4两端强
+     *
+     * ⚠ 兼容性：旧固件只读前 57 字节，尾部会被自动忽略（退化为单台效果）。
      */
     fun encodeFxSet(slot: Int, fxId: Int,
                     pan: Int, panFine: Int, tilt: Int, tiltFine: Int,
@@ -145,17 +190,20 @@ object DmxProtocol {
                     zoom: Int, zoomFine: Int, focus: Int, focusFine: Int,
                     color: Int, gobo: Int, goboRot: Int,
                     amp16: Int, speed: Int,
-                    blades: List<Int> = emptyList(), shaperRot: Int = 0): ByteArray {
+                    blades: List<Int> = emptyList(), shaperRot: Int = 0,
+                    stride: Int = 0, count: Int = 1, spread: Int = 0,
+                    shape: Int = 0, direction: Int = 0, phase: Int = 0,
+                    envelope: Int = 0): ByteArray {
         fun u16(v: Int) = byteArrayOf(((v ushr 8) and 0xFF).toByte(), (v and 0xFF).toByte())
-        // v5: 39 字节基础 + 8 切割片(16B) + 1 切割旋转(2B) = 57 字节
-        val out = ByteArray(57)
+        // v6: 57 字节基础 + 8 字节阵列参数 = 65 字节
+        val out = ByteArray(65)
         out[0] = CMD_FX_SET.toByte()
         out[1] = slot.toByte()
         out[2] = fxId.toByte()
         var i = 3
         for (ch in listOf(pan, panFine, tilt, tiltFine, dim, dimFine, r, g, b,
                           zoom, zoomFine, focus, focusFine, color, gobo, goboRot)) {
-            val b2 = u16(ch.coerceIn(0, 512))
+            val b2 = u16(ch.coerceIn(0, MAX_CHANNELS))
             out[i++] = b2[0]; out[i++] = b2[1]
         }
         val ampB = u16(amp16.coerceIn(0, 65535))
@@ -165,11 +213,20 @@ object DmxProtocol {
         // v5: 8 个切割片通道（不足补 0，超出截断）
         for (b in 0 until 8) {
             val v = if (b < blades.size) blades[b] else 0
-            val bb = u16(v.coerceIn(0, 512))
+            val bb = u16(v.coerceIn(0, MAX_CHANNELS))
             out[i++] = bb[0]; out[i++] = bb[1]
         }
-        val sr = u16(shaperRot.coerceIn(0, 512))
+        val sr = u16(shaperRot.coerceIn(0, MAX_CHANNELS))
         out[i++] = sr[0]; out[i++] = sr[1]
+        // ---- v6 阵列参数（8 字节）----
+        val st = u16(stride.coerceIn(0, MAX_CHANNELS))
+        out[57] = st[0]; out[58] = st[1]
+        out[59] = count.coerceIn(1, 255).toByte()
+        out[60] = spread.coerceIn(0, 255).toByte()
+        out[61] = shape.coerceIn(0, 5).toByte()
+        out[62] = direction.coerceIn(0, 2).toByte()
+        out[63] = phase.coerceIn(0, 255).toByte()
+        out[64] = envelope.coerceIn(0, 4).toByte()
         return out
     }
 
@@ -205,10 +262,13 @@ object DmxProtocol {
     /** 0x33: 上传结束 */
     fun encodeUploadEnd(): ByteArray = byteArrayOf(CMD_UPLOAD_END.toByte())
 
-    /** 0x34: 列出设备文件（dir 空 = 根目录） */
+    /**
+     * 0x34: 列出设备文件。
+     * 总是带上 `dirLen`（根目录 = `0x34 0x00`）：老固件只接受带参数的写法，
+     * 发裸 `0x34` 会被丢弃（表现为“设备灯库/文件管理 加载不出”）。
+     */
     fun encodeListFiles(dir: String): ByteArray =
-        if (dir.isEmpty()) byteArrayOf(CMD_LIST_FILES.toByte())
-        else byteArrayOf(CMD_LIST_FILES.toByte()) + dirPart(dir)
+        byteArrayOf(CMD_LIST_FILES.toByte()) + dirPart(dir)
 
     /** 0x35: 下载设备文件 */
     fun encodeDownloadFile(dir: String, name: String): ByteArray {

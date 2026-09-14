@@ -196,7 +196,11 @@ class FixtureEditor(private val ctx: Context, private val store: FixtureStore) {
     /** 加载已有灯型到编辑器。 */
     fun loadFixture(def: FixtureDef) {
         channels.clear()
-        val sorted = def.channels.sortedBy { it.number }
+        // 解析器会把 fine 通道补成独立条目（attribute 以 _FINE 结尾），
+        // 编辑时由 coarse 的 Fine 勾选生成，不重复列出，避免保存后通道翻倍。
+        val sorted = def.channels
+            .filter { !it.attribute.endsWith("_FINE", ignoreCase = true) }
+            .sortedBy { it.number }
         sorted.forEach { ch ->
             channels.add(ChData(
                 number = ch.number,

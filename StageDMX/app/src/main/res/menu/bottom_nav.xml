@@ -4,10 +4,7 @@
         android:id="@+id/nav_fader"
         android:title="推子"
         android:icon="@drawable/ic_fader" />
-    <item
-        android:id="@+id/nav_program"
-        android:title="程序"
-        android:icon="@drawable/ic_program" />
+    <!-- 程序已并入"效果"页（顶部按钮切换：内置效果 / 程序） -->
     <item
         android:id="@+id/nav_fx"
         android:title="效果"
@@ -17,7 +14,11 @@
         android:title="灯具"
         android:icon="@drawable/ic_fixture" />
     <item
-        android:id="@+id/nav_storage"
-        android:title="文件"
-        android:icon="@drawable/ic_storage" />
+        android:id="@+id/nav_instances"
+        android:title="实例"
+        android:icon="@drawable/ic_instances" />
+    <item
+        android:id="@+id/nav_settings"
+        android:title="设置"
+        android:icon="@drawable/ic_settings" />
 </menu>
