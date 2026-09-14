@@ -19,6 +19,16 @@ import os
 import subprocess
 import sys
 
+# ⚠ Windows 中文环境下 sys.stdout 默认是 GBK，本脚本末尾会打印 ✅/❌（U+2705/U+274C），
+#   在 GBK 控制台上会抛 UnicodeEncodeError。更糟的是它发生在**烧录成功之后**，
+#   于是脚本以退出码 1 结束 —— 被自动化/CI 当成烧录失败（实际已经烧好并校验通过）。
+#   这里强制 stdout/stderr 用 UTF-8；旧版 Python 没有 reconfigure 时忽略即可。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))     # stagedmx_std/tools -> 仓库根
 
