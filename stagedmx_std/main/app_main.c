@@ -31,6 +31,8 @@ void app_main(void)
     ble_dmx_init();
 
     ESP_LOGI(TAG, "StageDMX Std ready.");
-    ESP_LOGI(TAG, "BLE: StageDMX-01  |  DMX: TX1=%d TX2=%d DE=%d  |  %d universes",
-             DMX_TX_PIN, DMX_TX2_PIN, DMX_DE_PIN, DMX_UNIVERSES);
+    // v7：每个宇宙是一套完整双向接口（TX/RX/EN），不再共用一根 EN。
+    ESP_LOGI(TAG, "BLE: StageDMX-01  |  U1: TX=%d RX=%d EN=%d  |  U2: TX=%d RX=%d EN=%d  |  %d universes",
+             DMX_TX_PIN, DMX_RX_PIN, DMX_EN_PIN,
+             DMX_TX2_PIN, DMX_RX2_PIN, DMX_EN2_PIN, DMX_UNIVERSES);
 }
