@@ -50,4 +50,9 @@ dependencies {
     // 注：kotlinx-coroutines-android 与 lifecycle-runtime-ktx 已移除 —— 全工程 0 引用，
     // 属于死依赖（App 的异步全部走 Handler/Looper）。将来若引入协程/ViewModel 再加回来。
     testImplementation("junit:junit:4.13.2")
+    // JVM 测试里补一个 XmlPullParser 实现：FixtureParser 用 XmlPullParserFactory.newInstance()，
+    // 该工厂在纯 JVM 上找不到实现会直接抛异常（Android 上由系统提供）。
+    // xmlpull 只有接口没有实现类，kxml2 同时提供两者，故只需这一个。
+    // 仅供 unit test，不进 APK。
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
 }

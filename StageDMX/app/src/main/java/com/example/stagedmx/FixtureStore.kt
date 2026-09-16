@@ -314,7 +314,12 @@ class FixtureStore(context: Context) {
             return fixtures.find { it.id == id }
         }
 
-    /** 导入灯库文件（自动识别 ZIP 或单文件 XML/D4/R20）。同时保存原始文件用于导出/上传。 */
+    /**
+     * 导入灯库文件（自动识别 ZIP 或单文件 XML/D4/R20）。同时保存原始文件用于导出/上传。
+     *
+     * ⚠ 这是「直接导」，不做预检。需要先让用户看清压缩包里每个文件的结果时，
+     *   用 [inspect] 拿到 [ZipScan.Report]，确认后再调 [importScanned]。
+     */
     fun importFile(input: java.io.InputStream, fileName: String = ""): List<FixtureDef> {
         val raw = input.readBytes()
         // 检测文件类型：ZIP 以 PK 开头
@@ -330,6 +335,89 @@ class FixtureStore(context: Context) {
         }
     }
 
+    /**
+     * 导入前体检：枚举压缩包内**每一个**条目并判定，不做任何写盘。
+     *
+     * 单文件（非 zip）也会返回一份单条目报告，界面可以统一处理。
+     */
+    fun inspect(input: java.io.InputStream, fileName: String = ""): ZipScan.Report {
+        val raw = input.readBytes()
+        val isZip = raw.size >= 2 && raw[0] == 0x50.toByte() && raw[1] == 0x4B.toByte()
+        if (isZip) return ZipScan.scanZip(raw, fileName)
+
+        // 单文件：沿用与 importFile 相同的兜底判定
+        val entry = ZipScan.classify(fileName.ifEmpty { "fixture" }, isDirectory = false, bytes = raw)
+        return ZipScan.Report(fileName, listOf(entry))
+    }
+
+    /**
+     * 按体检报告执行导入（用户确认后调用）。
+     *
+     * 只处理报告里标记为可导入的条目，并**按内容**分派 —— 不再看扩展名，
+     * 这样"后缀写错但内容正确"的文件也能进得来。
+     *
+     * @param data 压缩包的原始字节（与 [scanZip] 用的是同一份）
+     * @return 成功导入的灯具；解析失败的条目会出现在 [ImportResult.failed] 里
+     */
+    fun importScanned(data: ByteArray, report: ZipScan.Report): ImportResult {
+        val isZip = data.size >= 2 && data[0] == 0x50.toByte() && data[1] == 0x4B.toByte()
+        if (!isZip) {
+            // 单文件路径
+            val name = report.entries.firstOrNull()?.path ?: ""
+            val defs = try {
+                val ln = name.lowercase()
+                when {
+                    ln.endsWith(".d4") -> importFromD4(data, name)
+                    ln.endsWith(".r20") -> importFromR20(data, name)
+                    else -> importFromXml(data, name)
+                }
+            } catch (e: Exception) {
+                return ImportResult(emptyList(), listOf(name to e.describe()))
+            }
+            return ImportResult(defs, if (defs.isEmpty()) listOf(name to "解析不出任何灯型") else emptyList())
+        }
+
+        val result = mutableListOf<FixtureDef>()
+        val failed = mutableListOf<Pair<String, String>>()
+        // 只挑可导入的条目名，避免把整包重新解析一遍
+        val wanted = report.importableFiles.map { it.path }.toHashSet()
+        if (wanted.isEmpty()) return ImportResult(emptyList(), emptyList())
+
+        java.io.ByteArrayInputStream(data).use { bis ->
+            ZipInputStream(bis).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (!entry.isDirectory && entry.name in wanted) {
+                        val raw = zip.readBytes()
+                        try {
+                            // 按内容分派（detectAndParse 在体检阶段已确认过格式）
+                            val (kind, _) = ZipScan.detectAndParse(raw)
+                            when (kind) {
+                                ZipScan.KIND_XML -> result.addAll(importFromXml(raw, entry.name))
+                                ZipScan.KIND_D4 -> result.addAll(importFromD4(raw, entry.name))
+                                ZipScan.KIND_R20 -> result.addAll(importFromR20(raw, entry.name))
+                                else -> failed.add(entry.name to "内容格式已无法识别")
+                            }
+                        } catch (e: Exception) {
+                            failed.add(entry.name to e.describe())
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        }
+        return ImportResult(result, failed)
+    }
+
+    /** 导入结果：成功的灯具 + 逐条失败原因（失败不再是"悄悄没了"）。 */
+    data class ImportResult(
+        val fixtures: List<FixtureDef>,
+        val failed: List<Pair<String, String>>   // 文件路径 → 原因
+    )
+
+    private fun Exception.describe(): String =
+        message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName
+
     private fun importFromZip(data: ByteArray): List<FixtureDef> {
         val result = mutableListOf<FixtureDef>()
         java.io.ByteArrayInputStream(data).use { bis ->
@@ -338,11 +426,13 @@ class FixtureStore(context: Context) {
                     val entry = zip.nextEntry ?: break
                     if (entry.isDirectory) continue
                     val raw = zip.readBytes()
-                    val ln = entry.name.lowercase()
-                    when {
-                        ln.endsWith(".xml") -> importFromXml(raw, entry.name).let { result.addAll(it) }
-                        ln.endsWith(".d4") -> importFromD4(raw, entry.name).let { result.addAll(it) }
-                        ln.endsWith(".r20") -> importFromR20(raw, entry.name).let { result.addAll(it) }
+                    // v7：按**内容**分派，不再只看扩展名 —— 后缀写错但内容正确的
+                    // 文件以前会被静默丢掉（表现为"压缩包里明明有灯库却导入 0 个"）。
+                    val (kind, _) = ZipScan.detectAndParse(raw)
+                    when (kind) {
+                        ZipScan.KIND_XML -> result.addAll(importFromXml(raw, entry.name))
+                        ZipScan.KIND_D4 -> result.addAll(importFromD4(raw, entry.name))
+                        ZipScan.KIND_R20 -> result.addAll(importFromR20(raw, entry.name))
                     }
                     zip.closeEntry()
                 }

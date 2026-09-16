@@ -32,6 +32,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.SeekBar
 import android.widget.TextView
@@ -2000,12 +2001,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshMasterScope()
     }
 
+    /**
+     * 导入灯库：**先体检、给用户看报告、确认后才写盘**。
+     *
+     * 以前的流程是"直接导"，任何解析不出的文件都静默消失，最后只弹一句
+     * "未找到可识别的灯库文件" —— 用户没法知道压缩包里到底哪个文件有问题。
+     * 现在把 [ZipScan] 的报告摊开：共多少文件、多少可导入、每个跳过的原因。
+     */
     private fun importFixtureZips(uris: List<Uri>) {
-        var total = 0
+        // 逐个读取 + 体检（不写盘）
+        val scanned = mutableListOf<Pair<ByteArray, ZipScan.Report>>()
         for (uri in uris) {
             try {
-                val stream = contentResolver.openInputStream(uri) ?: continue
-                // 取显示文件名（用于单文件 XML/D4/R20 分派）
+                val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
                 var name = ""
                 try {
                     contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
@@ -2013,18 +2021,123 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     }
                 } catch (_: Exception) {}
                 if (name.isEmpty()) name = uri.lastPathSegment ?: ""
-                total += fixtureStore.importFile(stream, name).size
+                scanned.add(raw to fixtureStore.inspect(raw.inputStream(), name))
             } catch (e: Exception) {
-                toast("导入失败: ${e.message}")
+                toast("读取失败: ${e.message}")
+            }
+        }
+        if (scanned.isEmpty()) {
+            toast("没读到文件")
+            return
+        }
+
+        val totalImportable = scanned.sumOf { it.second.fixtureCount }
+        if (totalImportable == 0) {
+            // 一个都导不进来：直接把问题清单摆出来，而不是只说"未找到"
+            showImportReportDialog(scanned, totalImportable, allowImport = false)
+            return
+        }
+        showImportReportDialog(scanned, totalImportable, allowImport = true)
+    }
+
+    /**
+     * 导入体检报告对话框。
+     *
+     * @param allowImport false 时只报告问题（没有可导入的内容），确认按钮变成"知道了"
+     */
+    private fun showImportReportDialog(
+        scanned: List<Pair<ByteArray, ZipScan.Report>>,
+        totalImportable: Int,
+        allowImport: Boolean
+    ) {
+        val body = StringBuilder()
+        for ((_, report) in scanned) {
+            if (scanned.size > 1) body.append("■ ${report.sourceName.ifEmpty { "压缩包" }}\n")
+            body.append(report.summary()).append('\n')
+
+            // 可导入的列出来（最多 12 条，避免对话框过长）
+            val ok = report.importableFiles
+            if (ok.isNotEmpty()) {
+                body.append("\n✅ 将导入：\n")
+                ok.take(12).forEach { e ->
+                    val names = e.fixtures.joinToString("、") { "${it.name}(${it.channelCount}CH)" }
+                    body.append("  · ${e.path.substringAfterLast('/')} → $names\n")
+                }
+                if (ok.size > 12) body.append("  … 另有 ${ok.size - 12} 个\n")
+            }
+
+            // 问题条目：这是本次修复的重点 —— 每个跳过都要有原因
+            val problems = report.problems
+            if (problems.isNotEmpty()) {
+                body.append("\n⚠ 无法导入 ${problems.size} 个：\n")
+                problems.take(15).forEach { e ->
+                    val why = when (val k = e.kind) {
+                        is ZipScan.Kind.Unsupported -> k.reason
+                        is ZipScan.Kind.Unreadable -> k.reason
+                        ZipScan.Kind.NestedZip -> "嵌套压缩包（本 App 不递归展开，请先解压再导入）"
+                        else -> "跳过"
+                    }
+                    body.append("  · ${e.path.substringAfterLast('/')}：$why\n")
+                }
+                if (problems.size > 15) body.append("  … 另有 ${problems.size - 15} 个\n")
+            }
+            body.append('\n')
+        }
+
+        val tv = TextView(this).apply {
+            text = body.toString().trimEnd()
+            setTextIsSelectable(true)   // 方便用户复制文件路径
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            textSize = 12f
+        }
+        val scroll = ScrollView(this).apply {
+            addView(tv)
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(0, pad / 2, 0, 0)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(if (allowImport) "导入灯库：确认内容" else "没有可导入的灯库")
+            .setView(scroll)
+            .setPositiveButton(if (allowImport) "导入 $totalImportable 个灯具" else "知道了") { _, _ ->
+                if (allowImport) doImportScanned(scanned)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 用户确认后真正写盘。 */
+    private fun doImportScanned(scanned: List<Pair<ByteArray, ZipScan.Report>>) {
+        var total = 0
+        val failures = mutableListOf<String>()
+        for ((data, report) in scanned) {
+            try {
+                val res = fixtureStore.importScanned(data, report)
+                total += res.fixtures.size
+                res.failed.forEach { (path, why) -> failures.add("${path.substringAfterLast('/')}: $why") }
+            } catch (e: Exception) {
+                failures.add("${report.sourceName}: ${e.message}")
                 e.printStackTrace()
             }
         }
-        if (total > 0) {
-            toast("导入了 $total 个灯具")
-        } else {
-            toast("未找到可识别的灯库文件")
-        }
         refreshFixturePage()
+        when {
+            failures.isEmpty() -> toast("导入了 $total 个灯具")
+            total > 0 -> toast("导入了 $total 个灯具，另有 ${failures.size} 个失败")
+            else -> showFailureDetails(failures)
+        }
+    }
+
+    /** 有失败且一个都没成功时，把具体原因列出来（别只弹一句"导入失败"）。 */
+    private fun showFailureDetails(failures: List<String>) {
+        val msg = failures.take(15).joinToString("\n") { "· $it" } +
+                  if (failures.size > 15) "\n… 另有 ${failures.size - 15} 个" else ""
+        MaterialAlertDialogBuilder(this)
+            .setTitle("导入失败（${failures.size} 个文件）")
+            .setMessage(msg)
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     /** 添加灯具实例：选灯型 → 名称 + DMX 起始地址。 */
