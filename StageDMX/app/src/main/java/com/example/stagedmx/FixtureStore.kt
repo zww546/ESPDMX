@@ -8,7 +8,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
@@ -383,27 +382,24 @@ class FixtureStore(context: Context) {
         val wanted = report.importableFiles.map { it.path }.toHashSet()
         if (wanted.isEmpty()) return ImportResult(emptyList(), emptyList())
 
-        java.io.ByteArrayInputStream(data).use { bis ->
-            ZipInputStream(bis).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    if (!entry.isDirectory && entry.name in wanted) {
-                        val raw = zip.readBytes()
-                        try {
-                            // 按内容分派（detectAndParse 在体检阶段已确认过格式）
-                            val (kind, _) = ZipScan.detectAndParse(raw)
-                            when (kind) {
-                                ZipScan.KIND_XML -> result.addAll(importFromXml(raw, entry.name))
-                                ZipScan.KIND_D4 -> result.addAll(importFromD4(raw, entry.name))
-                                ZipScan.KIND_R20 -> result.addAll(importFromR20(raw, entry.name))
-                                else -> failed.add(entry.name to "内容格式已无法识别")
-                            }
-                        } catch (e: Exception) {
-                            failed.add(entry.name to e.describe())
-                        }
-                    }
-                    zip.closeEntry()
+        val entries = try {
+            ZipReader.read(data)
+        } catch (e: Exception) {
+            return ImportResult(emptyList(), listOf((report.sourceName.ifEmpty { "压缩包" }) to e.describe()))
+        }
+        for (entry in entries) {
+            if (entry.isDirectory || entry.name !in wanted) continue
+            try {
+                // 按内容分派（detectAndParse 在体检阶段已确认过格式）
+                val (kind, _) = ZipScan.detectAndParse(entry.data)
+                when (kind) {
+                    ZipScan.KIND_XML -> result.addAll(importFromXml(entry.data, entry.name))
+                    ZipScan.KIND_D4 -> result.addAll(importFromD4(entry.data, entry.name))
+                    ZipScan.KIND_R20 -> result.addAll(importFromR20(entry.data, entry.name))
+                    else -> failed.add(entry.name to "内容格式已无法识别")
                 }
+            } catch (e: Exception) {
+                failed.add(entry.name to e.describe())
             }
         }
         return ImportResult(result, failed)
@@ -420,22 +416,21 @@ class FixtureStore(context: Context) {
 
     private fun importFromZip(data: ByteArray): List<FixtureDef> {
         val result = mutableListOf<FixtureDef>()
-        java.io.ByteArrayInputStream(data).use { bis ->
-            ZipInputStream(bis).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    if (entry.isDirectory) continue
-                    val raw = zip.readBytes()
-                    // v7：按**内容**分派，不再只看扩展名 —— 后缀写错但内容正确的
-                    // 文件以前会被静默丢掉（表现为"压缩包里明明有灯库却导入 0 个"）。
-                    val (kind, _) = ZipScan.detectAndParse(raw)
-                    when (kind) {
-                        ZipScan.KIND_XML -> result.addAll(importFromXml(raw, entry.name))
-                        ZipScan.KIND_D4 -> result.addAll(importFromD4(raw, entry.name))
-                        ZipScan.KIND_R20 -> result.addAll(importFromR20(raw, entry.name))
-                    }
-                    zip.closeEntry()
-                }
+        // ⚠ 用 ZipReader 而不是 ZipInputStream：后者对 GBK 文件名的包会抛异常。
+        val entries = try {
+            ZipReader.read(data)
+        } catch (e: Exception) {
+            return emptyList()
+        }
+        for (entry in entries) {
+            if (entry.isDirectory) continue
+            // v7：按**内容**分派，不再只看扩展名 —— 后缀写错但内容正确的
+            // 文件以前会被静默丢掉（表现为"压缩包里明明有灯库却导入 0 个"）。
+            val (kind, _) = ZipScan.detectAndParse(entry.data)
+            when (kind) {
+                ZipScan.KIND_XML -> result.addAll(importFromXml(entry.data, entry.name))
+                ZipScan.KIND_D4 -> result.addAll(importFromD4(entry.data, entry.name))
+                ZipScan.KIND_R20 -> result.addAll(importFromR20(entry.data, entry.name))
             }
         }
         return result

@@ -1,7 +1,6 @@
 package com.example.stagedmx
 
 import java.io.ByteArrayInputStream
-import java.util.zip.ZipInputStream
 
 /**
  * 压缩包「导入前体检」—— 纯函数、无 Android 依赖，可单测。
@@ -156,8 +155,10 @@ object ZipScan {
     /**
      * 枚举压缩包内每一个条目并逐条判定。
      *
-     * 注意：**顺序读取**（[ZipInputStream] 而非 [java.util.zip.ZipFile] 随机访问），
-     * 因为输入是内存里的 ByteArray（来自 SAF `contentResolver` 流），不是文件路径。
+     * ⚠ 这里**不用** `java.util.zip.ZipInputStream`：它对"GBK 文件名但未置 UTF-8 标志位"
+     *   的包（中文 Windows / WinRAR 的默认产物）会直接抛
+     *   `IllegalArgumentException: malformed input`，导致整个包被判成损坏 ——
+     *   而包本身是合法的。详见 [ZipReader]。
      *
      * @param data 整个压缩包的字节
      * @param sourceName 展示用文件名
@@ -165,39 +166,18 @@ object ZipScan {
     fun scanZip(data: ByteArray, sourceName: String = ""): Report {
         val entries = mutableListOf<Entry>()
 
-        val zip = try {
-            ZipInputStream(ByteArrayInputStream(data))
+        val raw = try {
+            ZipReader.read(data)
         } catch (e: Exception) {
-            // 连流都建不起来：整包不可读
+            // 整包读不了：如实报告原因（不再是一句含糊的"损坏"）
             return Report(sourceName, listOf(
                 Entry(sourceName.ifEmpty { "(整个压缩包)" }, data.size, Kind.Unreadable(e.describe()))
             ))
         }
 
-        try {
-            zip.use { z ->
-                while (true) {
-                    val ze = try {
-                        z.nextEntry ?: break
-                    } catch (e: Exception) {
-                        entries.add(Entry("(后续条目)", 0, Kind.Unreadable("压缩包结构损坏：${e.describe()}")))
-                        break
-                    }
-                    val bytes = try {
-                        z.readBytes()
-                    } catch (e: Exception) {
-                        entries.add(Entry(ze.name, 0, Kind.Unreadable("解压失败：${e.describe()}")))
-                        z.closeEntry()
-                        continue
-                    }
-                    entries.add(classify(ze.name, ze.isDirectory, bytes))
-                    z.closeEntry()
-                }
-            }
-        } catch (e: Exception) {
-            entries.add(Entry("(读包过程)", 0, Kind.Unreadable("读取压缩包失败：${e.describe()}")))
+        for (e in raw) {
+            entries.add(classify(e.name, e.isDirectory, e.data))
         }
-
         return Report(sourceName, entries)
     }
 
