@@ -22,6 +22,31 @@ static const char *TAG = "dmx";
 //   60ms 足够正常一帧完成；真卡住时最多丢一帧，下一轮自动重试。
 #define DMX_FRAME_WAIT_MS   60
 
+// ==================== RS-485 接收开关 ====================
+// 0 = **禁用接收**（当前默认）：纯发送端行为，与 v6 及以前一致。
+// 1 = 启用接收：把 RO 绑到 UART RX，并在每帧之间把 EN 切到接收态。
+//
+// 为什么现在默认关闭（不是保守，是当前状态下的正确选择）：
+//   RX 虽然接上了，但**固件里还没有任何代码去消费收到的数据**。开着接收会有三个副作用：
+//     1) 我们自己的发送会被自己的接收端听回去（半双工回波），帧一多 RX FIFO 就溢出；
+//     2) 每次 EN 从"接收"切回"发送"时，A/B 线上的电平跳变会被当成起始位，
+//        esp_dmx 会把它登记为 RX break，进而搅动驱动的状态机；
+//     3) 每帧结束后都有一次多余的 GPIO 写。
+//   换句话说：接收通路"接线正确但没有消费者"，开着只有坏处。
+//   等真正实现 DMX 输入 / RDM 时，把这里改成 1，并同时补上接收任务。
+//
+// 诊断不受影响：dmx_loopback_selftest() 会**临时**把 EN 切到接收态、并临时绑定 RX
+// 引脚来验证硬件，所以即使这里为 0，也能用 BLE 命令 `0xA0 0x40 <universe>`
+// 确认收发器接线对不对。
+//
+// 要恢复接收：把下面这行的 0 改成 1，并补上接收任务。
+// ⚠ 注意：`idf.py -DDMX_RX_ENABLE=1` **不管用** —— 那只是设了个 CMake 变量，
+//   不会变成 C 预处理宏（实测确认过）。改这一行，或者用
+//   target_compile_definitions(${COMPONENT_LIB} PRIVATE DMX_RX_ENABLE=1)。
+#ifndef DMX_RX_ENABLE
+#define DMX_RX_ENABLE       0
+#endif
+
 // 历史说明（勿删，避免以后重复踩坑）：
 //   这里曾经有一段“连续 80 帧失败 → dmx_driver_delete + 重装”的自愈机制。
 //   故障形态是：UART TX_DONE 中断被 cache 停顿饿死 → 驱动卡在 DMX_STATUS_SENDING
@@ -74,35 +99,48 @@ static volatile bool     s_tx_paused = false;
 //   2) ESP-IDF 只在 UART_MODE_RS485_HALF_DUPLEX 下才自动翻转 RTS，
 //      而 esp_dmx 从未调用 uart_set_mode()。
 //   所以 rts_pin 传下去**不会**自动换向，方向必须由我们自己驱动。
-//   现在两个脚各一个 GPIO，严格互斥成对写（见下面的 tx/rx 两个函数）。
 //
-// 方向控制说明：
-//   本工程用的 485 模块只有**一个 EN 脚**（DE 与 /RE 在模块内部处理），
-//   所以 dmx_transceiver_{tx,rx}() 写的是同一个 GPIO 的两个电平。
-//   为什么不用 esp_dmx 的 rts_pin 自动换向：
-//   1) 该组件只在 RDM「等待响应」那一个分支里调过 dmx_uart_set_rts()（见
-//      esp_dmx/src/dmx/hal/uart.c:319），发送/接收路径上并不翻转；
-//   2) ESP-IDF 只在 UART_MODE_RS485_HALF_DUPLEX 下才自动翻转 RTS，
-//      而 esp_dmx 从未调用 uart_set_mode()。
-//   所以 rts_pin 传下去**不会**自动换向，方向必须由我们自己驱动。
-//   将来若换成 DE/RE 分开的 6 脚模块，把结构体里 en_pin 拆成两个并各写一行即可。
+// 本工程用的 485 模块只有**一个 EN 脚**（DE 与 /RE 在模块内部处理），
+// 所以下面两个函数写的是同一个 GPIO 的两个电平。
+// 将来若换成 DE/RE 分开的 6 脚模块，把结构体里 en_pin 拆成两个并各写一行即可。
+
+/** 直接设置 EN 电平（不理会 DMX_RX_ENABLE）。环回自检要用它强制切到接收态。 */
+static inline void dmx_set_en(const dmx_out_t *o, int level)
+{
+    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, level);
+}
 
 /** 切到发送：EN = 发送态电平 → 模块驱动总线（并关掉自己的接收，避免自收回波）。 */
 static inline void dmx_transceiver_tx(const dmx_out_t *o)
 {
-    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_tx_level);
+    dmx_set_en(o, o->en_tx_level);
 }
 
-/** 切到接收：EN = 接收态电平 → 模块不驱动总线、使能接收。 */
+/**
+ * 切到接收：EN = 接收态电平 → 模块不驱动总线、使能接收。
+ *
+ * ⚠ DMX_RX_ENABLE=0（接收禁用）时**不切**：保持发送态。
+ *   否则每帧之间都会短暂打开接收器，把我们自己的回波灌进 RX FIFO
+ *   （没人消费 → 溢出 + 被登记成伪 break），纯粹是自找麻烦。
+ */
 static inline void dmx_transceiver_rx(const dmx_out_t *o)
 {
-    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
+#if DMX_RX_ENABLE
+    dmx_set_en(o, o->en_rx_level);
+#else
+    (void)o;
+#endif
 }
 
 /** 上电/停机默认态：不驱动总线，接收器待命。 */
 static inline void dmx_transceiver_idle(const dmx_out_t *o)
 {
+#if DMX_RX_ENABLE
     dmx_transceiver_rx(o);
+#else
+    // 接收已禁用：常驻发送态。见 DMX_RX_ENABLE 的说明。
+    dmx_transceiver_tx(o);
+#endif
 }
 
 static bool dmx_install_driver(dmx_out_t *o)
@@ -116,9 +154,14 @@ static bool dmx_install_driver(dmx_out_t *o)
     }
     // v7：把 RO 也绑定到 UART RX（v6 传 -1，接收端是关的）。
     // rts 仍传 -1 —— 方向不用硬件 RTS，由 dmx_transceiver_* 直接驱动 GPIO（原因见上）。
-    if (!dmx_set_pin(o->port, o->tx_pin, o->rx_pin, -1)) {
+    //
+    // ⚠ DMX_RX_ENABLE=0 时传 -1：**不绑定 RX 引脚**。
+    //   这样 UART 的接收通路整个不存在，也就不可能产生 RX 溢出/伪 break 中断。
+    //   （不绑引脚不影响 RO 的物理连接，只是固件不去听。）
+    const int rx = DMX_RX_ENABLE ? o->rx_pin : -1;
+    if (!dmx_set_pin(o->port, o->tx_pin, rx, -1)) {
         ESP_LOGE(TAG, "dmx_set_pin FAILED (port %d, TX=%d RX=%d)",
-                 (int)o->port, o->tx_pin, o->rx_pin);
+                 (int)o->port, o->tx_pin, rx);
         return false;
     }
     return true;
@@ -174,7 +217,9 @@ static void dmx_task(void *arg)
         size_t n = dmx_send(o->port);
         // 发送被拒(n==0)时不等待，直接进入下一轮；正常帧最多等 60ms
         bool ok = (n > 0) && dmx_wait_sent(o->port, pdMS_TO_TICKS(DMX_FRAME_WAIT_MS));
-        // 发完立刻释放总线，否则会一直占着 A/B 线，别的控台/设备无法通信。
+        // 发完释放总线，否则会一直占着 A/B 线，别的控台/设备无法通信。
+        // ⚠ DMX_RX_ENABLE=0 时 dmx_transceiver_rx() 不会把 EN 拉低
+        //   —— 纯发送端就该一直握着总线。
         dmx_transceiver_rx(o);
         s_last_ok[u] = ok;
         s_frames[u]++;
@@ -204,11 +249,14 @@ static void dmx_telemetry_task(void *arg)
             // 接收诊断：只读 FIFO 水位，**不消费数据**。
             // esp_dmx 从不读 RX FIFO（只在收 RDM 响应时 reset 它），所以这里读水位
             // 不会与驱动抢数据。rx=0 一直不变 ⇒ 接收通路（RO→RX 或模块 EN）有问题；
-            // 若总线对端在发 DMX 而这里 rx 持续增长 ⇒ 接收通路是活的。
+            // 若总线对端在发 DMX 而 rx 持续增长 ⇒ 接收通路是活的。
+            // ⚠ 接收禁用时 RX 引脚没绑定，这个数字没有意义，不打（省得误导）。
+#if DMX_RX_ENABLE
             size_t pending = 0;
             if (uart_get_buffered_data_len(s_out[u].port, &pending) == ESP_OK) {
                 s_rx_pending[u] = (int)pending;
             }
+#endif
             uint32_t f = s_frames[u], bad = s_fails[u];
             uint32_t fps = (f - last[u]) / 5;
             last[u] = f;
@@ -218,12 +266,20 @@ static void dmx_telemetry_task(void *arg)
             if (base > DMX_CHANNELS) base = DMX_CHANNELS;
             uint16_t start16 = (uint16_t)(base - 16);
             int nz = 0; for (int i = 0; i < 16; i++) if (ch[start16 + i]) nz++;
+#if DMX_RX_ENABLE
             ESP_LOGI(TAG, "U%d frm=%u fps=%u ok=%d fail=%u rx=%d nz16=%d ch%d..%d=%d %d %d %d %d %d %d %d",
                      u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad,
                      s_rx_pending[u], nz,
                      start16 + 1, start16 + 16,
                      ch[start16], ch[start16+1], ch[start16+2], ch[start16+3],
                      ch[start16+4], ch[start16+5], ch[start16+6], ch[start16+7]);
+#else
+            ESP_LOGI(TAG, "U%d frm=%u fps=%u ok=%d fail=%u nz16=%d ch%d..%d=%d %d %d %d %d %d %d %d",
+                     u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad, nz,
+                     start16 + 1, start16 + 16,
+                     ch[start16], ch[start16+1], ch[start16+2], ch[start16+3],
+                     ch[start16+4], ch[start16+5], ch[start16+6], ch[start16+7]);
+#endif
         }
     }
 }
@@ -275,16 +331,18 @@ static bool loopback_try(dmx_out_t *o, int tx_level, uint8_t *out_got, int *out_
     memset(out_got, 0, sizeof(pattern));
 
     // 清 FIFO，切到"接收"（与本次尝试的 tx_level 相反）
+    // ⚠ 这里用 dmx_set_en 直接驱动，绕开 DMX_RX_ENABLE —— 自检的目的就是
+    //   验证收发器硬件，所以即使接收功能被禁用也要真的把接收器打开。
     uart_flush_input(o->port);
-    gpio_set_level((gpio_num_t)o->en_pin, tx_level ? 0 : 1);
+    dmx_set_en(o, tx_level ? 0 : 1);
     vTaskDelay(pdMS_TO_TICKS(2));
 
     // 用本次假设的发送态把数据送出去
-    gpio_set_level((gpio_num_t)o->en_pin, tx_level);
+    dmx_set_en(o, tx_level);
     uart_write_bytes(o->port, pattern, sizeof(pattern));
     uart_wait_tx_done(o->port, pdMS_TO_TICKS(100));
     // 立刻切回接收等回波
-    gpio_set_level((gpio_num_t)o->en_pin, tx_level ? 0 : 1);
+    dmx_set_en(o, tx_level ? 0 : 1);
     vTaskDelay(pdMS_TO_TICKS(30));   // 8 字节 @250k 8N2 ≈ 0.35ms，给足余量
 
     size_t pending = 0;
@@ -326,6 +384,13 @@ bool dmx_loopback_selftest(uint8_t universe)
     s_tx_paused = true;
     vTaskDelay(pdMS_TO_TICKS(60));   // 等输出任务让路（它在 5ms 一轮地轮询这个标志）
 
+    // ⚠ DMX_RX_ENABLE=0 时 UART 没有绑定 RX 引脚（见 dmx_install_driver），
+    //   自检就收不到任何回波。这里**临时**把 RX 绑上，测完再解绑 ——
+    //   自检的目的是验证收发器硬件，应该独立于功能开关。
+    if (!DMX_RX_ENABLE) {
+        dmx_set_pin(o->port, o->tx_pin, o->rx_pin, -1);
+    }
+
     uint8_t got[8];
     int n = 0, match = 0;
     bool pass = false;
@@ -357,7 +422,10 @@ bool dmx_loopback_selftest(uint8_t universe)
                  universe + 1, o->rx_pin, o->en_pin);
     }
 
-    // 恢复：切回配置的发送态并放行输出任务
+    // 恢复：解绑临时 RX（若刚才是为自检绑上的）、切回发送态并放行输出任务
+    if (!DMX_RX_ENABLE) {
+        dmx_set_pin(o->port, o->tx_pin, -1, -1);
+    }
     dmx_transceiver_tx(o);
     s_tx_paused = false;
     return pass;
