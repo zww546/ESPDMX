@@ -328,12 +328,6 @@ static void handle_frame(const uint8_t *d, uint16_t len)
             if (arg) usb_msc_start();
             else     usb_msc_stop();
             break;
-        case 0x40: // 环回自检：0xA0 0x40 universe（0=U1, 1=U2）
-            // ⚠ 会暂停该宇宙的 DMX 输出约 100ms，仅用于接线诊断。
-            //   注意：这里跑在 NimBLE host task 上，自检内部有 vTaskDelay，
-            //   会短暂阻塞 BLE 协议栈 —— 诊断命令，可接受。
-            dmx_loopback_selftest(arg ? 1 : 0);
-            break;
         default: break;
         }
         break;

@@ -4,7 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/uart.h"     // 环回自检 / 接收计数（诊断用，不接管驱动的收发）
 #include "esp_log.h"
 #include "esp_dmx.h"
 #include "esp_intr_alloc.h"   // esp_intr_dump（诊断用）
@@ -34,10 +33,6 @@ static const char *TAG = "dmx";
 //     3) 每帧结束后都有一次多余的 GPIO 写。
 //   换句话说：接收通路"接线正确但没有消费者"，开着只有坏处。
 //   等真正实现 DMX 输入 / RDM 时，把这里改成 1，并同时补上接收任务。
-//
-// 诊断不受影响：dmx_loopback_selftest() 会**临时**把 EN 切到接收态、并临时绑定 RX
-// 引脚来验证硬件，所以即使这里为 0，也能用 BLE 命令 `0xA0 0x40 <universe>`
-// 确认收发器接线对不对。
 //
 // 要恢复接收：把下面这行的 0 改成 1，并补上接收任务。
 // ⚠ 注意：`idf.py -DDMX_RX_ENABLE=1` **不管用** —— 那只是设了个 CMake 变量，
@@ -85,10 +80,6 @@ static dmx_out_t s_out[DMX_UNIVERSES] = {
 static volatile uint32_t s_frames[DMX_UNIVERSES];
 static volatile uint32_t s_fails[DMX_UNIVERSES];
 static volatile bool     s_last_ok[DMX_UNIVERSES];
-// 接收诊断：UART RX FIFO 里当前堆积的字节数（只读，不消费 —— 见下方说明）。
-static volatile int      s_rx_pending[DMX_UNIVERSES];
-// 环回自检期间暂停发送（避免自检数据与 DMX 帧在总线上打架）。
-static volatile bool     s_tx_paused = false;
 
 // ==================== 收发方向控制 ====================
 // RS-485 半双工：同一时刻只能有一端驱动总线，DE/RE 必须成对切换。
@@ -104,16 +95,10 @@ static volatile bool     s_tx_paused = false;
 // 所以下面两个函数写的是同一个 GPIO 的两个电平。
 // 将来若换成 DE/RE 分开的 6 脚模块，把结构体里 en_pin 拆成两个并各写一行即可。
 
-/** 直接设置 EN 电平（不理会 DMX_RX_ENABLE）。环回自检要用它强制切到接收态。 */
-static inline void dmx_set_en(const dmx_out_t *o, int level)
-{
-    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, level);
-}
-
 /** 切到发送：EN = 发送态电平 → 模块驱动总线（并关掉自己的接收，避免自收回波）。 */
 static inline void dmx_transceiver_tx(const dmx_out_t *o)
 {
-    dmx_set_en(o, o->en_tx_level);
+    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_tx_level);
 }
 
 /**
@@ -126,7 +111,7 @@ static inline void dmx_transceiver_tx(const dmx_out_t *o)
 static inline void dmx_transceiver_rx(const dmx_out_t *o)
 {
 #if DMX_RX_ENABLE
-    dmx_set_en(o, o->en_rx_level);
+    if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
 #else
     (void)o;
 #endif
@@ -209,7 +194,6 @@ static void dmx_task(void *arg)
              u + 1, (int)o->port, o->tx_pin, o->rx_pin, o->en_pin,
              dmx_get_baud_rate(o->port), xPortGetCoreID());
     while (1) {
-        if (s_tx_paused) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }  // 环回自检期间让路
         // 半双工：驱动总线前先切到发送态（DE=1, /RE=1）。
         dmx_transceiver_tx(o);
         dmx_state_copy_port_frame(o->frame, u);
@@ -246,17 +230,6 @@ static void dmx_telemetry_task(void *arg)
         dmx_state_snapshot(ch);
         for (int u = 0; u < DMX_UNIVERSES; u++) {
             if (!s_out[u].ok) continue;
-            // 接收诊断：只读 FIFO 水位，**不消费数据**。
-            // esp_dmx 从不读 RX FIFO（只在收 RDM 响应时 reset 它），所以这里读水位
-            // 不会与驱动抢数据。rx=0 一直不变 ⇒ 接收通路（RO→RX 或模块 EN）有问题；
-            // 若总线对端在发 DMX 而 rx 持续增长 ⇒ 接收通路是活的。
-            // ⚠ 接收禁用时 RX 引脚没绑定，这个数字没有意义，不打（省得误导）。
-#if DMX_RX_ENABLE
-            size_t pending = 0;
-            if (uart_get_buffered_data_len(s_out[u].port, &pending) == ESP_OK) {
-                s_rx_pending[u] = (int)pending;
-            }
-#endif
             uint32_t f = s_frames[u], bad = s_fails[u];
             uint32_t fps = (f - last[u]) / 5;
             last[u] = f;
@@ -266,20 +239,11 @@ static void dmx_telemetry_task(void *arg)
             if (base > DMX_CHANNELS) base = DMX_CHANNELS;
             uint16_t start16 = (uint16_t)(base - 16);
             int nz = 0; for (int i = 0; i < 16; i++) if (ch[start16 + i]) nz++;
-#if DMX_RX_ENABLE
-            ESP_LOGI(TAG, "U%d frm=%u fps=%u ok=%d fail=%u rx=%d nz16=%d ch%d..%d=%d %d %d %d %d %d %d %d",
-                     u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad,
-                     s_rx_pending[u], nz,
-                     start16 + 1, start16 + 16,
-                     ch[start16], ch[start16+1], ch[start16+2], ch[start16+3],
-                     ch[start16+4], ch[start16+5], ch[start16+6], ch[start16+7]);
-#else
             ESP_LOGI(TAG, "U%d frm=%u fps=%u ok=%d fail=%u nz16=%d ch%d..%d=%d %d %d %d %d %d %d %d",
                      u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad, nz,
                      start16 + 1, start16 + 16,
                      ch[start16], ch[start16+1], ch[start16+2], ch[start16+3],
                      ch[start16+4], ch[start16+5], ch[start16+6], ch[start16+7]);
-#endif
         }
     }
 }
@@ -314,119 +278,4 @@ void dmx_start(void)
     xTaskCreatePinnedToCore(dmx_init_task, "dmx_init", 4096, NULL, 5, NULL, 1);
 }
 
-/**
- * 环回自检（单次尝试，指定发送态电平）。
- *
- * 把 EN 设为 tx_level 后往总线补发 8 个已知字节，再数 RX FIFO 回读了多少、
- * 内容是否一致。用 IDF 的 uart_write_bytes/uart_read_bytes 直连 UART ——
- * 只做字节收发，不碰 esp_dmx 的帧状态机。
- *
- * @param tx_level 本次尝试把 EN 当作"发送态"的电平
- * @param out_got 回读到的字节（至少 8 字节），便于调用方打印
- * @return 8 字节全部正确回来
- */
-static bool loopback_try(dmx_out_t *o, int tx_level, uint8_t *out_got, int *out_n, int *out_match)
-{
-    static const uint8_t pattern[] = { 0xAA, 0x55, 0x00, 0xFF, 0x12, 0x34, 0x56, 0x78 };
-    memset(out_got, 0, sizeof(pattern));
 
-    // 清 FIFO，切到"接收"（与本次尝试的 tx_level 相反）
-    // ⚠ 这里用 dmx_set_en 直接驱动，绕开 DMX_RX_ENABLE —— 自检的目的就是
-    //   验证收发器硬件，所以即使接收功能被禁用也要真的把接收器打开。
-    uart_flush_input(o->port);
-    dmx_set_en(o, tx_level ? 0 : 1);
-    vTaskDelay(pdMS_TO_TICKS(2));
-
-    // 用本次假设的发送态把数据送出去
-    dmx_set_en(o, tx_level);
-    uart_write_bytes(o->port, pattern, sizeof(pattern));
-    uart_wait_tx_done(o->port, pdMS_TO_TICKS(100));
-    // 立刻切回接收等回波
-    dmx_set_en(o, tx_level ? 0 : 1);
-    vTaskDelay(pdMS_TO_TICKS(30));   // 8 字节 @250k 8N2 ≈ 0.35ms，给足余量
-
-    size_t pending = 0;
-    uart_get_buffered_data_len(o->port, &pending);
-    int n = 0;
-    if (pending > 0) n = (int)uart_read_bytes(o->port, out_got, sizeof(pattern), pdMS_TO_TICKS(50));
-
-    int match = 0;
-    for (int i = 0; i < n && i < (int)sizeof(pattern); i++) {
-        if (out_got[i] == pattern[i]) match++;
-    }
-    *out_n = n;
-    *out_match = match;
-    return (n == (int)sizeof(pattern)) && (match == (int)sizeof(pattern));
-}
-
-/**
- * 环回自检 —— 确认接收通路通不通，并**自动判定 EN 的极性**。
- *
- * 背景：单 EN 的 485 模块有多种内部接法，肉眼看不出来：
- *   (a) EN = /RE（接收使能，低有效），驱动使能内部常开
- *   (b) EN = DE（驱动使能，高有效），接收内部常开 → EN 低时常驻接收
- *   (c) EN 同时并到 DE 与 /RE
- *   (d) 模块内部自动方向（靠 TXD 活动检测），EN 是别的用途
- * 极性反了的表现是"完全收不到"，所以这里**两种极性都试**，并报告哪一种通过。
- *
- * ⚠ 这是**离线自检**：期间暂停 DMX 发送（s_tx_paused），需要 A/B 回路。
- *   测法一（最简单）：把本模块的 A/B 短接（可经 120Ω 电阻），应回收到全部字节。
- *   测法二：接上真实控台总线，此时只判字节数（内容取决于总线上其他设备）。
- */
-bool dmx_loopback_selftest(uint8_t universe)
-{
-    if (universe >= DMX_UNIVERSES || !s_out[universe].ok) {
-        ESP_LOGE(TAG, "loopback: universe %u 未就绪", universe);
-        return false;
-    }
-    dmx_out_t *o = &s_out[universe];
-
-    s_tx_paused = true;
-    vTaskDelay(pdMS_TO_TICKS(60));   // 等输出任务让路（它在 5ms 一轮地轮询这个标志）
-
-    // ⚠ DMX_RX_ENABLE=0 时 UART 没有绑定 RX 引脚（见 dmx_install_driver），
-    //   自检就收不到任何回波。这里**临时**把 RX 绑上，测完再解绑 ——
-    //   自检的目的是验证收发器硬件，应该独立于功能开关。
-    if (!DMX_RX_ENABLE) {
-        dmx_set_pin(o->port, o->tx_pin, o->rx_pin, -1);
-    }
-
-    uint8_t got[8];
-    int n = 0, match = 0;
-    bool pass = false;
-    int used_tx_level = o->en_tx_level;
-
-    // 先按当前配置的极性试；失败则试反极性，并报告哪一种对
-    if (!loopback_try(o, o->en_tx_level, got, &n, &match)) {
-        int n2 = 0, m2 = 0;
-        uint8_t got2[8];
-        int alt = o->en_tx_level ? 0 : 1;
-        if (loopback_try(o, alt, got2, &n2, &m2)) {
-            pass = true;
-            used_tx_level = alt;
-            for (int i = 0; i < 8; i++) got[i] = got2[i];
-            n = n2; match = m2;
-            ESP_LOGW(TAG, "loopback U%u: 当前 EN 极性反了！应把 en_tx_level 改成 %d（en_rx_level 改成 %d）",
-                     universe + 1, alt, alt ? 0 : 1);
-        }
-    } else {
-        pass = true;
-    }
-
-    ESP_LOGI(TAG, "loopback U%u: tx_level=%d got=%d match=%d/8 -> %s  (hex: %02X %02X %02X %02X %02X %02X %02X %02X)",
-             universe + 1, used_tx_level, n, match, pass ? "PASS" : "FAIL",
-             got[0], got[1], got[2], got[3], got[4], got[5], got[6], got[7]);
-    if (!pass) {
-        ESP_LOGW(TAG, "loopback U%u 未收到回波（两种极性都试过）：检查 A/B 是否短接回路、"
-                      "RO 是否接到 GPIO%d、EN 是否接到 GPIO%d、以及 A/B 有没有接反",
-                 universe + 1, o->rx_pin, o->en_pin);
-    }
-
-    // 恢复：解绑临时 RX（若刚才是为自检绑上的）、切回发送态并放行输出任务
-    if (!DMX_RX_ENABLE) {
-        dmx_set_pin(o->port, o->tx_pin, -1, -1);
-    }
-    dmx_transceiver_tx(o);
-    s_tx_paused = false;
-    return pass;
-}
