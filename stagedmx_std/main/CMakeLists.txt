@@ -7,6 +7,7 @@ idf_component_register(
          "fx.c"
          "fx_proto.c"
          "render.c"
+         "rdm.c"
          "usb_msc.c"
          "file_xfer.c"
     INCLUDE_DIRS "."

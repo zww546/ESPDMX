@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"     // uart_flush_input（RDM 进入前清 RX）
 #include "esp_log.h"
 #include "esp_dmx.h"
 #include "esp_intr_alloc.h"   // esp_intr_dump（诊断用）
@@ -77,9 +78,94 @@ static dmx_out_t s_out[DMX_UNIVERSES] = {
       .en_pin = DMX_EN2_PIN, .en_rx_level = 0, .en_tx_level = 1 },
 };
 
+// 最近一次遥测算出的帧率（每 5s 更新一次）；状态帧上报用
+static volatile uint8_t  s_fps[DMX_UNIVERSES];
+
 static volatile uint32_t s_frames[DMX_UNIVERSES];
 static volatile uint32_t s_fails[DMX_UNIVERSES];
 static volatile bool     s_last_ok[DMX_UNIVERSES];
+
+// 方向控制函数在后面定义，这里先声明（RDM 的方向切换要用）
+static inline void dmx_transceiver_tx(const dmx_out_t *o);
+static inline void dmx_transceiver_rx(const dmx_out_t *o);
+static inline void dmx_transceiver_idle(const dmx_out_t *o);
+
+// ---- RDM 用的输出暂停/恢复 ----
+// RDM 要独占总线：控制器发请求、灯具应答，期间不能再有 DMX 帧插进来。
+// 用"标志 + 应答信号量"让输出任务自己停到安全点（而不是直接删驱动）。
+static volatile bool s_paused[DMX_UNIVERSES];
+static SemaphoreHandle_t s_pause_ack[DMX_UNIVERSES];
+
+bool dmx_output_pause(uint8_t universe)
+{
+    if (universe >= DMX_UNIVERSES || !s_out[universe].ok) return false;
+    if (s_paused[universe]) return true;
+    if (!s_pause_ack[universe]) {
+        s_pause_ack[universe] = xSemaphoreCreateBinary();
+        if (!s_pause_ack[universe]) return false;
+    }
+    xSemaphoreTake(s_pause_ack[universe], 0);      // 清掉旧信号
+    s_paused[universe] = true;
+    // 输出任务一帧最长 ~23ms（+60ms 等待），给 200ms 足够它停到安全点
+    return xSemaphoreTake(s_pause_ack[universe], pdMS_TO_TICKS(200)) == pdTRUE;
+}
+
+void dmx_output_resume(uint8_t universe)
+{
+    if (universe >= DMX_UNIVERSES) return;
+    s_paused[universe] = false;
+}
+
+bool dmx_rdm_mode(uint8_t universe, bool on)
+{
+    if (universe >= DMX_UNIVERSES || !s_out[universe].ok) return false;
+    dmx_out_t *o = &s_out[universe];
+    if (on) {
+        // 绑定 RX 引脚；EN 作为 RTS 交给驱动，收发之间由硬件自动换向
+        if (!dmx_set_pin(o->port, o->tx_pin, o->rx_pin, o->en_pin)) {
+            ESP_LOGE(TAG, "U%d RDM: dmx_set_pin(EN→RTS) 失败", universe + 1);
+            return false;
+        }
+        // 先置接收态，把上电/上一次发送的残留数据清掉
+        gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
+        uart_flush_input(o->port);
+    } else {
+        // 解绑 RX：接收通路整个消失，不会再有 RX 溢出/伪 break 中断
+        if (!dmx_set_pin(o->port, o->tx_pin, -1, -1)) {
+            ESP_LOGE(TAG, "U%d RDM: 恢复引脚失败", universe + 1);
+            return false;
+        }
+        dmx_transceiver_tx(o);      // 收回方向控制：保持发送态
+    }
+    return true;
+}
+
+int dmx_port_of(uint8_t universe)
+{
+    if (universe >= DMX_UNIVERSES || !s_out[universe].ok) return -1;
+    return (int)s_out[universe].port;
+}
+
+bool dmx_port_ready(uint8_t universe)
+{
+    return universe < DMX_UNIVERSES && s_out[universe].ok;
+}
+
+void dmx_get_stats(uint8_t universe, uint32_t *frames, uint32_t *fails,
+                   uint8_t *ok, uint8_t *fps)
+{
+    if (universe >= DMX_UNIVERSES) {
+        if (frames) *frames = 0;
+        if (fails)  *fails = 0;
+        if (ok)     *ok = 0;
+        if (fps)    *fps = 0;
+        return;
+    }
+    if (frames) *frames = s_frames[universe];
+    if (fails)  *fails  = s_fails[universe];
+    if (ok)     *ok     = s_last_ok[universe] ? 1 : 0;
+    if (fps)    *fps    = s_fps[universe];
+}
 
 // ==================== 收发方向控制 ====================
 // RS-485 半双工：同一时刻只能有一端驱动总线，DE/RE 必须成对切换。
@@ -194,6 +280,15 @@ static void dmx_task(void *arg)
              u + 1, (int)o->port, o->tx_pin, o->rx_pin, o->en_pin,
              dmx_get_baud_rate(o->port), xPortGetCoreID());
     while (1) {
+        // RDM 独占期：停发 DMX，并回一个应答让 dmx_output_pause() 能继续。
+        // 必须停在这里（一帧的边界）而不是发送中途 —— 中途停会把驱动留在
+        // DMX_STATUS_SENDING，之后的 dmx_send 会一直返回 0。
+        if (s_paused[u]) {
+            dmx_transceiver_idle(o);
+            if (s_pause_ack[u]) xSemaphoreGive(s_pause_ack[u]);
+            while (s_paused[u]) vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
         // 半双工：驱动总线前先切到发送态（DE=1, /RE=1）。
         dmx_transceiver_tx(o);
         dmx_state_copy_port_frame(o->frame, u);
@@ -233,6 +328,7 @@ static void dmx_telemetry_task(void *arg)
             uint32_t f = s_frames[u], bad = s_fails[u];
             uint32_t fps = (f - last[u]) / 5;
             last[u] = f;
+            s_fps[u] = (uint8_t)(fps > 255 ? 255 : fps);
             uint16_t off = (uint16_t)u * DMX_UNIVERSE_SIZE;
             // 取该宇宙末端的最后 16 个通道（避免超出 1024 缓冲：u=1 时 off=1024）
             uint16_t base = (uint16_t)(off + DMX_UNIVERSE_SIZE);

@@ -12,6 +12,7 @@
 #include "program.h"
 #include "fx.h"
 #include "render.h"
+#include "rdm.h"
 #include "usb_msc.h"
 
 static const char *TAG = "stagedmx_std";
@@ -28,6 +29,7 @@ void app_main(void)
     dmx_state_init();
     dmx_start();
     render_start_task();   // v6：程序层 + 效果层 合成在同一个渲染管线里
+    rdm_init();            // v8：RDM 控制器（设备表放 PSRAM）
     ble_dmx_init();
 
     ESP_LOGI(TAG, "StageDMX Std ready.");

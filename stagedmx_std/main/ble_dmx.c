@@ -4,6 +4,7 @@
 #include "program.h"
 #include "fx.h"
 #include "fx_proto.h"
+#include "rdm.h"
 #include "usb_msc.h"
 #include "file_xfer.h"
 #include <string.h>
@@ -57,7 +58,10 @@ static void state_sync_task(void *arg)
 {
     static uint8_t frame[DMX_CHANNELS];
     while (1) {
-        if (xSemaphoreTake(s_state_sem, portMAX_DELAY) != pdTRUE) continue;
+        // 2 秒超时 = "心跳"：即使没有 0x05 请求，也定期把 16 字节状态头发给 App，
+        // 否则状态总览条会停在连接那一刻的数值（fps 恒为 0）。
+        // 只发头、不重发 1024 通道，BLE 负担可忽略。
+        const bool requested = (xSemaphoreTake(s_state_sem, pdMS_TO_TICKS(2000)) == pdTRUE);
         if (!s_connected) continue;
 
         uint32_t up_s = (uint32_t)(esp_timer_get_time() / 1000000);
@@ -73,7 +77,24 @@ static void state_sync_task(void *arg)
         h[4] = (uint8_t)(up_s >> 8);  h[5] = (uint8_t)up_s;
         h[6] = (uint8_t)fx_count;
         h[7] = prog_mask;
-        ble_dmx_notify(h, 8);
+        // ---- v9 追加：DMX 遥测（供 App 状态总览条）----
+        // ⚠ 新字段只能**追加在尾部**：App 按帧长判断，新旧混用不会越界。
+        //   [8] DMX 正常位(bit0=U1,bit1=U2) [9..12] 累计失败帧(大端)
+        //   [13] U1 fps [14] U2 fps [15] 保留
+        uint32_t f1 = 0, x1 = 0, f2 = 0, x2 = 0;
+        uint8_t ok1 = 0, ok2 = 0, fps1 = 0, fps2 = 0;
+        dmx_get_stats(0, &f1, &x1, &ok1, &fps1);
+        if (DMX_UNIVERSES > 1) dmx_get_stats(1, &f2, &x2, &ok2, &fps2);
+        uint32_t fails = x1 + x2;
+        h[8] = (uint8_t)((ok1 ? 1 : 0) | (ok2 ? 2 : 0));
+        h[9]  = (uint8_t)(fails >> 24); h[10] = (uint8_t)(fails >> 16);
+        h[11] = (uint8_t)(fails >> 8);  h[12] = (uint8_t)fails;
+        h[13] = fps1;
+        h[14] = fps2;
+        h[15] = 0;
+        ble_dmx_notify(h, 16);
+        if (!requested) continue;   // 心跳只发状态头，通道快照仅在真正请求时发
+
         vTaskDelay(pdMS_TO_TICKS(10));
 
         // 1024 通道快照（纯通道数组，buf[0] = 全局通道 1；无起始码）
@@ -151,11 +172,157 @@ static int parse_dir_name(const uint8_t *d, int len, int pos,
     return parse_dir(d, len, next, name, nameCap);
 }
 
+// ==================== RDM 请求队列 + 工作任务 ====================
+// 扫描/改址/识别都是阻塞操作（要暂停 DMX、等灯具应答），而 handle_frame 跑在
+// NimBLE host 任务上 —— 直接同步执行会阻塞 BLE 甚至断连。所以：
+//   handle_frame 只登记请求 → rdm_task 串行执行 → 用通知回传结果。
+typedef enum { RDM_REQ_NONE = 0, RDM_REQ_SCAN, RDM_REQ_IDENTIFY, RDM_REQ_SETADDR,
+               RDM_REQ_SETADDRS } rdm_req_t;
+
+static volatile rdm_req_t s_rdm_req = RDM_REQ_NONE;
+static uint8_t  s_rdm_uni;
+static uint8_t  s_rdm_uid[6];
+static uint8_t  s_rdm_on;
+static uint16_t s_rdm_addr;
+// 批量改址的批次数据（0x44）。请求只传"去处理它"，数据本身放这里。
+static rdm_addr_set_t s_rdm_batch[32];
+static uint8_t        s_rdm_batch_n;
+
+static SemaphoreHandle_t s_rdm_sem = NULL;
+
+static void rdm_post(rdm_req_t req, uint8_t universe, const uint8_t *uid,
+                     uint8_t on, uint16_t addr)
+{
+    if (s_rdm_req != RDM_REQ_NONE) {      // 上一个还没跑完
+        uint8_t busy[2] = { 0x8B, 1 };    // 1 = 失败
+        ble_dmx_notify(busy, 2);
+        return;
+    }
+    s_rdm_uni = universe;
+    if (uid) memcpy(s_rdm_uid, uid, 6);
+    s_rdm_on = on;
+    s_rdm_addr = addr;
+    s_rdm_req = req;
+    if (s_rdm_sem) xSemaphoreGive(s_rdm_sem);
+}
+
+/** 把驱动用的 rdm_device_t 序列化成一帧 0x8A（含全部 GET 到的参数）。 */
+static void rdm_send_device(uint8_t universe, int idx)
+{
+    const rdm_device_t *dev = rdm_device_get(universe, idx);
+    if (!dev) return;
+    static uint8_t buf[260];
+    int i = 0;
+    buf[i++] = 0x8A;
+    buf[i++] = (uint8_t)idx;
+    buf[i++] = universe;
+    memcpy(&buf[i], dev->uid, 6); i += 6;
+    buf[i++] = (uint8_t)(dev->start_addr >> 8);
+    buf[i++] = (uint8_t)(dev->start_addr & 0xFF);
+    buf[i++] = (uint8_t)(dev->footprint >> 8);
+    buf[i++] = (uint8_t)(dev->footprint & 0xFF);
+    buf[i++] = (uint8_t)(dev->model_id >> 8);
+    buf[i++] = (uint8_t)(dev->model_id & 0xFF);
+    buf[i++] = (uint8_t)(dev->product_category >> 8);
+    buf[i++] = (uint8_t)(dev->product_category & 0xFF);
+    buf[i++] = (uint8_t)(dev->software_version_id >> 24);
+    buf[i++] = (uint8_t)(dev->software_version_id >> 16);
+    buf[i++] = (uint8_t)(dev->software_version_id >> 8);
+    buf[i++] = (uint8_t)(dev->software_version_id);
+    buf[i++] = dev->personality;
+    buf[i++] = dev->personality_count;
+    buf[i++] = (uint8_t)(dev->sub_device_count >> 8);
+    buf[i++] = (uint8_t)(dev->sub_device_count & 0xFF);
+    buf[i++] = dev->sensor_count;
+    // 5 段文本：每段 len(1) + 内容
+    const char *labels[5] = { dev->manufacturer, dev->model_desc,
+                              dev->software_label, dev->device_label,
+                              dev->personality_desc };
+    for (int k = 0; k < 5; k++) {
+        size_t n = strlen(labels[k]);
+        if (n > 32) n = 32;
+        buf[i++] = (uint8_t)n;
+        memcpy(&buf[i], labels[k], n);
+        i += n;
+    }
+    ble_dmx_notify(buf, (uint16_t)i);
+}
+
+static void rdm_reply_result(bool ok, const char *what)
+{
+    uint8_t buf[128];
+    const char *err = ok ? "" : rdm_last_error();
+    size_t n = strlen(err);
+    if (n > 100) n = 100;
+    int i = 0;
+    buf[i++] = 0x8B;                 // 操作结果（识别/改址）
+    buf[i++] = ok ? 0 : 1;
+    buf[i++] = (uint8_t)n;
+    memcpy(&buf[i], err, n);
+    i += n;
+    ble_dmx_notify(buf, (uint16_t)i);
+    ESP_LOGI(TAG, "%s: %s", what, ok ? "OK" : err);
+}
+
+static void rdm_task(void *arg)
+{
+    while (1) {
+        if (xSemaphoreTake(s_rdm_sem, portMAX_DELAY) != pdTRUE) continue;
+        rdm_req_t req = s_rdm_req;
+        if (req == RDM_REQ_NONE) continue;
+        const uint8_t uni = s_rdm_uni;
+        switch (req) {
+        case RDM_REQ_SCAN: {
+            int found = rdm_scan(uni);
+            // 0x89 扫描头：count(1) universe(1) ok(1) errLen(1) err…
+            uint8_t buf[128];
+            const char *err = (found <= 0) ? rdm_last_error() : "";
+            size_t n = strlen(err);
+            if (n > 100) n = 100;
+            int i = 0;
+            buf[i++] = 0x89;
+            buf[i++] = (uint8_t)(found < 0 ? 0 : found);
+            buf[i++] = uni;
+            buf[i++] = (found > 0) ? 0 : 1;
+            buf[i++] = rdm_get_simulate() ? 1 : 0;   // 模拟标记：App 要显式标出来
+            buf[i++] = (uint8_t)n;
+            memcpy(&buf[i], err, n);
+            i += n;
+            ESP_LOGI(TAG, "RDM 回 0x89: found=%d 模拟=%d 帧长=%d connected=%d",
+                     found, (int)rdm_get_simulate(), i, (int)s_connected);
+            ble_dmx_notify(buf, (uint16_t)i);
+            for (int k = 0; k < (found > 0 ? found : 0); k++) {
+                rdm_send_device(uni, k);
+                vTaskDelay(pdMS_TO_TICKS(20));   // 给 BLE 栈留出发送时间
+            }
+            break;
+        }
+        case RDM_REQ_IDENTIFY:
+            rdm_reply_result(rdm_identify(uni, s_rdm_uid, s_rdm_on != 0), "RDM identify");
+            break;
+        case RDM_REQ_SETADDR:
+            rdm_reply_result(rdm_set_address(uni, s_rdm_uid, s_rdm_addr), "RDM set address");
+            break;
+        case RDM_REQ_SETADDRS: {
+            int ok = rdm_set_addresses(uni, s_rdm_batch, s_rdm_batch_n);
+            bool all = (ok == s_rdm_batch_n);
+            char msg[72];
+            if (all) snprintf(msg, sizeof(msg), "%d/%d 台已改址", ok, s_rdm_batch_n);
+            else snprintf(msg, sizeof(msg), "%d/%d 台成功；%s", ok, s_rdm_batch_n,
+                          rdm_last_error());
+            rdm_reply_result(all, msg);
+            break;
+        }
+        default: break;
+        }
+        s_rdm_req = RDM_REQ_NONE;
+    }
+}
+
 static void handle_frame(const uint8_t *d, uint16_t len)
 {
     if (len < 1) return;
-    switch (d[0]) {
-    case 0x01: { // set range: 0x01 startHi startLo count v0..
+    switch (d[0]) {    case 0x01: { // set range: 0x01 startHi startLo count v0..
         if (len < 4) return;
         uint16_t start = ((uint16_t)d[1] << 8) | d[2];
         uint16_t count = d[3];
@@ -218,6 +385,53 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         break;
     }
     case 0x22: fx_stop_all(); break; // 全部停止
+
+    // ---- RDM（v8）----
+    // ⚠ 扫描要阻塞几百毫秒到数秒，绝不能在这里同步跑 —— 这跑在 NimBLE host 任务上，
+    //   阻塞会让 BLE 连接断掉。所以只登记请求，交给 rdm_task 执行，结果用通知回传。
+    //   应答：0x89 扫描头（含错误文本）+ 每台一条 0x8A（含全部 GET 到的参数）
+    case 0x40: { // 扫描: 0x40 universe
+        if (len < 2) return;
+        rdm_post(RDM_REQ_SCAN, d[1], NULL, 0, 0);
+        break;
+    }
+    case 0x41: { // 识别: 0x41 universe uid(6) on
+        if (len < 9) return;
+        rdm_post(RDM_REQ_IDENTIFY, d[1], &d[2], d[8] ? 1 : 0, 0);
+        break;
+    }
+    case 0x42: { // 改址: 0x42 universe uid(6) addrHi addrLo
+        if (len < 10) return;
+        uint16_t addr = ((uint16_t)d[8] << 8) | d[9];
+        rdm_post(RDM_REQ_SETADDR, d[1], &d[2], 0, addr);
+        break;
+    }
+    case 0x43: { // 模拟模式开关: 0x43 on  （没有真实 RDM 灯具时用虚拟灯具验证 UI）
+        if (len < 2) return;
+        rdm_set_simulate(d[1] != 0);
+        uint8_t resp[2] = { 0x8B, 0 };      // 0 = 成功
+        ble_dmx_notify(resp, 2);
+        ESP_LOGW(TAG, "RDM 模拟模式: %s", d[1] ? "开（返回虚拟灯具）" : "关（真实扫描）");
+        break;
+    }
+    case 0x44: { // 批量改址: 0x44 universe count (uid(6) addrHi addrLo)*
+        // 拖动排序后"按顺序自动分配地址"用这条：一次暂停 DMX、写完整批、再恢复
+        if (len < 3) return;
+        uint8_t uni = d[1];
+        uint8_t n = d[2];
+        if (n > 32) n = 32;                       // 单帧上限（3 + 32*8 = 259 字节）
+        if (len < 3 + (size_t)n * 8) n = (len - 3) / 8;
+        if (n == 0) return;
+        // ⚠ 先把批次数据写进静态区，再登记请求 —— 反过来的话 rdm 任务
+        //   可能在数据写完之前就被唤醒，读到上一批的残留。
+        for (uint8_t i = 0; i < n; i++) {
+            memcpy(s_rdm_batch[i].uid, &d[3 + i * 8], 6);
+            s_rdm_batch[i].addr = ((uint16_t)d[3 + i * 8 + 6] << 8) | d[3 + i * 8 + 7];
+        }
+        s_rdm_batch_n = n;
+        rdm_post(RDM_REQ_SETADDRS, uni, NULL, 0, 0);
+        break;
+    }
 
     // ---- 文件传输（灯库上传/下载，全部支持子目录 dir）----
     // 通用解析：帧前部为 dirLen dir…（dirLen=0 → 根目录），后跟 nameLen name…
@@ -504,5 +718,11 @@ void ble_dmx_init(void)
     // 它的 512 通道突发上报 + 文件操作绝不能跑到 core 1 干扰 DMX。
     if (!s_state_sem) s_state_sem = xSemaphoreCreateBinary();
     xTaskCreatePinnedToCore(state_sync_task, "ble_state", 4096, NULL, 4, NULL, 0);
+
+    // RDM 工作任务：也钉在 core 0。它要暂停 DMX 输出并等待灯具应答，
+    // 放 core 1 会和 DMX 输出任务抢时间片（虽然 RDM 期间 DMX 本来就停了，
+    // 但恢复的那一帧不容许被抢占）。
+    if (!s_rdm_sem) s_rdm_sem = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(rdm_task, "rdm", 4096, NULL, 4, NULL, 0);
     ESP_LOGI(TAG, "BLE init done");
 }
