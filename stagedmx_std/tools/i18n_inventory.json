@@ -1,0 +1,5220 @@
+{
+ "layout": [
+  {
+   "file": "layout/activity_main.xml",
+   "line": 28,
+   "attr": "text",
+   "text": "设备"
+  },
+  {
+   "file": "layout/activity_main.xml",
+   "line": 70,
+   "attr": "text",
+   "text": "灯具管理"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 19,
+   "attr": "text",
+   "text": "灯型"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 43,
+   "attr": "text",
+   "text": "通道 A / B（A = 宇宙1 口，B = 宇宙2 口）"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 58,
+   "attr": "text",
+   "text": "A 通道"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 72,
+   "attr": "text",
+   "text": "B 通道"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 85,
+   "attr": "text",
+   "text": "起始地址（1-512）"
+  },
+  {
+   "file": "layout/dialog_add_instance.xml",
+   "line": 107,
+   "attr": "text",
+   "text": "数量（台）"
+  },
+  {
+   "file": "layout/dialog_devices.xml",
+   "line": 22,
+   "attr": "text",
+   "text": "上次设备：无"
+  },
+  {
+   "file": "layout/dialog_devices.xml",
+   "line": 30,
+   "attr": "text",
+   "text": "自动连接"
+  },
+  {
+   "file": "layout/dialog_devices.xml",
+   "line": 42,
+   "attr": "text",
+   "text": "扫描中…"
+  },
+  {
+   "file": "layout/item_device.xml",
+   "line": 19,
+   "attr": "text",
+   "text": "设备"
+  },
+  {
+   "file": "layout/item_instance_mgr.xml",
+   "line": 52,
+   "attr": "text",
+   "text": "改址"
+  },
+  {
+   "file": "layout/item_rdm_device.xml",
+   "line": 79,
+   "attr": "text",
+   "text": "识别"
+  },
+  {
+   "file": "layout/item_rdm_device.xml",
+   "line": 89,
+   "attr": "text",
+   "text": "改址"
+  },
+  {
+   "file": "layout/page_fader.xml",
+   "line": 37,
+   "attr": "text",
+   "text": "主控亮度"
+  },
+  {
+   "file": "layout/page_fader.xml",
+   "line": 83,
+   "attr": "text",
+   "text": "全黑"
+  },
+  {
+   "file": "layout/page_fader.xml",
+   "line": 95,
+   "attr": "text",
+   "text": "定位"
+  },
+  {
+   "file": "layout/page_fader.xml",
+   "line": 119,
+   "attr": "text",
+   "text": "记录"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 27,
+   "attr": "text",
+   "text": "← 返回设置"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 38,
+   "attr": "text",
+   "text": "灯库编辑器"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 55,
+   "attr": "text",
+   "text": "名称"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 76,
+   "attr": "text",
+   "text": "厂家"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 104,
+   "attr": "text",
+   "text": "模式"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 116,
+   "attr": "hint",
+   "text": "通道数"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 126,
+   "attr": "text",
+   "text": "行程"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 172,
+   "attr": "text",
+   "text": "通道列表"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 181,
+   "attr": "text",
+   "text": "0 通道"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 191,
+   "attr": "text",
+   "text": "+ 通道"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 207,
+   "attr": "text",
+   "text": "通道名"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 209,
+   "attr": "text",
+   "text": "属性"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 211,
+   "attr": "text",
+   "text": "默认"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 213,
+   "attr": "text",
+   "text": "高亮"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 238,
+   "attr": "text",
+   "text": "导出 ZIP"
+  },
+  {
+   "file": "layout/page_fixture_editor.xml",
+   "line": 249,
+   "attr": "text",
+   "text": "编辑已有灯库"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 23,
+   "attr": "text",
+   "text": "App灯库"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 36,
+   "attr": "text",
+   "text": "设备灯库"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 49,
+   "attr": "text",
+   "text": "文件管理"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 77,
+   "attr": "text",
+   "text": "当前灯具"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 87,
+   "attr": "text",
+   "text": "无"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 164,
+   "attr": "text",
+   "text": "全选"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 173,
+   "attr": "text",
+   "text": "已选 0"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 182,
+   "attr": "text",
+   "text": "删除选中"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 199,
+   "attr": "text",
+   "text": "导入灯库"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 209,
+   "attr": "text",
+   "text": "加实例"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 219,
+   "attr": "text",
+   "text": "批量"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 250,
+   "attr": "text",
+   "text": "U盘模式"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 258,
+   "attr": "text",
+   "text": "关闭"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 266,
+   "attr": "text",
+   "text": "开启"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 279,
+   "attr": "text",
+   "text": "＋ 新建文件夹"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 295,
+   "attr": "text",
+   "text": "ESP32 设备灯库"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 308,
+   "attr": "text",
+   "text": "⬆ 上级"
+  },
+  {
+   "file": "layout/page_fixtures.xml",
+   "line": 319,
+   "attr": "text",
+   "text": "点按下载到 App"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 21,
+   "attr": "text",
+   "text": "内置效果"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 35,
+   "attr": "text",
+   "text": "程序"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 65,
+   "attr": "text",
+   "text": "未启动"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 74,
+   "attr": "text",
+   "text": "停止"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 82,
+   "attr": "text",
+   "text": "内置效果"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 105,
+   "attr": "text",
+   "text": "效果预设"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 132,
+   "attr": "text",
+   "text": "保存当前"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 144,
+   "attr": "text",
+   "text": "一键应用"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 156,
+   "attr": "text",
+   "text": "全部关闭"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 168,
+   "attr": "text",
+   "text": "删除"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 191,
+   "attr": "text",
+   "text": "作用范围：单台"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 200,
+   "attr": "text",
+   "text": "幅度: 128"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 215,
+   "attr": "text",
+   "text": "速度: 128"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 232,
+   "attr": "text",
+   "text": "扩散: 0°"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 249,
+   "attr": "text",
+   "text": "相位: 0°"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 272,
+   "attr": "text",
+   "text": "波形"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 287,
+   "attr": "text",
+   "text": "方向"
+  },
+  {
+   "file": "layout/page_fx.xml",
+   "line": 309,
+   "attr": "text",
+   "text": "包络"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 16,
+   "attr": "text",
+   "text": "灯具管理"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 37,
+   "attr": "text",
+   "text": "已配接"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 51,
+   "attr": "text",
+   "text": "RDM 设备"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 81,
+   "attr": "text",
+   "text": "参与同时控制的灯具（点行勾选，按地址顺序）"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 110,
+   "attr": "text",
+   "text": "全选"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 119,
+   "attr": "text",
+   "text": "取消全选"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 128,
+   "attr": "text",
+   "text": "已选 0"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 137,
+   "attr": "text",
+   "text": "删除选中"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 147,
+   "attr": "text",
+   "text": "完成"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 155,
+   "attr": "text",
+   "text": "已进入多选：点行勾选，可「全选」后删除"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 171,
+   "attr": "text",
+   "text": "勾选后回到推子页，滑条 / 定位 / 全黑 / Flash 会同时作用于所有勾选的灯。"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 199,
+   "attr": "text",
+   "text": "点「扫描设备」开始"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 211,
+   "attr": "text",
+   "text": "模拟"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 233,
+   "attr": "text",
+   "text": "还没有扫描到 RDM 设备\\n\\n点下面的「扫描设备」开始\\n（扫描期间该通道的 DMX 输出会短暂暂停）"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 255,
+   "attr": "text",
+   "text": "起始地址"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 291,
+   "attr": "text",
+   "text": "完成排序"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 314,
+   "attr": "text",
+   "text": "扫描设备"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 326,
+   "attr": "text",
+   "text": "编辑顺序"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 338,
+   "attr": "text",
+   "text": "写入地址"
+  },
+  {
+   "file": "layout/page_instances.xml",
+   "line": 350,
+   "attr": "text",
+   "text": "加实例"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 21,
+   "attr": "text",
+   "text": "程序"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 40,
+   "attr": "text",
+   "text": "新建"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 49,
+   "attr": "text",
+   "text": "删除"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 63,
+   "attr": "text",
+   "text": "步时间(秒)"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 89,
+   "attr": "text",
+   "text": "记录一步"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 105,
+   "attr": "text",
+   "text": "播放"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 114,
+   "attr": "text",
+   "text": "清空步"
+  },
+  {
+   "file": "layout/page_program.xml",
+   "line": 121,
+   "attr": "text",
+   "text": "点=预览  长按=删除步"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 13,
+   "attr": "text",
+   "text": "设置"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 49,
+   "attr": "text",
+   "text": "语言 / Language"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 56,
+   "attr": "text",
+   "text": "推子页通道名的显示语言（全局设置，不再逐个灯库单独切换）"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 66,
+   "attr": "text",
+   "text": "中文"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 105,
+   "attr": "text",
+   "text": "双宇宙输出"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 113,
+   "attr": "text",
+   "text": "开启：A + B 两条 DMX（共 1024 通道）"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 152,
+   "attr": "text",
+   "text": "开启后可在「灯具」页扫描并管理支持 RDM 的灯具"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 184,
+   "attr": "text",
+   "text": "灯库编辑"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 191,
+   "attr": "text",
+   "text": "新建 / 修改灯型的通道与属性，并导出 ZIP"
+  },
+  {
+   "file": "layout/page_settings.xml",
+   "line": 202,
+   "attr": "text",
+   "text": "打开"
+  },
+  {
+   "file": "menu/bottom_nav.xml",
+   "line": 5,
+   "attr": "title",
+   "text": "推子"
+  },
+  {
+   "file": "menu/bottom_nav.xml",
+   "line": 10,
+   "attr": "title",
+   "text": "灯具"
+  },
+  {
+   "file": "menu/bottom_nav.xml",
+   "line": 15,
+   "attr": "title",
+   "text": "效果"
+  },
+  {
+   "file": "menu/bottom_nav.xml",
+   "line": 20,
+   "attr": "title",
+   "text": "灯库"
+  },
+  {
+   "file": "menu/bottom_nav.xml",
+   "line": 24,
+   "attr": "title",
+   "text": "设置"
+  }
+ ],
+ "kotlin": [
+  {
+   "file": "BleManager.kt",
+   "line": 71,
+   "text": "连接超时"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 126,
+   "text": "(未命名)"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 131,
+   "text": "扫描失败 code=$errorCode"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 137,
+   "text": "蓝牙不可用"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 265,
+   "text": "服务发现启动失败"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 293,
+   "text": "服务发现失败 $status"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 298,
+   "text": "未找到 DMX 服务"
+  },
+  {
+   "file": "BleManager.kt",
+   "line": 305,
+   "text": "未找到写特征"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 28,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 28,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 29,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 29,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 30,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 30,
+   "text": "红"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 30,
+   "text": "绿"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 31,
+   "text": "蓝"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 31,
+   "text": "白"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 32,
+   "text": "青"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 32,
+   "text": "品红"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 32,
+   "text": "黄"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 33,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 33,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 34,
+   "text": "图案盘1"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 34,
+   "text": "图案盘2"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 35,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 35,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 36,
+   "text": "放大"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 36,
+   "text": "调焦"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 36,
+   "text": "雾化"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 36,
+   "text": "光圈"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 37,
+   "text": "PT速度"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 37,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 38,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 39,
+   "text": "色片"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 39,
+   "text": "动画轮"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 40,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 40,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 41,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 41,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 42,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 42,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 43,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 43,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 101,
+   "text": "通道名"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 121,
+   "text": "选择"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 184,
+   "text": "选择属性"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 192,
+   "text": "取消"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 298,
+   "text": "$zipDir/MA灯库/$xmlName"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 306,
+   "text": "$zipDir/MA灯库/"
+  },
+  {
+   "file": "FixtureEditor.kt",
+   "line": 319,
+   "text": "导出灯库 ${def.name}"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 38,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 38,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 39,
+   "text": "红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 39,
+   "text": "绿"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 39,
+   "text": "蓝"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 40,
+   "text": "白"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 41,
+   "text": "色片"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 41,
+   "text": "色片速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 42,
+   "text": "放大"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 42,
+   "text": "放大旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 43,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 43,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 44,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 45,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 45,
+   "text": "颜色宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 48,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 48,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 49,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 50,
+   "text": "图案盘1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 51,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 51,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 51,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 52,
+   "text": "调焦"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 53,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 53,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 54,
+   "text": "雾化"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 55,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 55,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 58,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 58,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 59,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 62,
+   "text": "光圈"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 63,
+   "text": "图案盘1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 63,
+   "text": "图案盘1旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 64,
+   "text": "图案盘2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 65,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 65,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 66,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 66,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 67,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 67,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 68,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 68,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 69,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 70,
+   "text": "动画轮"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 71,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 71,
+   "text": "棱镜1旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 72,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 72,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 73,
+   "text": "调焦"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 73,
+   "text": "放大"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 74,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 74,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 75,
+   "text": "水平垂直速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 76,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 76,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 89,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 90,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 90,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 92,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 92,
+   "text": "色盘2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 92,
+   "text": "色盘3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 93,
+   "text": "色盘4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 93,
+   "text": "色盘5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 95,
+   "text": "红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 95,
+   "text": "绿"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 95,
+   "text": "蓝"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 96,
+   "text": "琥珀"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 96,
+   "text": "白"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 97,
+   "text": "青"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 97,
+   "text": "品红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 97,
+   "text": "黄"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 98,
+   "text": "色片"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 99,
+   "text": "色片速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 100,
+   "text": "色盘宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 100,
+   "text": "颜色宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 102,
+   "text": "图案盘1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 102,
+   "text": "图案盘2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 103,
+   "text": "图案盘3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 103,
+   "text": "图案盘4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 104,
+   "text": "图案盘1旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 104,
+   "text": "图案盘2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 105,
+   "text": "图案盘1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 105,
+   "text": "图案盘2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 107,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 107,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 108,
+   "text": "棱镜1旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 108,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 109,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 109,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 110,
+   "text": "棱镜1旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 110,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 112,
+   "text": "调焦"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 112,
+   "text": "放大"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 112,
+   "text": "放大旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 113,
+   "text": "雾化"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 113,
+   "text": "光圈"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 115,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 115,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 116,
+   "text": "水平微调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 116,
+   "text": "垂直微调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 117,
+   "text": "水平垂直速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 119,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 119,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 120,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 120,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 121,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 121,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 122,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 122,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 124,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 124,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 125,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 125,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 126,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 126,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 127,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 127,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 128,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 130,
+   "text": "动画轮"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 131,
+   "text": "动画轮旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 133,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 133,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 135,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 136,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 141,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 141,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 141,
+   "text": "调光"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 142,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 142,
+   "text": "频闪"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 143,
+   "text": "水平"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 143,
+   "text": "垂直"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 144,
+   "text": "水平精调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 144,
+   "text": "垂直精调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 145,
+   "text": "红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 145,
+   "text": "红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 145,
+   "text": "绿"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 145,
+   "text": "绿"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 146,
+   "text": "蓝"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 146,
+   "text": "蓝"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 147,
+   "text": "琥珀"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 147,
+   "text": "紫外"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 147,
+   "text": "柠檬"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 147,
+   "text": "青"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 148,
+   "text": "品红"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 148,
+   "text": "黄"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 148,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 148,
+   "text": "色温"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 149,
+   "text": "颜色"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 149,
+   "text": "颜色"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 149,
+   "text": "颜色1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 150,
+   "text": "颜色2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 150,
+   "text": "颜色3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 151,
+   "text": "颜色1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 151,
+   "text": "颜色2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 152,
+   "text": "选色"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 152,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 153,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 153,
+   "text": "变色速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 154,
+   "text": "图案"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 154,
+   "text": "图案1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 154,
+   "text": "图案2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 155,
+   "text": "图案3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 155,
+   "text": "图案4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 156,
+   "text": "选图案"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 156,
+   "text": "图案旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 157,
+   "text": "图案定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 157,
+   "text": "图案盘定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 158,
+   "text": "固图定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 159,
+   "text": "动画"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 159,
+   "text": "动画轮"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 160,
+   "text": "棱镜"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 160,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 160,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 161,
+   "text": "棱镜旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 161,
+   "text": "棱镜定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 162,
+   "text": "光圈"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 162,
+   "text": "调焦"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 162,
+   "text": "放大"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 163,
+   "text": "雾化"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 163,
+   "text": "柔光1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 163,
+   "text": "柔光2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 164,
+   "text": "色片"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 164,
+   "text": "放大旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 165,
+   "text": "随机"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 165,
+   "text": "速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 166,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 166,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 167,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 167,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 168,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 168,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 169,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 169,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 170,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 170,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 171,
+   "text": "速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 171,
+   "text": "水平垂直速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 172,
+   "text": "水平垂直自动"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 172,
+   "text": "水平垂直宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 173,
+   "text": "控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 173,
+   "text": "复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 173,
+   "text": "灯泡"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 174,
+   "text": "功率"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 174,
+   "text": "风扇"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 175,
+   "text": "特殊"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 175,
+   "text": "效果"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 175,
+   "text": "效果速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 176,
+   "text": "模式"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 176,
+   "text": "功能"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 177,
+   "text": "选择"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 177,
+   "text": "定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 177,
+   "text": "位置"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 178,
+   "text": "选择2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 178,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 179,
+   "text": "水平垂直速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 179,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 180,
+   "text": "灯泡开关"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 180,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 181,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 182,
+   "text": "颜色1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 182,
+   "text": "颜色2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 182,
+   "text": "颜色3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 183,
+   "text": "颜色4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 183,
+   "text": "颜色5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 183,
+   "text": "颜色6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 184,
+   "text": "颜色7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 184,
+   "text": "颜色8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 184,
+   "text": "颜色9"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 185,
+   "text": "图案1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 185,
+   "text": "图案2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 185,
+   "text": "图案3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 186,
+   "text": "切割1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 186,
+   "text": "切割2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 187,
+   "text": "切割3"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 187,
+   "text": "切割4"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 188,
+   "text": "切割5"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 188,
+   "text": "切割6"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 189,
+   "text": "切割7"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 189,
+   "text": "切割8"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 191,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 191,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 192,
+   "text": "图案盘旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 192,
+   "text": "固图旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 193,
+   "text": "图案盘旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 193,
+   "text": "固图旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 194,
+   "text": "棱镜旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 194,
+   "text": "棱镜旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 195,
+   "text": "棱镜旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 195,
+   "text": "棱镜旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 196,
+   "text": "动画旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 196,
+   "text": "动画旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 197,
+   "text": "动画选择"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 198,
+   "text": "选色"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 198,
+   "text": "选色2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 199,
+   "text": "图案盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 199,
+   "text": "固图"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 200,
+   "text": "图案盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 200,
+   "text": "固图"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 202,
+   "text": "棱镜1"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 202,
+   "text": "棱镜2"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 203,
+   "text": "棱镜2旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 204,
+   "text": "全局复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 205,
+   "text": "灯泡开关"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 206,
+   "text": "灯泡控制"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 207,
+   "text": "色片速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 208,
+   "text": "随机颜色"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 209,
+   "text": "放大旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 210,
+   "text": "色片"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 211,
+   "text": "色盘"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 213,
+   "text": "颜色宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 213,
+   "text": "宏速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 214,
+   "text": "固定棱镜"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 214,
+   "text": "放大旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 215,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 215,
+   "text": "切割旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 220,
+   "text": "超微调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 220,
+   "text": "微调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 221,
+   "text": "旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 221,
+   "text": "旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 221,
+   "text": "旋转"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 222,
+   "text": "定位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 222,
+   "text": "选择"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 222,
+   "text": "速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 223,
+   "text": "宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 223,
+   "text": "宏"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 223,
+   "text": "复位"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 224,
+   "text": "速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 224,
+   "text": "时间"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 508,
+   "text": "水平垂直速度"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 699,
+   "text": ", fixtureName)}微调"
+  },
+  {
+   "file": "FixtureParser.kt",
+   "line": 814,
+   "text": "$chName 精调"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 217,
+   "text": "灯型不存在"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 222,
+   "text": "该灯型有 $pitch 个通道，超过单个宇宙的 ${DmxProtocol.UNIVERSE_SIZE} 通道，无法 patch"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 236,
+   "text": "$band 通道地址不足：第 ${k + 1} 台需要 $b1~$b2，"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 237,
+   "text": "本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}（可减少数量或把起始地址提前）"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 240,
+   "text": "$band 通道 $b1~$b2 与已有实例（$a1~$a2）重叠"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 427,
+   "text": "解析不出任何灯型"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 439,
+   "text": "压缩包"
+  },
+  {
+   "file": "FixtureStore.kt",
+   "line": 450,
+   "text": "内容格式已无法识别"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 21,
+   "text": "圆形摇动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 21,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 21,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 22,
+   "text": "水平摇动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 22,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 22,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 23,
+   "text": "垂直摇动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 23,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 23,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 24,
+   "text": "频闪"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 24,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 25,
+   "text": "RGB变色"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 25,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 26,
+   "text": "放大摆动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 26,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 26,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 27,
+   "text": "调焦摆动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 27,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 27,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 28,
+   "text": "色盘摆动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 28,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 28,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 29,
+   "text": "图案盘摆动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 29,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 29,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 30,
+   "text": "图案盘自转"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 30,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 30,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 31,
+   "text": "固定图案摇动"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 31,
+   "text": "幅度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 31,
+   "text": "速度"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 32,
+   "text": "切割循环"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 32,
+   "text": "每步时长"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 32,
+   "text": "循环间隔"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "正弦"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "三角"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "方波"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "脉冲"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "随机"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 49,
+   "text": "锯齿"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 51,
+   "text": "正序"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 51,
+   "text": "反序"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 51,
+   "text": "往返"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 53,
+   "text": "无"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 53,
+   "text": "渐入"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 53,
+   "text": "渐出"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 53,
+   "text": "对称(中间强)"
+  },
+  {
+   "file": "FxEngine.kt",
+   "line": 53,
+   "text": "两端强"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 59,
+   "text": "⚠ 该灯型有 $pitch 个通道，超过单个宇宙的 ${DmxProtocol.UNIVERSE_SIZE}，无法 patch"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 62,
+   "text": "⚠ $band 通道放不下：共 ${plan.size} 台需要 ${plan.first()}~$lastChannel，"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 63,
+   "text": "本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 66,
+   "text": "$band 通道 ${plan[0]} ~ $lastChannel"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 68,
+   "text": "共 ${plan.size} 台：$band 通道 ${plan.first()} ~ $lastChannel"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 69,
+   "text": "（第 ${plan.size} 台起于 ${plan.last()}）"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 75,
+   "text": "该灯型占 $pitch 个通道（第 N 台的起始 = 起始地址 + (N-1) × $pitch）"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 80,
+   "text": "已添加 $fixtureName-1 $band@$addr"
+  },
+  {
+   "file": "InstanceForm.kt",
+   "line": 81,
+   "text": "已添加 ${plan.size} 台：$band 通道 ${plan.first()}~$lastChannel"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 84,
+   "text": "推子"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 85,
+   "text": "效果"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 86,
+   "text": "灯库"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 87,
+   "text": "灯具"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 88,
+   "text": "设置"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 89,
+   "text": "灯具管理"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 90,
+   "text": "设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 91,
+   "text": "已配接"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 92,
+   "text": "RDM 设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 95,
+   "text": "取消"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 96,
+   "text": "确定"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 97,
+   "text": "好"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 98,
+   "text": "关闭"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 99,
+   "text": "删除"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 100,
+   "text": "保存"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 101,
+   "text": "完成"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 102,
+   "text": "完成排序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 103,
+   "text": "创建"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 104,
+   "text": "不用"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 105,
+   "text": "打开"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 106,
+   "text": "返回"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 107,
+   "text": "识别"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 108,
+   "text": "改址"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 109,
+   "text": "写入"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 110,
+   "text": "加实例"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 111,
+   "text": "编辑顺序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 112,
+   "text": "取消排序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 113,
+   "text": "扫描设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 114,
+   "text": "写入地址"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 115,
+   "text": "按顺序写入地址"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 116,
+   "text": "按顺序加实例"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 117,
+   "text": "模拟·开"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 118,
+   "text": "模拟·关"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 119,
+   "text": "新建灯型"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 120,
+   "text": "打开灯库编辑器"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 123,
+   "text": "主控亮度"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 124,
+   "text": "全黑"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 125,
+   "text": "定位"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 126,
+   "text": "记录"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 128,
+   "text": "推子页排列方式（当前灯型）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 129,
+   "text": "按通道顺序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 130,
+   "text": "自定义顺序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 131,
+   "text": "排列预设"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 132,
+   "text": "保存为预设"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 133,
+   "text": "删除预设"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 134,
+   "text": "先应用一个灯库/实例，再在这里调整推子页通道的排列顺序。"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 138,
+   "text": "语言 / Language"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 139,
+   "text": "推子页通道名的显示语言（全局设置，不再逐个灯库单独切换）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 141,
+   "text": "中文"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 141,
+   "text": "中文"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 142,
+   "text": "双宇宙输出"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 143,
+   "text": "开启：A + B 两条 DMX（共 1024 通道）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 144,
+   "text": "关闭：只用 A 通道（512 路），B 通道的灯具不会输出"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 146,
+   "text": "开启后可在「灯具」页扫描并管理支持 RDM 的灯具"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 148,
+   "text": "灯库编辑"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 149,
+   "text": "新建 / 修改灯型的通道与属性，并导出 ZIP"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 151,
+   "text": "分组折叠"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 152,
+   "text": "推子页按功能分组，可折叠收起"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 155,
+   "text": "点「扫描设备」开始"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 156,
+   "text": "扫描中…"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 157,
+   "text": "正在扫描…（DMX 输出会暂停数秒）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 158,
+   "text": "还没有扫描到 RDM 设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 159,
+   "text": "点下面的「扫描设备」开始"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 160,
+   "text": "（扫描期间该通道的 DMX 输出会短暂暂停）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 161,
+   "text": "起始地址"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 162,
+   "text": "修改地址"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 163,
+   "text": "当前"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 164,
+   "text": "原"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 165,
+   "text": "占通道"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 166,
+   "text": "厂商"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 167,
+   "text": "型号描述"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 168,
+   "text": "设备标签"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 169,
+   "text": "型号 ID"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 170,
+   "text": "产品类别"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 171,
+   "text": "起始地址 "
+  },
+  {
+   "file": "Lang.kt",
+   "line": 172,
+   "text": "当前模式"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 173,
+   "text": "软件版本"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 174,
+   "text": "子设备数"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 175,
+   "text": "传感器数"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 176,
+   "text": "创建结果"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 177,
+   "text": "同时创建为灯具实例？"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 178,
+   "text": "固件模拟数据"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 179,
+   "text": "未发现 RDM 设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 180,
+   "text": "地址不足"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 183,
+   "text": "内置效果"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 184,
+   "text": "程序"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 185,
+   "text": "运行中"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 186,
+   "text": "预设"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 187,
+   "text": "全部停止"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 188,
+   "text": "振幅"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 189,
+   "text": "速度"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 190,
+   "text": "目标"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 191,
+   "text": "添加"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 192,
+   "text": "应用"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 193,
+   "text": "停止"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 196,
+   "text": "App 灯库"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 197,
+   "text": "设备灯库"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 198,
+   "text": "文件管理"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 199,
+   "text": "导入"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 200,
+   "text": "通道数"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 201,
+   "text": "导出的 ZIP"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 204,
+   "text": "已连接"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 205,
+   "text": "未连接"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 206,
+   "text": "连接中"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 207,
+   "text": "连接断开"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 208,
+   "text": "连接超时"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 209,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 212,
+   "text": "参与同时控制的灯具（点行勾选，按地址顺序）"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 214,
+   "text": "勾选后回到推子页，滑条 / 定位 / 全黑 / Flash 会同时作用于所有勾选的灯。"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 216,
+   "text": "共 %d 台"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 217,
+   "text": "批量删除"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 218,
+   "text": "全选"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 219,
+   "text": "删除选中"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 222,
+   "text": "请先应用灯库/选择灯具"
+  },
+  {
+   "file": "Lang.kt",
+   "line": 223,
+   "text": "推子页通道名的显示语言（全局设置，不再逐个灯库单独切换）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 200,
+   "text": "需要蓝牙权限才能扫描设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 206,
+   "text": "请打开蓝牙"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 241,
+   "text": "已自动更新 $reimportCount 个灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 273,
+   "text": "内置效果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 424,
+   "text": "请先在灯库页选择一个灯库或添加灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 553,
+   "text": "删除灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 554,
+   "text": "删除灯具「${inst.name}」（${inst.label()}）？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 555,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 565,
+   "text": "已删除 ${inst.name}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 575,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 597,
+   "text": "${def.name} 等混合灯型 组（${insts.size} 台，按属性映射）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 598,
+   "text": "${def.name} 组（${insts.size} 台）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 664,
+   "text": "单台"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 665,
+   "text": "灯型缺失"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 667,
+   "text": "组内灯型不一致（无法用一套阵列描述）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 672,
+   "text": "组内地址不等间距（如 1/19/100），无法用一套阵列描述"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 674,
+   "text": "地址间距小于灯型通道数"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 675,
+   "text": "台数超过 ${FxEngine.MAX_TARGETS}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 676,
+   "text": "${insts.size} 台 · 间距 $stride"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 888,
+   "text": "请到“程序”页新建或选择一个程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 890,
+   "text": "效果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 895,
+   "text": "已记录 → $prog 第 ${steps.stepCount(prog, instId)} 步"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 955,
+   "text": "请先连接设备再启动效果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 960,
+   "text": "效果槽已满(8个)"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 967,
+   "text": "无法作用到整组：$arrayMsg"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 977,
+   "text": "无法启动：与现有效果通道冲突"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1027,
+   "text": "扩散: ${p * 360 / 255}°"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1036,
+   "text": "相位: ${p * 360 / 255}°"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1072,
+   "text": "已关闭当前灯具的全部效果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1090,
+   "text": "全局"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1111,
+   "text": "保存效果预设"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1112,
+   "text": "保存当前「所有内置效果」的数值与开关状态"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1114,
+   "text": "保存"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1120,
+   "text": "已保存效果预设：$nm"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1122,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1127,
+   "text": "请先保存一个效果预设"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1128,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1132,
+   "text": "已应用效果预设：$name"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1137,
+   "text": "部分效果未启动（通道冲突/槽位已满）：$nm"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1144,
+   "text": "暂无预设"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1146,
+   "text": "删除效果预设「$name」？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1147,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1151,
+   "text": "已删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1153,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1180,
+   "text": "循环间隔: %.1fs"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1181,
+   "text": "幅度: $amp"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1187,
+   "text": "每步时长: %.2fs"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1193,
+   "text": "速度: $seekPos"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1224,
+   "text": "  〔当前灯库无切割通道〕"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1225,
+   "text": "  〔切割${nBlade}片"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1225,
+   "text": " + 旋转"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1235,
+   "text": "作用范围：$arrayMsg"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1236,
+   "text": "作用范围：单台 ⚠ $arrayMsg"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1253,
+   "text": "扩散: ${spread * 360 / 255}°"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1256,
+   "text": "相位: ${phase * 360 / 255}°"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1263,
+   "text": "点击列表选择效果，用开关启用"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1296,
+   "text": "通道 $chInFixture  数值 (0-255)"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1298,
+   "text": "确定"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1302,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1319,
+   "text": "第${i + 1}步    ${fmtSeconds(st.timeMs)}s"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1333,
+   "text": "停止"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1333,
+   "text": "播放"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1388,
+   "text": "⚠ $truncated 步的通道变化超过 ${DmxProtocol.MAX_PROG_ITEMS_STEP} 条，已截断；建议减少同时录制的灯数"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1417,
+   "text": "程序名称"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1419,
+   "text": "新建程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1421,
+   "text": "创建"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1423,
+   "text": "请输入名称"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1424,
+   "text": "已存在同名程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1425,
+   "text": "已新建：$nm"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1427,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1430,
+   "text": "暂无程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1432,
+   "text": "删除程序「$prog」？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1433,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1438,
+   "text": "已删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1440,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1443,
+   "text": "先新建一个程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1445,
+   "text": "已记录第 ${steps.stepCount(prog, currentInstId())} 步"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1453,
+   "text": "请先连接设备再播放"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1454,
+   "text": "先新建一个程序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1456,
+   "text": "该程序还没有步"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1459,
+   "text": "已下发到设备播放（App 断连也继续）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1466,
+   "text": "清空「$prog」全部步？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1467,
+   "text": "清空"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1470,
+   "text": "已清空"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1472,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1495,
+   "text": "预览第 ${pos + 1} 步"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1501,
+   "text": "删除第 ${pos + 1} 步？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1502,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1503,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1556,
+   "text": "已断开 ${found.name}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1577,
+   "text": "上次设备：$lastName"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1577,
+   "text": "上次设备：无"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1580,
+   "text": "设备管理"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1580,
+   "text": "选择设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1581,
+   "text": "扫描中…（每隔几秒自动扫描）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1589,
+   "text": "断开连接"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1618,
+   "text": "已连接"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1630,
+   "text": "连接断开"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1649,
+   "text": "操作: name → dir"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1691,
+   "text": "RDM 命令执行成功"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1691,
+   "text": "RDM 失败：$err"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1721,
+   "text": "上传完成"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1721,
+   "text": "上传失败"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1732,
+   "text": "已删除 ${name ?: "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1736,
+   "text": "删除失败${name?.let { "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1747,
+   "text": "$mv 成功"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1747,
+   "text": "$mv 失败"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1749,
+   "text": "文件夹操作成功${name?.let { "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1749,
+   "text": "文件夹操作失败${name?.let { "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1773,
+   "text": "从设备导入 ${imported.size} 个灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1776,
+   "text": "未能解析灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1780,
+   "text": "下载完成(nodata)"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1780,
+   "text": "设备无此文件"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1837,
+   "text": "设备重启过，已同步 App 状态"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1850,
+   "text": "已从设备同步状态"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1867,
+   "text": "设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1930,
+   "text": "✓ ${f.name}（已连接）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1980,
+   "text": "已应用: ${def.name}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1985,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 1985,
+   "text": "批量"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2017,
+   "text": "删除选中的 ${selected.size} 个灯具？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2018,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2021,
+   "text": "已删除 ${selected.size} 个"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2023,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2072,
+   "text": "已选 $count"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2078,
+   "text": "无"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2111,
+   "text": "读取失败: ${e.message}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2115,
+   "text": "没读到文件"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2146,
+   "text": "\\n✅ 将导入：\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2151,
+   "text": "  … 另有 ${ok.size - 12} 个\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2157,
+   "text": "\\n⚠ 无法导入 ${problems.size} 个：\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2162,
+   "text": "嵌套压缩包（本 App 不递归展开，请先解压再导入）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2163,
+   "text": "跳过"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2167,
+   "text": "  … 另有 ${problems.size - 15} 个\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2186,
+   "text": "导入灯库：确认内容"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2186,
+   "text": "没有可导入的灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2188,
+   "text": "导入 $totalImportable 个灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2188,
+   "text": "知道了"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2191,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2211,
+   "text": "导入了 $total 个灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2212,
+   "text": "导入了 $total 个灯具，另有 ${failures.size} 个失败"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2220,
+   "text": "\\n… 另有 ${failures.size - 15} 个"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2222,
+   "text": "导入失败（${failures.size} 个文件）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2224,
+   "text": "知道了"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2232,
+   "text": "请先导入灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2251,
+   "text": "通道 A / B（A = 宇宙1 口，B = 宇宙2 口）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2251,
+   "text": "通道 A（宇宙1 口，双宇宙已关闭）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2318,
+   "text": "添加灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2320,
+   "text": "添加"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2337,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2423,
+   "text": "${fixtureEditor.channels.size} 通道"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2438,
+   "text": "没有已导入的灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2441,
+   "text": "选择灯库编辑"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2459,
+   "text": "请输入灯型名称"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2464,
+   "text": "请至少添加一个通道"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2474,
+   "text": "已导出 ${name}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2490,
+   "text": "开启：A + B 两条 DMX（共 1024 通道）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2492,
+   "text": "关闭：只用 A 通道（512 路），B 通道的灯具不会输出"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2498,
+   "text": "已开启：可在「灯具」页扫描并管理支持 RDM 的灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2500,
+   "text": "开启后可在「灯具」页扫描并管理支持 RDM 的灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2517,
+   "text": "已关闭双宇宙：$bCount 台在 B 通道的灯具不会输出"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2559,
+   "text": "推子"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2560,
+   "text": "灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2561,
+   "text": "效果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2562,
+   "text": "灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2563,
+   "text": "设置"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2582,
+   "text": "已切换为中文"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2617,
+   "text": "请先勾选要删除的灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2644,
+   "text": "已配接"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2649,
+   "text": "多选删除模式"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2650,
+   "text": "参与同时控制的灯具（点行勾选，按地址顺序）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2651,
+   "text": "共 %d 台"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2652,
+   "text": "已选 ${instEditSel.size}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2670,
+   "text": "  ⚠ 双宇宙已关闭，无输出"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2681,
+   "text": "✓ 待删"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2682,
+   "text": "✓ 参与控制"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2697,
+   "text": "已进入多选，可「全选」后删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2718,
+   "text": "扫描中…"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2718,
+   "text": "扫描设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2720,
+   "text": "取消排序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2720,
+   "text": "编辑顺序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2728,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2731,
+   "text": "已开模拟：扫描会返回固件内置的虚拟灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2731,
+   "text": "已关模拟：扫描真实 RDM 总线"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2740,
+   "text": "模拟·开"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2740,
+   "text": "模拟·关"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2748,
+   "text": "⚠ 通道不够：共 ${rdmOrder.size} 台超出 ${DmxProtocol.UNIVERSE_SIZE} 通道，请减少灯具或把起始地址提前"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2749,
+   "text": "按住 ☰ 拖到任意位置调整顺序 · 共 ${rdmOrder.size} 台 · 占 ${plan.last().second + rdmOrder.last().channelCount - 1} 通道"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2754,
+   "text": "本通道放不下，请调整起始地址"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2755,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2759,
+   "text": "已按顺序写入 ${p.size} 台的新地址…"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2764,
+   "text": "本通道放不下，请调整起始地址"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2773,
+   "text": "正在扫描…（DMX 输出会暂停数秒）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2774,
+   "text": "点「扫描设备」开始"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2775,
+   "text": "⚠ 固件模拟数据 · ${rdmDevices.size} 台 · 点行看全部参数，长按可拖动排序"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2776,
+   "text": "${rdmDevices.size} 台设备 · 点行看全部参数 · 「编辑顺序」可拖动排序并自动分配地址"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2782,
+   "text": "${rdmLastError}\\n\\n点上面的「扫描设备」重试\\n或点「模拟·开」用固件内置虚拟灯具验证界面"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2783,
+   "text": "还没有扫描到 RDM 设备\\n\\n点上面的「扫描设备」开始\\n（扫描期间该通道的 DMX 输出会短暂暂停）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2811,
+   "text": "✗ 放不下"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2824,
+   "text": "占通道 $lo ~ ${lo + d.channelCount - 1}（${d.channelCount}CH"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2826,
+   "text": " · 模式${d.personalityNum}/${d.personalityCount}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2830,
+   "text": " · 原 ${d.addrLabel()}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2832,
+   "text": " ⚠ 双宇宙已关闭"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2909,
+   "text": "✗ 放不下"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2917,
+   "text": "占通道 $lo2 ~ ${lo2 + d.channelCount - 1}（${d.channelCount}CH"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2919,
+   "text": " · 模式${d.personalityNum}/${d.personalityCount}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2921,
+   "text": " · 原 ${d.addrLabel()}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2940,
+   "text": "已改址。但本地灯库里没有匹配的灯型，无法自动建实例"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2944,
+   "text": "同时创建为灯具实例？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2945,
+   "text": "$matched / ${batch.size} 台能在本地灯库里找到匹配灯型。\\n\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2946,
+   "text": "创建后就可以在推子页直接控制这些灯（地址与刚写入的一致）。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2947,
+   "text": "创建"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2948,
+   "text": "不用"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 2984,
+   "text": "通道数 ${d.channelCount} 候选 ${byCh.size} 个: ${byCh.take(5).joinToString { it.name }}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3011,
+   "text": "已创建 $created 台实例"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3012,
+   "text": "，跳过 $skipped 台（地址已被占用）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3014,
+   "text": "\\n\\n${noMatch.size} 台在灯库里找不到匹配型号：\\n"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3016,
+   "text": "\\n请先在「灯库」页导入对应灯型，再重新创建。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3020,
+   "text": "创建结果"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3022,
+   "text": "好"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3034,
+   "text": "关闭"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3035,
+   "text": "识别"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3039,
+   "text": "新建灯型"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3063,
+   "text": "已新建灯型「${def.name}」（${def.channelCount}CH）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3065,
+   "text": "\\n并已在 ${if (uni == 1) "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3065,
+   "text": "}@$addr 建好实例。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3067,
+   "text": "\\n但建实例失败：$err"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3069,
+   "text": "\\n\\n注意：RDM 读不到每个通道的用途，通道名暂为 CH1~CH${d.channelCount}。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3070,
+   "text": "如需完整通道定义，请导入同型号灯库文件覆盖。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3073,
+   "text": "新建灯型"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3075,
+   "text": "好"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3096,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3106,
+   "text": "扫描超时（设备无响应）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3108,
+   "text": "RDM 扫描超时"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3121,
+   "text": "未发现 RDM 设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3126,
+   "text": "发现 $count 台 RDM 设备${if (simulate) "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3167,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3172,
+   "text": "已让 ${d.model} 闪烁 1.5 秒"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3182,
+   "text": "修改地址：${d.model}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3183,
+   "text": "UID ${d.uid}\\n当前 ${d.addrLabel()}，占 ${d.channelCount} 通道"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3185,
+   "text": "写入"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3186,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3189,
+   "text": "地址越界：需要 $a~${a + d.channelCount - 1}，本通道上限 ${DmxProtocol.UNIVERSE_SIZE}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3194,
+   "text": "已发送改址命令，等待设备确认…"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3196,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3224,
+   "text": " 等 ${names.size} 台"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3226,
+   "text": "删除 ${ids.size} 台灯具？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3227,
+   "text": "$detail\\n\\n该操作不可撤销。"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3228,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3245,
+   "text": "已删除 ${ids.size} 台灯具"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3260,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3294,
+   "text": "「${inst.name}」占 $ch 个通道"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3296,
+   "text": "⚠ $bn 通道放不下：需要 $a~${a + ch - 1}，本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3297,
+   "text": "$bn 通道 $a ~ ${a + ch - 1}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3310,
+   "text": "修改地址"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3312,
+   "text": "保存"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3319,
+   "text": "保存失败：${if (band == 1) "
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3319,
+   "text": "} 通道 $a 越界或与已有灯具重叠"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3321,
+   "text": "已改为 ${after.label()}"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3328,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3336,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3339,
+   "text": "关闭"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3341,
+   "text": "已开启 — 控台可访问 ESP32 灯库文件"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3346,
+   "text": "开启"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3348,
+   "text": "关闭"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3361,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3369,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3378,
+   "text": "已在根目录"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3385,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3388,
+   "text": "文件夹名（不含 / 或 \\\\）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3391,
+   "text": "新建文件夹"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3393,
+   "text": "创建"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3396,
+   "text": "名称无效"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3402,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3415,
+   "text": "ESP32 文件管理"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3415,
+   "text": "ESP32 设备灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3416,
+   "text": "正在获取..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3423,
+   "text": "删除文件夹"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3424,
+   "text": "删除设备上的空文件夹「$name」？（文件夹非空将失败）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3425,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3429,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3439,
+   "text": "重命名"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3440,
+   "text": "原名：$oldName"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3442,
+   "text": "确定"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3445,
+   "text": "名称无效"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3451,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3456,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3459,
+   "text": "复制"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3459,
+   "text": "移动"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3460,
+   "text": "（根目录）"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3463,
+   "text": "$act「$name」到"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3466,
+   "text": "目标与当前位置相同"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3467,
+   "text": "根目录"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3471,
+   "text": "正在${act}到 $dstShow..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3473,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3477,
+   "text": "正在获取设备目录..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3486,
+   "text": "ESP32 文件管理"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3486,
+   "text": "ESP32 设备灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3518,
+   "text": "文件夹"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3519,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3521,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3527,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3534,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3535,
+   "text": "重命名"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3535,
+   "text": "移动"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3535,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3550,
+   "text": "${f.size} 字节"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3551,
+   "text": "下载"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3553,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3557,
+   "text": "正在下载 ${f.name}..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3562,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3566,
+   "text": "重命名"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3566,
+   "text": "移动"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3566,
+   "text": "复制"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3566,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3577,
+   "text": "正在删除 ${f.name}..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3584,
+   "text": "删除文件"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3585,
+   "text": "删除设备上的文件「${f.name}」？"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3586,
+   "text": "删除"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3589,
+   "text": "正在删除 ${f.name}..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3591,
+   "text": "取消"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3601,
+   "text": "上传"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3604,
+   "text": "请先连接设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3621,
+   "text": "ESP32 文件管理  $p"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3622,
+   "text": "ESP32 设备灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3625,
+   "text": "设备上暂无灯库，请先上传"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3626,
+   "text": "设备上暂无文件"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3627,
+   "text": "${shownDev.size} 个灯库 — 点按下载到 App"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3628,
+   "text": "${shownDev.size} 个条目 — 点文件夹进入，长按操作"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3633,
+   "text": "App 端已保存灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3634,
+   "text": "暂无灯库"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3634,
+   "text": "${libs.size} 个 — 点按上传到设备"
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3670,
+   "text": "正在上传 ${fileName}..."
+  },
+  {
+   "file": "MainActivity.kt",
+   "line": 3676,
+   "text": "全部上传完成: $label"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 13,
+   "text": "厂商ID:设备序号"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 39,
+   "text": "固定光斑"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 40,
+   "text": "摇头灯"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 41,
+   "text": "移动光束"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 42,
+   "text": "染色灯"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 43,
+   "text": "效果灯"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 44,
+   "text": "频闪灯"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 45,
+   "text": "矩阵灯"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 46,
+   "text": "调光器"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 47,
+   "text": "媒体服务器"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 48,
+   "text": "烟雾机"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 49,
+   "text": "其他"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 56,
+   "text": "厂商"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 57,
+   "text": "型号描述"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 58,
+   "text": "设备标签"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 59,
+   "text": "型号 ID"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 60,
+   "text": "产品类别"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 61,
+   "text": "起始地址"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 62,
+   "text": "占用通道"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 63,
+   "text": "当前模式"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 63,
+   "text": "模式 $personalityNum / $personalityCount"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 65,
+   "text": "软件版本"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 67,
+   "text": "子设备数"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 68,
+   "text": "传感器数"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 226,
+   "text": "未知厂商"
+  },
+  {
+   "file": "RdmStore.kt",
+   "line": 227,
+   "text": "未知型号"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 127,
+   "text": "文件太小，不是 zip（${data.size} 字节）"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 130,
+   "text": "找不到 zip 结束记录（EOCD），文件可能被截断"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 150,
+   "text": "中央目录偏移越界（$cenStart / ${data.size}）"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 166,
+   "text": "中央目录条目越界"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 222,
+   "text": "本地头偏移越界（$localOffset）"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 225,
+   "text": "本地头签名不匹配（偏移 $localOffset）"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 230,
+   "text": "数据区偏移越界"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 241,
+   "text": "条目解压后 ${uncompSize / 1024 / 1024} MB，超过上限"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 247,
+   "text": "不支持的压缩方法 $method（仅支持 store/deflate）"
+  },
+  {
+   "file": "ZipReader.kt",
+   "line": 265,
+   "text": "解压结果超过上限"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 116,
+   "text": "共 $files 个文件"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 117,
+   "text": "、$dirs 个目录"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 118,
+   "text": "：${importableFiles.size} 个可导入"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 119,
+   "text": "（${fixtureCount} 个灯型）"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 120,
+   "text": "，${problems.size} 个无法导入"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 174,
+   "text": "(整个压缩包)"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 192,
+   "text": "系统/隐藏文件，不是灯库"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 203,
+   "text": "文件较大（${bytes.size / 1024 / 1024} MB），解析可能较慢"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 222,
+   "text": "空文件"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 223,
+   "text": "二进制文件，非灯库格式"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 225,
+   "text": "后缀是 .$ext，但内容解析不出任何灯型（格式可能被改坏，或不是 MA2/Titan/Pearl 格式）"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 226,
+   "text": "GDTF 格式，本 App 不支持（请导出为 MA2 XML / Titan .d4 / Pearl .R20）"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 227,
+   "text": "压缩包后缀但内容不是标准 zip"
+  },
+  {
+   "file": "ZipScan.kt",
+   "line": 228,
+   "text": "不支持的文件类型（支持 MA2 XML / Titan .d4 / Pearl .R20）"
+  }
+ ]
+}

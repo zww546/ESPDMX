@@ -1,0 +1,974 @@
+{
+ "选择属性": {
+  "kind": "title",
+  "template": "选择属性",
+  "args": [],
+  "where": "FixtureEditor.kt:184"
+ },
+ "取消": {
+  "kind": "button",
+  "template": "取消",
+  "args": [],
+  "where": "FixtureEditor.kt:192"
+ },
+ "需要蓝牙权限才能扫描设备": {
+  "kind": "toast",
+  "template": "需要蓝牙权限才能扫描设备",
+  "args": [],
+  "where": "MainActivity.kt:200"
+ },
+ "请打开蓝牙": {
+  "kind": "toast",
+  "template": "请打开蓝牙",
+  "args": [],
+  "where": "MainActivity.kt:206"
+ },
+ "已自动更新 $reimportCount 个灯库": {
+  "kind": "toast",
+  "template": "已自动更新 %1$s 个灯库",
+  "args": [
+   "reimportCount"
+  ],
+  "where": "MainActivity.kt:241"
+ },
+ "请先在灯库页选择一个灯库或添加灯具": {
+  "kind": "toast",
+  "template": "请先在灯库页选择一个灯库或添加灯具",
+  "args": [],
+  "where": "MainActivity.kt:427"
+ },
+ "删除灯具": {
+  "kind": "title",
+  "template": "删除灯具",
+  "args": [],
+  "where": "MainActivity.kt:556"
+ },
+ "删除灯具「${inst.name}」（${inst.label()}）？": {
+  "kind": "message",
+  "template": "删除灯具「%1$s」（%2$s）？",
+  "args": [
+   "inst.name",
+   "inst.label()"
+  ],
+  "where": "MainActivity.kt:557"
+ },
+ "删除": {
+  "kind": "button",
+  "template": "删除",
+  "args": [],
+  "where": "MainActivity.kt:558"
+ },
+ "已删除 ${inst.name}": {
+  "kind": "toast",
+  "template": "已删除 %1$s",
+  "args": [
+   "inst.name"
+  ],
+  "where": "MainActivity.kt:568"
+ },
+ "请到“程序”页新建或选择一个程序": {
+  "kind": "toast",
+  "template": "请到“程序”页新建或选择一个程序",
+  "args": [],
+  "where": "MainActivity.kt:891"
+ },
+ "已记录 → $prog 第 ${steps.stepCount(prog, instId)} 步": {
+  "kind": "toast",
+  "template": "已记录 → %1$s 第 %2$s 步",
+  "args": [
+   "prog",
+   "steps.stepCount(prog, instId)"
+  ],
+  "where": "MainActivity.kt:898"
+ },
+ "请先连接设备再启动效果": {
+  "kind": "toast",
+  "template": "请先连接设备再启动效果",
+  "args": [],
+  "where": "MainActivity.kt:958"
+ },
+ "效果槽已满(8个)": {
+  "kind": "toast",
+  "template": "效果槽已满(8个)",
+  "args": [],
+  "where": "MainActivity.kt:963"
+ },
+ "无法作用到整组：$arrayMsg": {
+  "kind": "toast",
+  "template": "无法作用到整组：%1$s",
+  "args": [
+   "arrayMsg"
+  ],
+  "where": "MainActivity.kt:970"
+ },
+ "无法启动：与现有效果通道冲突": {
+  "kind": "toast",
+  "template": "无法启动：与现有效果通道冲突",
+  "args": [],
+  "where": "MainActivity.kt:980"
+ },
+ "扩散: ${p * 360 / 255}°": {
+  "kind": "text",
+  "template": "扩散: %1$s°",
+  "args": [
+   "p * 360 / 255"
+  ],
+  "where": "MainActivity.kt:1030"
+ },
+ "相位: ${p * 360 / 255}°": {
+  "kind": "text",
+  "template": "相位: %1$s°",
+  "args": [
+   "p * 360 / 255"
+  ],
+  "where": "MainActivity.kt:1039"
+ },
+ "已关闭当前灯具的全部效果": {
+  "kind": "toast",
+  "template": "已关闭当前灯具的全部效果",
+  "args": [],
+  "where": "MainActivity.kt:1075"
+ },
+ "保存效果预设": {
+  "kind": "title",
+  "template": "保存效果预设",
+  "args": [],
+  "where": "MainActivity.kt:1114"
+ },
+ "保存当前「所有内置效果」的数值与开关状态": {
+  "kind": "message",
+  "template": "保存当前「所有内置效果」的数值与开关状态",
+  "args": [],
+  "where": "MainActivity.kt:1115"
+ },
+ "保存": {
+  "kind": "button",
+  "template": "保存",
+  "args": [],
+  "where": "MainActivity.kt:1117"
+ },
+ "已保存效果预设：$nm": {
+  "kind": "toast",
+  "template": "已保存效果预设：%1$s",
+  "args": [
+   "nm"
+  ],
+  "where": "MainActivity.kt:1123"
+ },
+ "请先保存一个效果预设": {
+  "kind": "toast",
+  "template": "请先保存一个效果预设",
+  "args": [],
+  "where": "MainActivity.kt:1130"
+ },
+ "请先连接设备": {
+  "kind": "toast",
+  "template": "请先连接设备",
+  "args": [],
+  "where": "MainActivity.kt:1131"
+ },
+ "已应用效果预设：$name": {
+  "kind": "toast",
+  "template": "已应用效果预设：%1$s",
+  "args": [
+   "name"
+  ],
+  "where": "MainActivity.kt:1135"
+ },
+ "部分效果未启动（通道冲突/槽位已满）：$nm": {
+  "kind": "toast",
+  "template": "部分效果未启动（通道冲突/槽位已满）：%1$s",
+  "args": [
+   "nm"
+  ],
+  "where": "MainActivity.kt:1140"
+ },
+ "暂无预设": {
+  "kind": "toast",
+  "template": "暂无预设",
+  "args": [],
+  "where": "MainActivity.kt:1147"
+ },
+ "删除效果预设「$name」？": {
+  "kind": "message",
+  "template": "删除效果预设「%1$s」？",
+  "args": [
+   "name"
+  ],
+  "where": "MainActivity.kt:1149"
+ },
+ "已删除": {
+  "kind": "toast",
+  "template": "已删除",
+  "args": [],
+  "where": "MainActivity.kt:1154"
+ },
+ "扩散: ${spread * 360 / 255}°": {
+  "kind": "text",
+  "template": "扩散: %1$s°",
+  "args": [
+   "spread * 360 / 255"
+  ],
+  "where": "MainActivity.kt:1256"
+ },
+ "相位: ${phase * 360 / 255}°": {
+  "kind": "text",
+  "template": "相位: %1$s°",
+  "args": [
+   "phase * 360 / 255"
+  ],
+  "where": "MainActivity.kt:1259"
+ },
+ "点击列表选择效果，用开关启用": {
+  "kind": "text",
+  "template": "点击列表选择效果，用开关启用",
+  "args": [],
+  "where": "MainActivity.kt:1266"
+ },
+ "通道 $chInFixture  数值 (0-255)": {
+  "kind": "title",
+  "template": "通道 %1$s  数值 (0-255)",
+  "args": [
+   "chInFixture"
+  ],
+  "where": "MainActivity.kt:1299"
+ },
+ "确定": {
+  "kind": "button",
+  "template": "确定",
+  "args": [],
+  "where": "MainActivity.kt:1301"
+ },
+ "⚠ $truncated 步的通道变化超过 ${DmxProtocol.MAX_PROG_ITEMS_STEP} 条，已截断；建议减少同时录制的灯数": {
+  "kind": "toast",
+  "template": "⚠ %1$s 步的通道变化超过 %2$s 条，已截断；建议减少同时录制的灯数",
+  "args": [
+   "truncated",
+   "DmxProtocol.MAX_PROG_ITEMS_STEP"
+  ],
+  "where": "MainActivity.kt:1391"
+ },
+ "新建程序": {
+  "kind": "title",
+  "template": "新建程序",
+  "args": [],
+  "where": "MainActivity.kt:1422"
+ },
+ "创建": {
+  "kind": "button",
+  "template": "创建",
+  "args": [],
+  "where": "MainActivity.kt:1424"
+ },
+ "请输入名称": {
+  "kind": "toast",
+  "template": "请输入名称",
+  "args": [],
+  "where": "MainActivity.kt:1426"
+ },
+ "已存在同名程序": {
+  "kind": "toast",
+  "template": "已存在同名程序",
+  "args": [],
+  "where": "MainActivity.kt:1427"
+ },
+ "已新建：$nm": {
+  "kind": "toast",
+  "template": "已新建：%1$s",
+  "args": [
+   "nm"
+  ],
+  "where": "MainActivity.kt:1428"
+ },
+ "暂无程序": {
+  "kind": "toast",
+  "template": "暂无程序",
+  "args": [],
+  "where": "MainActivity.kt:1433"
+ },
+ "删除程序「$prog」？": {
+  "kind": "message",
+  "template": "删除程序「%1$s」？",
+  "args": [
+   "prog"
+  ],
+  "where": "MainActivity.kt:1435"
+ },
+ "先新建一个程序": {
+  "kind": "toast",
+  "template": "先新建一个程序",
+  "args": [],
+  "where": "MainActivity.kt:1446"
+ },
+ "已记录第 ${steps.stepCount(prog, currentInstId())} 步": {
+  "kind": "toast",
+  "template": "已记录第 %1$s 步",
+  "args": [
+   "steps.stepCount(prog, currentInstId())"
+  ],
+  "where": "MainActivity.kt:1448"
+ },
+ "请先连接设备再播放": {
+  "kind": "toast",
+  "template": "请先连接设备再播放",
+  "args": [],
+  "where": "MainActivity.kt:1456"
+ },
+ "该程序还没有步": {
+  "kind": "toast",
+  "template": "该程序还没有步",
+  "args": [],
+  "where": "MainActivity.kt:1459"
+ },
+ "已下发到设备播放（App 断连也继续）": {
+  "kind": "toast",
+  "template": "已下发到设备播放（App 断连也继续）",
+  "args": [],
+  "where": "MainActivity.kt:1462"
+ },
+ "清空「$prog」全部步？": {
+  "kind": "message",
+  "template": "清空「%1$s」全部步？",
+  "args": [
+   "prog"
+  ],
+  "where": "MainActivity.kt:1469"
+ },
+ "清空": {
+  "kind": "button",
+  "template": "清空",
+  "args": [],
+  "where": "MainActivity.kt:1470"
+ },
+ "已清空": {
+  "kind": "toast",
+  "template": "已清空",
+  "args": [],
+  "where": "MainActivity.kt:1473"
+ },
+ "预览第 ${pos + 1} 步": {
+  "kind": "toast",
+  "template": "预览第 %1$s 步",
+  "args": [
+   "pos + 1"
+  ],
+  "where": "MainActivity.kt:1498"
+ },
+ "删除第 ${pos + 1} 步？": {
+  "kind": "message",
+  "template": "删除第 %1$s 步？",
+  "args": [
+   "pos + 1"
+  ],
+  "where": "MainActivity.kt:1504"
+ },
+ "已断开 ${found.name}": {
+  "kind": "toast",
+  "template": "已断开 %1$s",
+  "args": [
+   "found.name"
+  ],
+  "where": "MainActivity.kt:1559"
+ },
+ "扫描中…（每隔几秒自动扫描）": {
+  "kind": "text",
+  "template": "扫描中…（每隔几秒自动扫描）",
+  "args": [],
+  "where": "MainActivity.kt:1584"
+ },
+ "断开连接": {
+  "kind": "button",
+  "template": "断开连接",
+  "args": [],
+  "where": "MainActivity.kt:1592"
+ },
+ "已连接": {
+  "kind": "toast",
+  "template": "已连接",
+  "args": [],
+  "where": "MainActivity.kt:1621"
+ },
+ "从设备导入 ${imported.size} 个灯具": {
+  "kind": "toast",
+  "template": "从设备导入 %1$s 个灯具",
+  "args": [
+   "imported.size"
+  ],
+  "where": "MainActivity.kt:1776"
+ },
+ "未能解析灯库": {
+  "kind": "toast",
+  "template": "未能解析灯库",
+  "args": [],
+  "where": "MainActivity.kt:1779"
+ },
+ "设备重启过，已同步 App 状态": {
+  "kind": "toast",
+  "template": "设备重启过，已同步 App 状态",
+  "args": [],
+  "where": "MainActivity.kt:1840"
+ },
+ "已从设备同步状态": {
+  "kind": "toast",
+  "template": "已从设备同步状态",
+  "args": [],
+  "where": "MainActivity.kt:1853"
+ },
+ "设备": {
+  "kind": "text",
+  "template": "设备",
+  "args": [],
+  "where": "MainActivity.kt:1870"
+ },
+ "✓ ${f.name}（已连接）": {
+  "kind": "text",
+  "template": "✓ %1$s（已连接）",
+  "args": [
+   "f.name"
+  ],
+  "where": "MainActivity.kt:1933"
+ },
+ "已应用: ${def.name}": {
+  "kind": "toast",
+  "template": "已应用: %1$s",
+  "args": [
+   "def.name"
+  ],
+  "where": "MainActivity.kt:1983"
+ },
+ "删除选中的 ${selected.size} 个灯具？": {
+  "kind": "message",
+  "template": "删除选中的 %1$s 个灯具？",
+  "args": [
+   "selected.size"
+  ],
+  "where": "MainActivity.kt:2020"
+ },
+ "已删除 ${selected.size} 个": {
+  "kind": "toast",
+  "template": "已删除 %1$s 个",
+  "args": [
+   "selected.size"
+  ],
+  "where": "MainActivity.kt:2024"
+ },
+ "已选 $count": {
+  "kind": "text",
+  "template": "已选 %1$s",
+  "args": [
+   "count"
+  ],
+  "where": "MainActivity.kt:2075"
+ },
+ "读取失败: ${e.message}": {
+  "kind": "toast",
+  "template": "读取失败: %1$s",
+  "args": [
+   "e.message"
+  ],
+  "where": "MainActivity.kt:2114"
+ },
+ "没读到文件": {
+  "kind": "toast",
+  "template": "没读到文件",
+  "args": [],
+  "where": "MainActivity.kt:2118"
+ },
+ "导入了 $total 个灯具": {
+  "kind": "toast",
+  "template": "导入了 %1$s 个灯具",
+  "args": [
+   "total"
+  ],
+  "where": "MainActivity.kt:2214"
+ },
+ "导入了 $total 个灯具，另有 ${failures.size} 个失败": {
+  "kind": "toast",
+  "template": "导入了 %1$s 个灯具，另有 %2$s 个失败",
+  "args": [
+   "total",
+   "failures.size"
+  ],
+  "where": "MainActivity.kt:2215"
+ },
+ "导入失败（${failures.size} 个文件）": {
+  "kind": "title",
+  "template": "导入失败（%1$s 个文件）",
+  "args": [
+   "failures.size"
+  ],
+  "where": "MainActivity.kt:2225"
+ },
+ "知道了": {
+  "kind": "button",
+  "template": "知道了",
+  "args": [],
+  "where": "MainActivity.kt:2227"
+ },
+ "请先导入灯库": {
+  "kind": "toast",
+  "template": "请先导入灯库",
+  "args": [],
+  "where": "MainActivity.kt:2235"
+ },
+ "添加灯具": {
+  "kind": "title",
+  "template": "添加灯具",
+  "args": [],
+  "where": "MainActivity.kt:2321"
+ },
+ "添加": {
+  "kind": "button",
+  "template": "添加",
+  "args": [],
+  "where": "MainActivity.kt:2323"
+ },
+ "${fixtureEditor.channels.size} 通道": {
+  "kind": "text",
+  "template": "%1$s 通道",
+  "args": [
+   "fixtureEditor.channels.size"
+  ],
+  "where": "MainActivity.kt:2426"
+ },
+ "没有已导入的灯库": {
+  "kind": "toast",
+  "template": "没有已导入的灯库",
+  "args": [],
+  "where": "MainActivity.kt:2441"
+ },
+ "选择灯库编辑": {
+  "kind": "title",
+  "template": "选择灯库编辑",
+  "args": [],
+  "where": "MainActivity.kt:2444"
+ },
+ "请输入灯型名称": {
+  "kind": "toast",
+  "template": "请输入灯型名称",
+  "args": [],
+  "where": "MainActivity.kt:2462"
+ },
+ "请至少添加一个通道": {
+  "kind": "toast",
+  "template": "请至少添加一个通道",
+  "args": [],
+  "where": "MainActivity.kt:2467"
+ },
+ "已导出 ${name}": {
+  "kind": "toast",
+  "template": "已导出 %1$s",
+  "args": [
+   "name"
+  ],
+  "where": "MainActivity.kt:2477"
+ },
+ "已关闭双宇宙：$bCount 台在 B 通道的灯具不会输出": {
+  "kind": "toast",
+  "template": "已关闭双宇宙：%1$s 台在 B 通道的灯具不会输出",
+  "args": [
+   "bCount"
+  ],
+  "where": "MainActivity.kt:2520"
+ },
+ "推子": {
+  "kind": "langcall",
+  "template": "推子",
+  "args": [],
+  "where": "MainActivity.kt:2562"
+ },
+ "灯具": {
+  "kind": "langcall",
+  "template": "灯具",
+  "args": [],
+  "where": "MainActivity.kt:2563"
+ },
+ "效果": {
+  "kind": "langcall",
+  "template": "效果",
+  "args": [],
+  "where": "MainActivity.kt:2564"
+ },
+ "灯库": {
+  "kind": "langcall",
+  "template": "灯库",
+  "args": [],
+  "where": "MainActivity.kt:2565"
+ },
+ "设置": {
+  "kind": "langcall",
+  "template": "设置",
+  "args": [],
+  "where": "MainActivity.kt:2566"
+ },
+ "请先勾选要删除的灯具": {
+  "kind": "toast",
+  "template": "请先勾选要删除的灯具",
+  "args": [],
+  "where": "MainActivity.kt:2620"
+ },
+ "共 %d 台": {
+  "kind": "langcall",
+  "template": "共 %d 台",
+  "args": [],
+  "where": "MainActivity.kt:2654"
+ },
+ "已选 ${instEditSel.size}": {
+  "kind": "text",
+  "template": "已选 %1$s",
+  "args": [
+   "instEditSel.size"
+  ],
+  "where": "MainActivity.kt:2655"
+ },
+ "已进入多选，可「全选」后删除": {
+  "kind": "toast",
+  "template": "已进入多选，可「全选」后删除",
+  "args": [],
+  "where": "MainActivity.kt:2700"
+ },
+ "本通道放不下，请调整起始地址": {
+  "kind": "toast",
+  "template": "本通道放不下，请调整起始地址",
+  "args": [],
+  "where": "MainActivity.kt:2757"
+ },
+ "已按顺序写入 ${p.size} 台的新地址…": {
+  "kind": "toast",
+  "template": "已按顺序写入 %1$s 台的新地址…",
+  "args": [
+   "p.size"
+  ],
+  "where": "MainActivity.kt:2762"
+ },
+ "已改址。但本地灯库里没有匹配的灯型，无法自动建实例": {
+  "kind": "toast",
+  "template": "已改址。但本地灯库里没有匹配的灯型，无法自动建实例",
+  "args": [],
+  "where": "MainActivity.kt:2943"
+ },
+ "同时创建为灯具实例？": {
+  "kind": "title",
+  "template": "同时创建为灯具实例？",
+  "args": [],
+  "where": "MainActivity.kt:2947"
+ },
+ "$matched / ${batch.size} 台能在本地灯库里找到匹配灯型。\\n\\n": {
+  "kind": "message",
+  "template": "%1$s / %2$s 台能在本地灯库里找到匹配灯型。\\n\\n",
+  "args": [
+   "matched",
+   "batch.size"
+  ],
+  "where": "MainActivity.kt:2948"
+ },
+ "不用": {
+  "kind": "button",
+  "template": "不用",
+  "args": [],
+  "where": "MainActivity.kt:2951"
+ },
+ "创建结果": {
+  "kind": "title",
+  "template": "创建结果",
+  "args": [],
+  "where": "MainActivity.kt:3023"
+ },
+ "好": {
+  "kind": "button",
+  "template": "好",
+  "args": [],
+  "where": "MainActivity.kt:3025"
+ },
+ "关闭": {
+  "kind": "button",
+  "template": "关闭",
+  "args": [],
+  "where": "MainActivity.kt:3037"
+ },
+ "识别": {
+  "kind": "button",
+  "template": "识别",
+  "args": [],
+  "where": "MainActivity.kt:3038"
+ },
+ "新建灯型": {
+  "kind": "button",
+  "template": "新建灯型",
+  "args": [],
+  "where": "MainActivity.kt:3042"
+ },
+ "RDM 扫描超时": {
+  "kind": "toast",
+  "template": "RDM 扫描超时",
+  "args": [],
+  "where": "MainActivity.kt:3111"
+ },
+ "已让 ${d.model} 闪烁 1.5 秒": {
+  "kind": "toast",
+  "template": "已让 %1$s 闪烁 1.5 秒",
+  "args": [
+   "d.model"
+  ],
+  "where": "MainActivity.kt:3175"
+ },
+ "修改地址：${d.model}": {
+  "kind": "title",
+  "template": "修改地址：%1$s",
+  "args": [
+   "d.model"
+  ],
+  "where": "MainActivity.kt:3185"
+ },
+ "UID ${d.uid}\\n当前 ${d.addrLabel()}，占 ${d.channelCount} 通道": {
+  "kind": "message",
+  "template": "UID %1$s\\n当前 %2$s，占 %3$s 通道",
+  "args": [
+   "d.uid",
+   "d.addrLabel()",
+   "d.channelCount"
+  ],
+  "where": "MainActivity.kt:3186"
+ },
+ "写入": {
+  "kind": "button",
+  "template": "写入",
+  "args": [],
+  "where": "MainActivity.kt:3188"
+ },
+ "地址越界：需要 $a~${a + d.channelCount - 1}，本通道上限 ${DmxProtocol.UNIVERSE_SIZE}": {
+  "kind": "toast",
+  "template": "地址越界：需要 %1$s~%2$s，本通道上限 %3$s",
+  "args": [
+   "a",
+   "a + d.channelCount - 1",
+   "DmxProtocol.UNIVERSE_SIZE"
+  ],
+  "where": "MainActivity.kt:3192"
+ },
+ "已发送改址命令，等待设备确认…": {
+  "kind": "toast",
+  "template": "已发送改址命令，等待设备确认…",
+  "args": [],
+  "where": "MainActivity.kt:3197"
+ },
+ "删除 ${ids.size} 台灯具？": {
+  "kind": "title",
+  "template": "删除 %1$s 台灯具？",
+  "args": [
+   "ids.size"
+  ],
+  "where": "MainActivity.kt:3229"
+ },
+ "$detail\\n\\n该操作不可撤销。": {
+  "kind": "message",
+  "template": "%1$s\\n\\n该操作不可撤销。",
+  "args": [
+   "detail"
+  ],
+  "where": "MainActivity.kt:3230"
+ },
+ "已删除 ${ids.size} 台灯具": {
+  "kind": "toast",
+  "template": "已删除 %1$s 台灯具",
+  "args": [
+   "ids.size"
+  ],
+  "where": "MainActivity.kt:3248"
+ },
+ "「${inst.name}」占 $ch 个通道": {
+  "kind": "text",
+  "template": "「%1$s」占 %2$s 个通道",
+  "args": [
+   "inst.name",
+   "ch"
+  ],
+  "where": "MainActivity.kt:3297"
+ },
+ "修改地址": {
+  "kind": "title",
+  "template": "修改地址",
+  "args": [],
+  "where": "MainActivity.kt:3313"
+ },
+ "已改为 ${after.label()}": {
+  "kind": "toast",
+  "template": "已改为 %1$s",
+  "args": [
+   "after.label()"
+  ],
+  "where": "MainActivity.kt:3324"
+ },
+ "已开启 — 控台可访问 ESP32 灯库文件": {
+  "kind": "text",
+  "template": "已开启 — 控台可访问 ESP32 灯库文件",
+  "args": [],
+  "where": "MainActivity.kt:3344"
+ },
+ "开启": {
+  "kind": "text",
+  "template": "开启",
+  "args": [],
+  "where": "MainActivity.kt:3349"
+ },
+ "已在根目录": {
+  "kind": "toast",
+  "template": "已在根目录",
+  "args": [],
+  "where": "MainActivity.kt:3381"
+ },
+ "新建文件夹": {
+  "kind": "title",
+  "template": "新建文件夹",
+  "args": [],
+  "where": "MainActivity.kt:3394"
+ },
+ "名称无效": {
+  "kind": "toast",
+  "template": "名称无效",
+  "args": [],
+  "where": "MainActivity.kt:3399"
+ },
+ "正在获取...": {
+  "kind": "text",
+  "template": "正在获取...",
+  "args": [],
+  "where": "MainActivity.kt:3419"
+ },
+ "删除文件夹": {
+  "kind": "title",
+  "template": "删除文件夹",
+  "args": [],
+  "where": "MainActivity.kt:3426"
+ },
+ "删除设备上的空文件夹「$name」？（文件夹非空将失败）": {
+  "kind": "message",
+  "template": "删除设备上的空文件夹「%1$s」？（文件夹非空将失败）",
+  "args": [
+   "name"
+  ],
+  "where": "MainActivity.kt:3427"
+ },
+ "重命名": {
+  "kind": "title",
+  "template": "重命名",
+  "args": [],
+  "where": "MainActivity.kt:3442"
+ },
+ "原名：$oldName": {
+  "kind": "message",
+  "template": "原名：%1$s",
+  "args": [
+   "oldName"
+  ],
+  "where": "MainActivity.kt:3443"
+ },
+ "$act「$name」到": {
+  "kind": "title",
+  "template": "%1$s「%2$s」到",
+  "args": [
+   "act",
+   "name"
+  ],
+  "where": "MainActivity.kt:3466"
+ },
+ "目标与当前位置相同": {
+  "kind": "toast",
+  "template": "目标与当前位置相同",
+  "args": [],
+  "where": "MainActivity.kt:3469"
+ },
+ "正在${act}到 $dstShow...": {
+  "kind": "toast",
+  "template": "正在%1$s到 %2$s...",
+  "args": [
+   "act",
+   "dstShow"
+  ],
+  "where": "MainActivity.kt:3474"
+ },
+ "正在获取设备目录...": {
+  "kind": "toast",
+  "template": "正在获取设备目录...",
+  "args": [],
+  "where": "MainActivity.kt:3480"
+ },
+ "文件夹": {
+  "kind": "text",
+  "template": "文件夹",
+  "args": [],
+  "where": "MainActivity.kt:3521"
+ },
+ "${f.size} 字节": {
+  "kind": "text",
+  "template": "%1$s 字节",
+  "args": [
+   "f.size"
+  ],
+  "where": "MainActivity.kt:3553"
+ },
+ "下载": {
+  "kind": "text",
+  "template": "下载",
+  "args": [],
+  "where": "MainActivity.kt:3554"
+ },
+ "正在下载 ${f.name}...": {
+  "kind": "toast",
+  "template": "正在下载 %1$s...",
+  "args": [
+   "f.name"
+  ],
+  "where": "MainActivity.kt:3560"
+ },
+ "正在删除 ${f.name}...": {
+  "kind": "toast",
+  "template": "正在删除 %1$s...",
+  "args": [
+   "f.name"
+  ],
+  "where": "MainActivity.kt:3580"
+ },
+ "删除文件": {
+  "kind": "title",
+  "template": "删除文件",
+  "args": [],
+  "where": "MainActivity.kt:3587"
+ },
+ "删除设备上的文件「${f.name}」？": {
+  "kind": "message",
+  "template": "删除设备上的文件「%1$s」？",
+  "args": [
+   "f.name"
+  ],
+  "where": "MainActivity.kt:3588"
+ },
+ "上传": {
+  "kind": "text",
+  "template": "上传",
+  "args": [],
+  "where": "MainActivity.kt:3604"
+ },
+ "App 端已保存灯库": {
+  "kind": "text",
+  "template": "App 端已保存灯库",
+  "args": [],
+  "where": "MainActivity.kt:3636"
+ },
+ "正在上传 ${fileName}...": {
+  "kind": "toast",
+  "template": "正在上传 %1$s...",
+  "args": [
+   "fileName"
+  ],
+  "where": "MainActivity.kt:3673"
+ },
+ "全部上传完成: $label": {
+  "kind": "toast",
+  "template": "全部上传完成: %1$s",
+  "args": [
+   "label"
+  ],
+  "where": "MainActivity.kt:3679"
+ }
+}
