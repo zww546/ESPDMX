@@ -244,29 +244,19 @@ class ChannelAdapter(
     private var rows: List<Any> = emptyList()
     private var rowPos: IntArray = IntArray(0)
 
-    /** 组的固定顺序（也让相同功能始终挨在一起）。 */
-    private val groupOrder = listOf("亮度", "位置", "颜色", "图案", "切割", "棱镜", "其他")
+    /** 组的固定顺序（也让相同功能始终挨在一起）。规则本体见 [ChannelGroups]。 */
+    private val groupOrder = ChannelGroups.ORDER
 
-    /** 按 attribute（优先）或通道名判断该通道属于哪个功能组。 */
-    private fun groupOf(position: Int): String {
-        val attr = (channelAttrs?.getOrNull(position) ?: "").uppercase()
-        val name = (channelNames?.getOrNull(position) ?: "").uppercase()
-        val orig = (channelOrigNames?.getOrNull(position) ?: "").uppercase()
-        val s = "$attr $name $orig"
-        return when {
-            Regex("DIM|SHUTTER|STROBE|MASTER|INTENSITY").containsMatchIn(s) -> "亮度"
-            Regex("PAN|TILT|PT_?SPEED|PTSPEED|MOVE").containsMatchIn(s) -> "位置"
-            Regex("COLOR|COLOUR|CTO|CTB|RED|GREEN|BLUE|WHITE|AMBER|CYAN|MAGENTA|RGB")
-                .containsMatchIn(s) -> "颜色"
-            // ⚠ 切割/棱镜必须排在"图案"之前：when 是短路求值，
-            //   否则 BLADE/PRISM 会先被图案规则（含 GOBO|FOCUS…）吃掉。
-            Regex("BLADE|FRAMING|SHAPE|CUT|BLADE1|BLADE2").containsMatchIn(s) -> "切割"
-            Regex("PRISM|FROST|雾化|柔光").containsMatchIn(s) -> "棱镜"
-            Regex("GOBO|FOCUS|ZOOM|IRIS|EFFECT")
-                .containsMatchIn(s) -> "图案"
-            else -> "其他"
-        }
-    }
+    /**
+     * 按 attribute（优先）或通道名判断该通道属于哪个功能组。
+     *
+     * 规则抽到了 [ChannelGroups] —— 它是纯字符串判断，用普通 JUnit 就能测；
+     * 留在这里的话单测要拉 Robolectric（RecyclerView.Adapter 是 Android 类型）。
+     */
+    private fun groupOf(position: Int): String = ChannelGroups.of(
+        channelAttrs?.getOrNull(position) ?: "",
+        channelNames?.getOrNull(position) ?: "",
+        channelOrigNames?.getOrNull(position) ?: "")
 
     /** 重建行列表（分组开关、通道数、灯型变化后调用）。 */
     fun rebuildRows() {

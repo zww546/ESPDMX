@@ -95,7 +95,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private lateinit var steps: StepStore
     private lateinit var fixtureStore: FixtureStore
     private lateinit var channelAdapter: ChannelAdapter
-    private lateinit var layoutStore: LayoutStore
     private lateinit var fxPresetStore: FxPresetStore
 
     private lateinit var progAdapter: ArrayAdapter<String>
@@ -246,7 +245,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fixtureStore = FixtureStore(this)
         rdmStore = RdmStore(this)
         fixtureEditor = FixtureEditor(this, fixtureStore)
-        layoutStore = LayoutStore(this)
         fxPresetStore = FxPresetStore(this)
 
         // 实例 → 槽位分配器（效果槽 0..3，绑定实例创建时分配的槽位）
