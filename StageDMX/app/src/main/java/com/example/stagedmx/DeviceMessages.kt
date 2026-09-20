@@ -20,8 +20,23 @@ import com.example.stagedmx.Msg.UploadResult
  * `DeviceMessages.Msg.X` 访问（会被当成伴生对象成员），放顶层最省事也最清晰。
  */
 sealed interface Msg {
-    /** 0x82 状态同步头：uptime(秒) + 运行中效果数 + 播放程序位图。 */
-    data class StateHead(val uptimeSec: Long, val fxCount: Int, val progMask: Int) : Msg
+    /**
+     * 0x82 状态同步头：uptime + 效果数 + 程序位图，v9 起尾部追加 DMX 遥测。
+     *
+     * DMX 字段是可选的：固件 v8 只发 8 字节，所以这里给默认值，
+     * 新旧固件混用不会越界也不会崩（App 可能比固件新）。
+     */
+    data class StateHead(
+        val uptimeSec: Long,
+        val fxCount: Int,
+        val progMask: Int,
+        /** bit0=U1 发送正常, bit1=U2 发送正常；-1 = 旧固件无此字段 */
+        val dmxOk: Int = -1,
+        /** 累计失败帧 */
+        val dmxFails: Long = -1,
+        val fps1: Int = -1,
+        val fps2: Int = -1,
+    ) : Msg
     /** 0x83 通道快照分块。start 为 1-based 全局通道号；values[i] 对应 start+i。 */
     data class StateChunk(val start: Int, val values: IntArray) : Msg
     /** 0x84 运行中的效果槽。 */
@@ -83,7 +98,20 @@ object DeviceMessages {
         return when (u8(data[0])) {
             DmxProtocol.RESP_STATE_HEAD -> {
                 if (data.size < 8) return null
-                StateHead(u32be(data, 2), u8(data[6]), u8(data[7]))
+                // v9 起为 16 字节（尾部带 DMX 遥测）；老固件 8 字节 → 走默认值
+                if (data.size >= 16) {
+                    StateHead(
+                        uptimeSec = u32be(data, 2),
+                        fxCount = u8(data[6]),
+                        progMask = u8(data[7]),
+                        dmxOk = u8(data[8]),
+                        dmxFails = u32be(data, 9),
+                        fps1 = u8(data[13]),
+                        fps2 = u8(data[14]),
+                    )
+                } else {
+                    StateHead(u32be(data, 2), u8(data[6]), u8(data[7]))
+                }
             }
 
             DmxProtocol.RESP_STATE_CHUNK -> {

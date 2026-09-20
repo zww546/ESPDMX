@@ -1,128 +1,353 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 灯具管理：管理"已配接的灯具"。
+     打开 RDM 后顶部出现页签，可切到「RDM 设备」扫描并管理真实灯具。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/bg"
     android:padding="8dp">
 
-    <!-- 标题（底部导航直达，不再需要返回按钮） -->
     <TextView
+        android:id="@+id/tvInstPageTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="实例管理"
+        android:text="@string/s_fixture_manager"
         android:textColor="@color/text"
         android:textSize="18sp"
         android:textStyle="bold"
         android:gravity="center"
         android:paddingBottom="8dp" />
 
-    <!-- 实例列表标题 -->
+    <!-- 页签：已配接 / RDM 设备（RDM 关闭时整条隐藏） -->
     <LinearLayout
+        android:id="@+id/instTabBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="4dp">
-
-        <TextView
-            android:id="@+id/tvInstListTitle"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="参与同时控制的实例（勾选，按地址顺序）"
-            android:textColor="@color/textDim"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/tvInstCount"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textColor="@color/textDim"
-            android:textSize="12sp" />
-    </LinearLayout>
-
-    <!-- 批量操作栏（长按任意一行进入多选后显示） -->
-    <LinearLayout
-        android:id="@+id/instBatchBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="4dp"
+        android:layout_marginBottom="6dp"
         android:visibility="gone">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnInstSelectAll"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:minWidth="0dp"
-            android:text="全选"
-            android:textSize="13sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnInstSelectNone"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:minWidth="0dp"
-            android:text="取消全选"
-            android:textSize="13sp" />
+        <TextView
+            android:id="@+id/btnTabPatched"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:text="@string/s_patched"
+            android:textSize="13sp"
+            android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bg_pill_outline_white"
+            android:layout_marginEnd="4dp" />
 
         <TextView
-            android:id="@+id/tvInstSelCount"
+            android:id="@+id/btnTabRdm"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:gravity="center"
-            android:text="已选 0"
-            android:textColor="@color/warn"
-            android:textSize="13sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnInstDeleteSel"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:text="删除选中"
+            android:layout_height="40dp"
+            android:text="@string/s_rdm_devices"
             android:textSize="13sp"
-            android:textColor="@color/err" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnInstExitEdit"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="38dp"
-            android:minWidth="0dp"
-            android:text="完成"
-            android:textSize="13sp" />
+            android:textColor="@color/text"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bg_pill_outline_white" />
     </LinearLayout>
 
-    <!-- 编辑模式提示 -->
-    <TextView
-        android:id="@+id/tvInstEditHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="已进入多选：点行勾选，可「全选」后删除"
-        android:textColor="@color/accent"
-        android:textSize="12sp"
-        android:paddingBottom="4dp"
-        android:visibility="gone" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvInstanceMgr"
+    <!-- ==================== 已配接 ==================== -->
+    <LinearLayout
+        android:id="@+id/layoutPatched"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/tvInstMgrHint"
+        <!-- 列表标题 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/tvInstListTitle"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/s_fixtures_controlled_together_tap_rows_to"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvInstCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- 批量操作栏（长按任意一行进入多选后显示） -->
+        <LinearLayout
+            android:id="@+id/instBatchBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnInstSelectAll"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:minWidth="0dp"
+                android:text="@string/s_select_all"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnInstSelectNone"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:minWidth="0dp"
+                android:text="@string/s_deselect_all"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvInstSelCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/s_0_selected"
+                android:textColor="@color/warn"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnInstDeleteSel"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:text="@string/s_delete_selected"
+                android:textSize="13sp"
+                android:textColor="@color/err" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnInstExitEdit"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:minWidth="0dp"
+                android:text="@string/s_done"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvInstEditHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/s_multi_select_tap_rows_then_select_all_to"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:paddingBottom="4dp"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvInstanceMgr"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/tvInstMgrHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/s_after_selecting_return_to_faders_sliders"
+            android:textColor="@color/textDim"
+            android:textSize="11sp"
+            android:paddingTop="6dp" />
+    </LinearLayout>
+
+    <!-- ==================== RDM 设备 ==================== -->
+    <LinearLayout
+        android:id="@+id/layoutRdm"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="勾选后回到推子页，滑条 / 定位 / 全黑 / Flash 会同时作用于所有勾选的灯。"
-        android:textColor="@color/textDim"
-        android:textSize="11sp"
-        android:paddingTop="6dp" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- 状态行：左边状态文字，右边模拟开关（模式开关，用得少，做成小文字按钮） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/tvRdmStatus"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@string/s_tap_scan_to_start"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmSim"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="10dp"
+                android:textSize="12sp"
+                android:text="@string/s_simulate" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvRdm"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="8dp" />
+
+            <TextView
+                android:id="@+id/tvRdmEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:lineSpacingExtra="6dp"
+                android:text="@string/s_no_rdm_devices_yet_n_ntap_scan_below_to_"
+                android:textColor="@color/textDim"
+                android:textSize="13sp" />
+        </FrameLayout>
+
+        <!--
+          排序模式专用行：起始地址 + 完成。
+          只在"编辑顺序"打开时出现（不在排序时它没有意义），
+          位置固定在按钮行上方，作为 FrameLayout 的兄弟节点，不会遮住列表数据。
+        -->
+        <LinearLayout
+            android:id="@+id/rdmReorderBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/s_start_addr"
+                android:textColor="@color/textDim"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/etRdmStart"
+                android:layout_width="58dp"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:maxHeight="36dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_input_pill"
+                android:gravity="center"
+                android:inputType="number"
+                android:maxLength="3"
+                android:padding="0dp"
+                android:includeFontPadding="false"
+                android:text="1"
+                android:textColor="@color/text"
+                android:textSize="13sp"
+                android:importantForAutofill="no" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmReorderDone"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="16dp"
+                android:textSize="12sp"
+                android:text="@string/s_finish" />
+        </LinearLayout>
+
+        <!--
+          4 个操作按钮：完全按推子页那一行的规格 ——
+          等宽(layout_weight=1)、36dp 高、minWidth=0、paddingHorizontal=4dp、12sp，
+          样式沿用同一套词汇（填充 / 描边 / 色调），这样两页手感一致。
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmScan"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="12sp"
+                android:text="@string/s_scan" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmReorder"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="12sp"
+                android:layout_marginStart="4dp"
+                android:text="@string/s_reorder" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmApplyOrder"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="12sp"
+                android:layout_marginStart="4dp"
+                android:text="@string/s_write_addr" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmMakeInstances"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="36dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                android:textSize="12sp"
+                android:layout_marginStart="4dp"
+                android:text="@string/s_add" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

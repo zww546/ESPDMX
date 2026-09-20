@@ -20,7 +20,7 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
-            android:text="App灯库"
+            android:text="@string/s_app_library"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -33,7 +33,7 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
-            android:text="设备灯库"
+            android:text="@string/s_device_library"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -46,7 +46,7 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
-            android:text="文件管理"
+            android:text="@string/s_files"
             android:textSize="12sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -74,7 +74,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="当前灯具"
+                android:text="@string/s_current_fixture"
                 android:textColor="#cccccc"
                 android:textSize="14sp" />
 
@@ -84,7 +84,7 @@
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="无"
+                android:text="@string/s_none"
                 android:textColor="#ff9800"
                 android:textSize="14sp"
                 android:textStyle="bold"
@@ -161,7 +161,7 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:text="全选"
+                android:text="@string/s_select_all"
                 android:textSize="13sp" />
 
             <TextView
@@ -170,7 +170,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="已选 0"
+                android:text="@string/s_0_selected"
                 android:textColor="@color/warn"
                 android:textSize="13sp" />
 
@@ -179,7 +179,7 @@
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:text="删除选中"
+                android:text="@string/s_delete_selected"
                 android:textSize="13sp"
                 android:textColor="@color/err" />
         </LinearLayout>
@@ -196,7 +196,7 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="导入灯库"
+                android:text="@string/s_import_fixtures"
                 android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
@@ -206,7 +206,7 @@
                 android:layout_weight="1"
                 android:layout_height="48dp"
                 android:layout_marginStart="8dp"
-                android:text="加实例"
+                android:text="@string/s_add"
                 android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
@@ -216,7 +216,7 @@
                 android:layout_weight="1"
                 android:layout_height="48dp"
                 android:layout_marginStart="8dp"
-                android:text="批量"
+                android:text="@string/s_batch"
                 android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
@@ -247,7 +247,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="U盘模式"
+                    android:text="@string/s_usb_mode"
                     android:textColor="@color/text"
                     android:textSize="14sp"
                     android:textStyle="bold" />
@@ -255,7 +255,7 @@
                     android:id="@+id/tvMscStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="关闭"
+                    android:text="@string/s_close"
                     android:textColor="@color/textDim"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -263,7 +263,7 @@
                 android:id="@+id/swMsc"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
-                android:text="开启"
+                android:text="@string/s_on"
                 android:textSize="12sp"
                 android:textColor="@color/text"
                 android:background="@drawable/bg_pill"
@@ -276,7 +276,7 @@
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="36dp"
-            android:text="＋ 新建文件夹"
+            android:text="@string/s_new_folder"
             android:textSize="12sp"
             android:visibility="gone" />
 
@@ -292,7 +292,7 @@
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
-                android:text="ESP32 设备灯库"
+                android:text="@string/s_esp32_device_library"
                 android:textColor="@color/text"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -305,7 +305,7 @@
                 android:paddingTop="0dp"
                 android:paddingBottom="0dp"
                 android:includeFontPadding="false"
-                android:text="⬆ 上级"
+                android:text="@string/s_up"
                 android:textSize="11sp"
                 android:textColor="@color/text"
                 android:background="@drawable/bg_pill"
@@ -316,7 +316,7 @@
                 android:id="@+id/tvListHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="点按下载到 App"
+                android:text="@string/s_tap_to_download_to_app"
                 android:textColor="@color/textDim"
                 android:textSize="11sp" />
         </LinearLayout>

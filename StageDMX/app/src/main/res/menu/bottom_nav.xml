@@ -2,23 +2,25 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/nav_fader"
-        android:title="推子"
+        android:title="@string/s_faders"
         android:icon="@drawable/ic_fader" />
+    <!-- 灯具紧挨推子：现场最常用的两页（选灯 → 推）放在一起，顺手 -->
+    <item
+        android:id="@+id/nav_instances"
+        android:title="@string/s_fixtures"
+        android:icon="@drawable/ic_instances" />
     <!-- 程序已并入"效果"页（顶部按钮切换：内置效果 / 程序） -->
     <item
         android:id="@+id/nav_fx"
-        android:title="效果"
+        android:title="@string/s_effects"
         android:icon="@drawable/ic_fx" />
+    <!-- 灯库 = 灯型库（导入/浏览灯库文件） -->
     <item
         android:id="@+id/nav_fixture"
-        android:title="灯具"
+        android:title="@string/s_library"
         android:icon="@drawable/ic_fixture" />
     <item
-        android:id="@+id/nav_instances"
-        android:title="实例"
-        android:icon="@drawable/ic_instances" />
-    <item
         android:id="@+id/nav_settings"
-        android:title="设置"
+        android:title="@string/s_settings"
         android:icon="@drawable/ic_settings" />
 </menu>

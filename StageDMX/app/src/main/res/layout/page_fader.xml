@@ -34,7 +34,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="主控亮度"
+            android:text="@string/s_master"
             android:textColor="@color/textDim"
             android:textSize="13sp" />
 
@@ -64,6 +64,47 @@
             android:textSize="15sp" />
     </LinearLayout>
 
+    <!--
+      状态总览条（v9）：一行看完"连没连、DMX 出没出、在跑什么"。
+      数据来自固件 0x82 状态帧（v9 起尾部带 DMX 遥测）。
+      设计上**不占用可点区域**：纯展示，避免和推子抢操作。
+    -->
+    <LinearLayout
+        android:id="@+id/statusBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_card"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:id="@+id/tvStLink"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="@color/textDim" />
+
+        <TextView
+            android:id="@+id/tvStDmx"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:textSize="11sp"
+            android:textColor="@color/textDim" />
+
+        <TextView
+            android:id="@+id/tvStRun"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textColor="@color/textDim" />
+    </LinearLayout>
+
     <!-- 快捷操作 -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -80,7 +121,7 @@
             android:minWidth="0dp"
             android:paddingHorizontal="4dp"
             android:textSize="12sp"
-            android:text="全黑" />
+            android:text="@string/s_blackout" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLocate"
@@ -92,7 +133,7 @@
             android:paddingHorizontal="4dp"
             android:textSize="12sp"
             android:layout_marginStart="4dp"
-            android:text="定位" />
+            android:text="@string/s_locate" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFlash"
@@ -116,7 +157,7 @@
             android:paddingHorizontal="4dp"
             android:textSize="12sp"
             android:layout_marginStart="4dp"
-            android:text="记录" />
+            android:text="@string/s_record" />
     </LinearLayout>
 
     <!-- 推子区 -->

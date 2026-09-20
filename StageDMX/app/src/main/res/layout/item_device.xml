@@ -16,7 +16,7 @@
             android:id="@+id/tvName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="设备"
+            android:text="@string/s_device"
             android:textColor="@color/text"
             android:textSize="16sp" />
 

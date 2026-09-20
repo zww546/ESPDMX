@@ -16,7 +16,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="灯型"
+        android:text="@string/s_fixture_type"
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 
@@ -36,10 +36,11 @@
         android:textSize="12sp" />
 
     <TextView
+        android:id="@+id/tvBandLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="通道 A / B（A = 宇宙1 口，B = 宇宙2 口）"
+        android:text="@string/s_band_a_b_a_universe_1_b_universe_2"
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 
@@ -54,7 +55,7 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
-            android:text="A 通道"
+            android:text="@string/s_band_a"
             android:textSize="14sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -68,7 +69,7 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
-            android:text="B 通道"
+            android:text="@string/s_band_b"
             android:textSize="14sp"
             android:textColor="@color/text"
             android:gravity="center"
@@ -81,7 +82,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="起始地址（1-512）"
+        android:text="@string/s_start_address_1_512"
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 
@@ -103,7 +104,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="数量（台）"
+        android:text="@string/s_count"
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 

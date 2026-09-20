@@ -25,7 +25,7 @@
             android:layout_height="36dp"
             android:paddingHorizontal="12dp"
             android:gravity="center"
-            android:text="设备"
+            android:text="@string/s_device"
             android:textColor="@color/accent"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -59,7 +59,7 @@
                 android:gravity="center_vertical" />
         </HorizontalScrollView>
 
-        <!-- 实例管理入口（实例存在时显示） -->
+        <!-- 灯具管理入口（有灯具时显示） -->
         <TextView
             android:id="@+id/btnInstanceMgr"
             android:layout_width="wrap_content"
@@ -67,7 +67,7 @@
             android:layout_marginStart="6dp"
             android:paddingHorizontal="10dp"
             android:gravity="center"
-            android:text="实例管理"
+            android:text="@string/s_fixture_manager"
             android:textColor="@color/accent"
             android:textSize="12sp"
             android:background="@drawable/bg_pill"

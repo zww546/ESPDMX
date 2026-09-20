@@ -19,7 +19,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="上次设备：无"
+            android:text="@string/s_last_device_none"
             android:textColor="@color/textDim"
             android:textSize="12sp" />
 
@@ -27,7 +27,7 @@
             android:id="@+id/swAutoConnect"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
-            android:text="自动连接"
+            android:text="@string/s_auto_connect"
             android:textColor="@color/textDim"
             android:textSize="12sp"
             app:thumbTint="@color/ok"
@@ -39,7 +39,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="8dp"
-        android:text="扫描中…"
+        android:text="@string/s_scanning"
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 

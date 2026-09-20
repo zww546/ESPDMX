@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  内置效果列表项（v9.2：单列列表，每行一个效果）。
+
+  ## 为什么改回单列
+  3 列网格在效果只有十几个时"看着挺整齐"，但每格太窄：名称要么被截断、要么靠
+  压小字号硬塞；而且一排开关看过去全是圆钮，找不到重点。
+  单列整行宽度充裕 —— 名称完整、参数能说明白、开关是列表里最好认的控件。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="8dp"
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="8dp"
     android:background="@drawable/bg_card"
-    android:layout_marginBottom="2dp"
+    android:layout_marginBottom="3dp"
     android:gravity="center_vertical">
 
     <TextView
@@ -16,15 +25,16 @@
         android:textColor="@color/text"
         android:textSize="14sp"
         android:textStyle="bold"
-        android:singleLine="true" />
+        android:maxLines="1"
+        android:ellipsize="end" />
 
     <TextView
         android:id="@+id/tvFxParams"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textColor="@color/textDim"
-        android:textSize="12sp"
-        android:layout_marginEnd="6dp" />
+        android:textSize="11sp"
+        android:layout_marginEnd="10dp" />
 
     <!-- 每个效果条目的独立启停开关：打开=启动该效果，关闭=停止该效果 -->
     <com.google.android.material.materialswitch.MaterialSwitch
@@ -36,5 +46,5 @@
         android:scaleX="0.85"
         android:scaleY="0.85"
         android:checked="false"
-        android:contentDescription="效果启动开关" />
+        android:contentDescription="@string/s_fx_item_switch" />
 </LinearLayout>

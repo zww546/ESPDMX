@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  推子页的功能分组标题行（v9）。
+
+  点整行折叠/展开该组。左侧一条竖色条让它在视觉上"压住"下面的通道行，
+  一眼能看出这是分组而不是又一个通道。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@color/surface2"
+    android:paddingStart="8dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="7dp"
+    android:paddingBottom="7dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <View
+        android:layout_width="3dp"
+        android:layout_height="16dp"
+        android:background="@color/accent" />
+
+    <TextView
+        android:id="@+id/tvGroupName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:textColor="@color/text"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvGroupCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/textDim"
+        android:textSize="11sp" />
+</LinearLayout>

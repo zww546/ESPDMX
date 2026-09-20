@@ -65,6 +65,13 @@ object DmxProtocol {
     const val CMD_COPY: Int = 0x3B
     const val CMD_LIST_DIRS: Int = 0x3C
 
+    // ---- RDM（v8，固件侧用 esp_dmx 的 controller API 实现）----
+    const val CMD_RDM_SCAN: Int = 0x40        // + universe
+    const val CMD_RDM_IDENTIFY: Int = 0x41    // + universe + uid(6) + on
+    const val CMD_RDM_SET_ADDR: Int = 0x42    // + universe + uid(6) + addrHi + addrLo
+    const val CMD_RDM_SIMULATE: Int = 0x43    // + on（无真实 RDM 灯时用虚拟灯具）
+    const val CMD_RDM_SET_ADDRS: Int = 0x44   // + universe + count + (uid(6) addr)* 批量改址
+
     // ESP32 → App notify 响应
     const val RESP_UPLOAD_RESULT: Int = 0x91
     const val RESP_FILE_LIST: Int = 0x92
@@ -74,6 +81,10 @@ object DmxProtocol {
     const val RESP_DIR_RESULT: Int = 0x96
     const val RESP_DIRS_LIST: Int = 0x97
     const val RESP_DIRS_END: Int = 0x98
+    // RDM 应答（0x89/0x8A/0x8B 是当时唯一空闲的一段，0x96~0x98 已被文件夹操作占用）
+    const val RESP_RDM_SCAN: Int = 0x89      // count(1) universe(1) ok(1) errLen(1) err…
+    const val RESP_RDM_DEVICE: Int = 0x8A    // 每台设备的全部参数，见 parseRdmDevice()
+    const val RESP_RDM_RESULT: Int = 0x8B    // ok(1) errLen(1) err…（识别/改址的结果）
 
     // ---- 状态同步（0x05 的应答，固件 → App）----
     // 0x82 flags(1) uptime(4,秒,大端) fxCount(1) progMask(1)

@@ -21,7 +21,7 @@ class ChannelAdapter(
     private val engine: DmxEngine,
     private val onSet: (chInFixture: Int, value: Int) -> Unit,
     private val onEditValue: (chInFixture: Int) -> Unit
-) : RecyclerView.Adapter<ChannelAdapter.VH>() {
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var count = 10
     private var channelNames: List<String>? = null
@@ -47,7 +47,7 @@ class ChannelAdapter(
     fun applyOrder(o: IntArray?) {
         order = if (o == null || o.size != count || o.toSet().size != count || o.any { it !in 0 until count })
             null else o.copyOf()
-        notifyDataSetChanged()
+        refresh()
     }
 
     /** 当前显示顺序（位置 → 灯内通道下标）。 */
@@ -81,7 +81,7 @@ class ChannelAdapter(
         defaultValues = null
         groupInstances = null
         order = null
-        notifyDataSetChanged()
+        refresh()
     }
 
     /** 应用灯具（可选实例起始地址）：完整通道名数组（未定义的填 CH N）。 */
@@ -107,7 +107,7 @@ class ChannelAdapter(
         defaultValues = null
         groupInstances = null
         order = null
-        notifyDataSetChanged()
+        refresh()
     }
 
     /**
@@ -137,7 +137,7 @@ class ChannelAdapter(
         defaultValues = null
         groupInstances = instances.sortedBy { it.globalAddr() }
         order = null
-        notifyDataSetChanged()
+        refresh()
     }
 
     /** 清除灯具模式，回到裸通道。 */
@@ -151,7 +151,7 @@ class ChannelAdapter(
         defaultValues = null
         groupInstances = null
         order = null
-        notifyDataSetChanged()
+        refresh()
     }
 
     fun isFixtureMode(): Boolean = channelNames != null
@@ -184,7 +184,10 @@ class ChannelAdapter(
     }
 
     @SuppressLint("NotifyDataSetChanged")
-    fun refresh() = notifyDataSetChanged()
+    fun refresh() {
+        rebuildRows()          // 分组开关/灯型/通道数变化后行结构要重算
+        notifyDataSetChanged()
+    }
 
     inner class VH(root: View) : RecyclerView.ViewHolder(root) {
         val tvCh: TextView = root.findViewById(R.id.tvCh)
@@ -212,20 +215,136 @@ class ChannelAdapter(
         }
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_channel, parent, false)
-        return VH(v)
+    override fun getItemCount(): Int = if (groupByFunction) rows.size else count
+
+
+    // ========================================================================
+    // 按功能分组折叠（设置页 swFaderGroup 控制）
+    //
+    // 设计要点：**对外 API 仍然以"通道下标 position"为单位**（dmxChannel/attrAt/
+    // onSet 全都如此），分组只改变**行的排布**。所以这里维护
+    //   rows[i]  = 第 i 行是组标题还是通道
+    //   rowPos[i] = 第 i 行对应哪个通道下标（组标题为 -1）
+    // 这样 MainActivity 一行都不用改，风险被限制在这个文件里。
+    // ========================================================================
+
+    /** 是否按功能分组折叠。 */
+    var groupByFunction = false
+        set(v) {
+            field = v
+            collapsedGroups.clear()
+            refresh()
+        }
+
+    private val collapsedGroups = mutableSetOf<String>()
+
+    /** 组标题行。 */
+    private class GroupHeader(val name: String, val members: Int, val collapsed: Boolean)
+
+    private var rows: List<Any> = emptyList()
+    private var rowPos: IntArray = IntArray(0)
+
+    /** 组的固定顺序（也让相同功能始终挨在一起）。 */
+    private val groupOrder = listOf("亮度", "位置", "颜色", "图案", "切割", "棱镜", "其他")
+
+    /** 按 attribute（优先）或通道名判断该通道属于哪个功能组。 */
+    private fun groupOf(position: Int): String {
+        val attr = (channelAttrs?.getOrNull(position) ?: "").uppercase()
+        val name = (channelNames?.getOrNull(position) ?: "").uppercase()
+        val orig = (channelOrigNames?.getOrNull(position) ?: "").uppercase()
+        val s = "$attr $name $orig"
+        return when {
+            Regex("DIM|SHUTTER|STROBE|MASTER|INTENSITY").containsMatchIn(s) -> "亮度"
+            Regex("PAN|TILT|PT_?SPEED|PTSPEED|MOVE").containsMatchIn(s) -> "位置"
+            Regex("COLOR|COLOUR|CTO|CTB|RED|GREEN|BLUE|WHITE|AMBER|CYAN|MAGENTA|RGB")
+                .containsMatchIn(s) -> "颜色"
+            // ⚠ 切割/棱镜必须排在"图案"之前：when 是短路求值，
+            //   否则 BLADE/PRISM 会先被图案规则（含 GOBO|FOCUS…）吃掉。
+            Regex("BLADE|FRAMING|SHAPE|CUT|BLADE1|BLADE2").containsMatchIn(s) -> "切割"
+            Regex("PRISM|FROST|雾化|柔光").containsMatchIn(s) -> "棱镜"
+            Regex("GOBO|FOCUS|ZOOM|IRIS|EFFECT")
+                .containsMatchIn(s) -> "图案"
+            else -> "其他"
+        }
     }
 
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        holder.bound = position
-        val v = engine.get(dmxChannel(position))
-        holder.binding = true
-        holder.tvCh.text = displayName(position)
-        holder.seek.progress = v
-        holder.tvVal.text = v.toString()
-        holder.binding = false
+    /** 重建行列表（分组开关、通道数、灯型变化后调用）。 */
+    fun rebuildRows() {
+        if (!groupByFunction) {
+            rows = emptyList()
+            rowPos = IntArray(0)
+            return
+        }
+        val out = ArrayList<Any>()
+        val pos = ArrayList<Int>()
+        for (g in groupOrder) {
+            val members = (0 until count).filter { groupOf(it) == g }
+            if (members.isEmpty()) continue
+            val collapsed = g in collapsedGroups
+            out.add(GroupHeader(g, members.size, collapsed))
+            pos.add(-1)
+            if (!collapsed) for (m in members) {
+                out.add(m)      // 直接放通道下标（Int）
+                pos.add(m)
+            }
+        }
+        rows = out
+        rowPos = pos.toIntArray()
     }
 
-    override fun getItemCount(): Int = count
+    /** 点组标题：折叠/展开并刷新。 */
+    fun toggleGroup(name: String) {
+        if (!collapsedGroups.remove(name)) collapsedGroups.add(name)
+        refresh()
+    }
+
+    /** 行 → 通道下标（组标题返回 -1）。 */
+    private fun posOfRow(row: Int): Int =
+        if (groupByFunction) rowPos.getOrElse(row) { -1 } else row
+
+    override fun getItemViewType(position: Int): Int =
+        if (groupByFunction && rows.getOrNull(position) is GroupHeader) 1 else 0
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        return if (viewType == 1) {
+            val v = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_channel_group, parent, false)
+            HeaderVH(v)
+        } else {
+            val v = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_channel, parent, false)
+            VH(v)
+        }
+    }
+
+    private inner class HeaderVH(root: View) : RecyclerView.ViewHolder(root) {
+        val tv: TextView = root.findViewById(R.id.tvGroupName)
+        val tvCount: TextView = root.findViewById(R.id.tvGroupCount)
+        init {
+            root.setOnClickListener {
+                val p = bindingAdapterPosition
+                val h = rows.getOrNull(p)
+                if (h is GroupHeader) toggleGroup(h.name)
+            }
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        val row = if (groupByFunction) rows.getOrNull(position) else null
+        if (row is GroupHeader) {
+            val h = holder as HeaderVH
+            h.tv.text = row.name
+            h.tvCount.text = "${row.members} 通道" + if (row.collapsed) "  ▸" else "  ▾"
+            return
+        }
+        val vh = holder as VH
+        val p = posOfRow(position)
+        vh.bound = p
+        val v = engine.get(dmxChannel(p))
+        vh.binding = true
+        vh.tvCh.text = displayName(p)
+        vh.seek.progress = v
+        vh.tvVal.text = v.toString()
+        vh.binding = false
+    }
 }

@@ -181,7 +181,7 @@ class FixtureEditor(private val ctx: Context, private val store: FixtureStore) {
     private fun showAttrPicker(idx: Int, tv: TextView, onChanged: () -> Unit) {
         val names = attrOptions.map { "${it.first}  ${it.second}" }.toTypedArray()
         MaterialAlertDialogBuilder(ctx)
-            .setTitle("选择属性")
+            .setTitle(Lang.t(R.string.k_select_attribute))
             .setItems(names) { _, which ->
                 val selected = attrOptions[which].first
                 channels[idx] = channels[idx].copy(attribute = selected)
@@ -189,7 +189,7 @@ class FixtureEditor(private val ctx: Context, private val store: FixtureStore) {
                 tv.setTextColor(ctx.getColor(R.color.accent))
                 onChanged()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 

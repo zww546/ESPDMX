@@ -49,7 +49,7 @@
         android:layout_height="32dp"
         android:paddingHorizontal="10dp"
         android:gravity="center"
-        android:text="改址"
+        android:text="@string/s_address"
         android:textColor="@color/accent"
         android:textSize="12sp"
         android:background="@drawable/bg_pill"

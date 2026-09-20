@@ -24,7 +24,7 @@
                 android:layout_height="34dp"
                 android:paddingHorizontal="12dp"
                 android:gravity="center"
-                android:text="← 返回设置"
+                android:text="@string/s_back_to_settings"
                 android:textColor="@color/accent"
                 android:textSize="13sp"
                 android:background="@drawable/bg_pill"
@@ -35,7 +35,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="灯库编辑器"
+                android:text="@string/s_fixture_editor"
                 android:textColor="@color/text"
                 android:textSize="18sp"
                 android:textStyle="bold"
@@ -52,7 +52,7 @@
             <TextView
                 android:layout_width="60dp"
                 android:layout_height="wrap_content"
-                android:text="名称"
+                android:text="@string/s_name"
                 android:textColor="@color/textDim"
                 android:textSize="13sp" />
 
@@ -73,7 +73,7 @@
             <TextView
                 android:layout_width="60dp"
                 android:layout_height="wrap_content"
-                android:text="厂家"
+                android:text="@string/s_vendor"
                 android:textColor="@color/textDim"
                 android:textSize="13sp" />
 
@@ -101,7 +101,7 @@
             <TextView
                 android:layout_width="60dp"
                 android:layout_height="wrap_content"
-                android:text="模式"
+                android:text="@string/s_mode"
                 android:textColor="@color/textDim"
                 android:textSize="13sp" />
 
@@ -113,7 +113,7 @@
                 android:layout_marginEnd="4dp"
                 android:background="@drawable/bg_pill"
                 android:paddingHorizontal="8dp"
-                android:hint="通道数"
+                android:hint="@string/s_channels"
                 android:textColor="@color/text"
                 android:textSize="14sp"
                 android:importantForAutofill="no"
@@ -123,7 +123,7 @@
             <TextView
                 android:layout_width="60dp"
                 android:layout_height="wrap_content"
-                android:text="行程"
+                android:text="@string/s_range"
                 android:textColor="@color/textDim"
                 android:textSize="13sp" />
 
@@ -169,7 +169,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="通道列表"
+                android:text="@string/s_channel_list"
                 android:textColor="@color/text"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -178,7 +178,7 @@
                 android:id="@+id/tvChCount"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0 通道"
+                android:text="@string/s_0_ch"
                 android:textColor="@color/textDim"
                 android:textSize="12sp"
                 android:paddingEnd="8dp" />
@@ -188,7 +188,7 @@
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
-                android:text="+ 通道"
+                android:text="@string/s_channels_2"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -204,13 +204,13 @@
                 android:text="#" android:textColor="@color/textDim" android:textSize="11sp"
                 android:gravity="center" />
             <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:text="通道名" android:textColor="@color/textDim" android:textSize="11sp" />
+                android:layout_weight="1" android:text="@string/s_channel_name" android:textColor="@color/textDim" android:textSize="11sp" />
             <TextView android:layout_width="80dp" android:layout_height="wrap_content"
-                android:text="属性" android:textColor="@color/textDim" android:textSize="11sp" />
+                android:text="@string/s_attribute" android:textColor="@color/textDim" android:textSize="11sp" />
             <TextView android:layout_width="40dp" android:layout_height="wrap_content"
-                android:text="默认" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
+                android:text="@string/s_default" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
             <TextView android:layout_width="40dp" android:layout_height="wrap_content"
-                android:text="高亮" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
+                android:text="@string/s_highlight" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
             <TextView android:layout_width="30dp" android:layout_height="wrap_content"
                 android:text="F" android:textColor="@color/textDim" android:textSize="11sp" android:gravity="center" />
         </LinearLayout>
@@ -235,7 +235,7 @@
                 android:layout_height="40dp"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:text="导出 ZIP"
+                android:text="@string/s_export_zip"
                 android:textColor="#fff"
                 android:backgroundTint="@color/accent" />
 
@@ -246,7 +246,7 @@
                 android:layout_height="40dp"
                 android:layout_weight="1"
                 android:layout_marginStart="4dp"
-                android:text="编辑已有灯库"
+                android:text="@string/s_edit_existing_library"
                 android:textSize="12sp" />
         </LinearLayout>
 

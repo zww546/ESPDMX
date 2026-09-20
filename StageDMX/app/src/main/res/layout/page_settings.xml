@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  设置页（v9）：按用途分组。
+
+  分组的意义：原来 5 项平铺，加一项就更难找。现在分成
+  显示 / 输出 / 工具 三组，新增项有地方放，用户也能按"我要改什么"去找。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -10,7 +16,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="设置"
+        android:text="@string/s_settings"
         android:textColor="@color/text"
         android:textSize="18sp"
         android:textStyle="bold"
@@ -28,7 +34,18 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- ===== 语言 / Language ===== -->
+            <!-- ==================== 显示 ==================== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/s_group_display"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingStart="4dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="6dp" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -36,7 +53,7 @@
                 android:gravity="center_vertical"
                 android:background="@drawable/bg_card"
                 android:padding="12dp"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="6dp">
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -46,14 +63,14 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="语言 / Language"
+                        android:text="@string/s_language"
                         android:textColor="@color/text"
                         android:textSize="15sp"
                         android:textStyle="bold" />
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="推子页通道名的显示语言（全局设置，不再逐个灯库单独切换）"
+                        android:text="@string/s_display_language_for_the_whole_app_chann"
                         android:textColor="@color/textDim"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -63,7 +80,7 @@
                     android:layout_width="52dp"
                     android:layout_height="34dp"
                     android:gravity="center"
-                    android:text="中文"
+                    android:text="@string/s_s"
                     android:textColor="@color/text"
                     android:textSize="13sp"
                     android:background="@drawable/bg_pill_outline_accent"
@@ -84,134 +101,195 @@
                     android:focusable="true" />
             </LinearLayout>
 
-            <!-- ===== 推子页排列方式 ===== -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="推子页排列方式（当前灯型）"
-                android:textColor="@color/textDim"
-                android:textSize="12sp"
-                android:paddingBottom="4dp" />
-
+            <!-- 推子页按功能分组折叠 -->
             <LinearLayout
+                android:id="@+id/rowFaderGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:background="@drawable/bg_card"
                 android:padding="12dp"
-                android:layout_marginBottom="6dp">
+                android:layout_marginBottom="6dp"
+                android:clickable="true"
+                android:focusable="true">
 
-                <TextView
-                    android:id="@+id/tvLayoutMode"
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="按通道顺序"
-                    android:textColor="@color/text"
-                    android:textSize="14sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_fader_grouping"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tvFaderGroupHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_fader_group_hint"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingBottom="8dp">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLayoutChannel"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="38dp"
-                    android:minWidth="0dp"
-                    android:textSize="12sp"
-                    android:text="按通道顺序" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLayoutCustom"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="6dp"
-                    android:minWidth="0dp"
-                    android:textSize="12sp"
-                    android:text="自定义顺序" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:background="@drawable/bg_card"
-                android:padding="10dp"
-                android:layout_marginBottom="6dp">
-
-                <TextView
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swFaderGroup"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="排列预设"
-                    android:textColor="@color/text"
-                    android:textSize="13sp" />
+                    android:layout_height="36dp"
+                    app:thumbTint="@color/ok"
+                    app:trackTint="@color/surface2" />
+            </LinearLayout>
 
-                <Spinner
-                    android:id="@+id/spLayoutPreset"
+            <!-- ==================== 输出 ==================== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/s_group_output"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingStart="4dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp" />
+
+            <LinearLayout
+                android:id="@+id/rowDualUniverse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_card"
+                android:padding="12dp"
+                android:layout_marginBottom="6dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_dual_universe"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tvDualUniverseHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_on_a_b_dmx_1024_channels"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swDualUniverse"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    app:thumbTint="@color/ok"
+                    app:trackTint="@color/surface2" />
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/rowRdm"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_card"
+                android:padding="12dp"
+                android:layout_marginBottom="6dp"
+                android:clickable="true"
+                android:focusable="true">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLayoutEdit"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                <LinearLayout
                     android:layout_width="0dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_height="38dp"
-                    android:minWidth="0dp"
-                    android:textSize="12sp"
-                    android:text="编辑顺序" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="RDM"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tvRdmHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_enables_rdm_scan_and_management_on_the_f"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLayoutSave"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="6dp"
-                    android:minWidth="0dp"
-                    android:textSize="12sp"
-                    android:text="保存为预设" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLayoutDelete"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="6dp"
-                    android:minWidth="0dp"
-                    android:textSize="12sp"
-                    android:text="删除预设" />
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swRdm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    app:thumbTint="@color/ok"
+                    app:trackTint="@color/surface2" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvLayoutHint"
+            <!-- RDM 建实例时地址冲突怎么办（v9.3） -->
+            <LinearLayout
+                android:id="@+id/rowRdmOverwrite"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="先应用一个灯库/实例，再在这里调整推子页通道的排列顺序。"
-                android:textColor="@color/textDim"
-                android:textSize="11sp"
-                android:paddingTop="8dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_card"
+                android:padding="12dp"
+                android:layout_marginBottom="6dp"
+                android:clickable="true"
+                android:focusable="true">
 
-            <!-- ===== 灯库编辑（从“灯具”页移入） ===== -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/s_rdm_overwrite"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tvRdmOverwriteHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swRdmOverwrite"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    app:thumbTint="@color/ok"
+                    app:trackTint="@color/surface2" />
+            </LinearLayout>
+
+            <!-- ==================== 工具 ==================== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/s_group_tools"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingStart="4dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="6dp" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -219,7 +297,6 @@
                 android:gravity="center_vertical"
                 android:background="@drawable/bg_card"
                 android:padding="12dp"
-                android:layout_marginTop="12dp"
                 android:layout_marginBottom="8dp">
 
                 <LinearLayout
@@ -230,14 +307,14 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="灯库编辑"
+                        android:text="@string/s_fixture_editor_2"
                         android:textColor="@color/text"
                         android:textSize="15sp"
                         android:textStyle="bold" />
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="新建 / 修改灯型的通道与属性，并导出 ZIP"
+                        android:text="@string/s_create_or_edit_fixture_types_export_as_z"
                         android:textColor="@color/textDim"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -248,7 +325,7 @@
                     android:layout_height="36dp"
                     android:paddingHorizontal="14dp"
                     android:gravity="center"
-                    android:text="打开"
+                    android:text="@string/s_open"
                     android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"

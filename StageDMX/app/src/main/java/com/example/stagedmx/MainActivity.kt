@@ -70,6 +70,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private lateinit var b: ActivityMainBinding
     private lateinit var fb: PageFaderBinding
+    /**
+     * 效果预设弹窗的根视图（v9：预设从页面搬进弹窗）。
+     *
+     * 这里用 findViewById 而不是 ViewBinding：dialog_* 的绑定类在本工程的
+     * 增量构建里没被生成（资源本身没报错），与其和构建缓存较劲，不如直接取视图 ——
+     * 弹窗只有 5 个控件，findViewById 行为确定。
+     */
+    private lateinit var fxp: View
+    private val fxpSpinner get() = fxp.findViewById<Spinner>(R.id.spFxPreset)
+    private val fxpSave get() = fxp.findViewById<View>(R.id.btnFxPresetSave)
+    private val fxpApply get() = fxp.findViewById<View>(R.id.btnFxPresetApply)
+    private val fxpOff get() = fxp.findViewById<View>(R.id.btnFxPresetOff)
+    private val fxpDel get() = fxp.findViewById<View>(R.id.btnFxPresetDel)
     private lateinit var pb: PageProgramBinding
     private lateinit var fixb: PageFixturesBinding
     private lateinit var fxb: PageFxBinding
@@ -104,6 +117,32 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private var instEditMode = false
     private val instEditSel = mutableSetOf<String>()
 
+    // ---- 灯具管理页页签 / RDM ----
+    /** true = 已配接列表，false = RDM 设备列表。 */
+    private var instTabPatched = true
+    private var rdmDevices: List<RdmDevice> = emptyList()
+    private var rdmScanning = false
+    private var rdmLastError = ""
+    /** 固件当前是否处于 RDM 模拟模式（没有真实 RDM 灯具时返回虚拟灯具）。 */
+    private var rdmSimulated = false
+    /** App 侧记住的模拟开关状态（与固件同步）。 */
+    private var rdmSimOn = true
+    // 状态总览条的数据（来自固件 0x82）
+    private var devFxCount = 0
+    /** RDM 建实例时地址冲突是否直接覆盖（设置页开关，默认关闭=先询问） */
+    private var rdmOverwrite = false
+    private var devDmxOk = -1
+    private var devDmxFails = 0L
+    private var devFps1 = -1
+    private var devFps2 = -1
+    /** 刚写入的那批"设备 → 新地址"，用于接着问"要不要建实例"。 */
+    private var rdmPendingAssign: List<Pair<RdmDevice, Int>>? = null
+    /** RDM 排序（编辑顺序）模式：拖动调整灯具顺序，地址按顺序自动分配。 */
+    private var rdmReorderMode = false
+    private var rdmOrder: List<RdmDevice> = emptyList()
+    private var rdmTouchHelper: androidx.recyclerview.widget.ItemTouchHelper? = null
+    private lateinit var rdmStore: RdmStore
+
     /**
      * 属性别名：不同灯库对同一功能命名不同（dimmer / intensity / dim），
      * 混灯型组控制时靠它把"调光"映射到各台灯各自的通道。
@@ -132,6 +171,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     // 全局设置（语言 / 排列方式）
     private val appSettings by lazy { getSharedPreferences("app_settings", MODE_PRIVATE) }
+
+    /**
+     * 双宇宙开关：关闭时只使用 A 通道（宇宙 1，512 路），B 通道相关 UI 全部隐藏。
+     * 现场只接了一条 DMX 线时关掉它，避免把灯误配到 B 通道却没有输出。
+     */
+    private var dualUniverse: Boolean
+        get() = appSettings.getBoolean("dual_universe", true)
+        set(v) { appSettings.edit().putBoolean("dual_universe", v).apply() }
+
+    /** RDM 开关（设置页）。 */
+    private var rdmEnabled: Boolean
+        get() = rdmStore.enabled
+        set(v) { rdmStore.enabled = v }
 
     // ---- 状态同步：单片机 / APP 重启后保持一致 ----
     private val syncPrefs by lazy { getSharedPreferences("state_sync", MODE_PRIVATE) }
@@ -166,13 +218,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (result.values.all { it }) showDeviceDialog()
-        else toast("需要蓝牙权限才能扫描设备")
+        else toast(Lang.t(R.string.k_bluetooth_permission_is_required_to_scan))
     }
 
     private val enableBtLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        if (ble.isBluetoothOn()) onConnectClicked() else toast("请打开蓝牙")
+        if (ble.isBluetoothOn()) onConnectClicked() else toast(Lang.t(R.string.k_turn_on_bluetooth))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -192,6 +244,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         engine = DmxEngine(ble)
         steps = StepStore(this)
         fixtureStore = FixtureStore(this)
+        rdmStore = RdmStore(this)
         fixtureEditor = FixtureEditor(this, fixtureStore)
         layoutStore = LayoutStore(this)
         fxPresetStore = FxPresetStore(this)
@@ -206,7 +259,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val reimportCount = fixtureStore.checkAndReimport(this)
         if (reimportCount > 0) {
             Handler(Looper.getMainLooper()).postDelayed({
-                toast("已自动更新 $reimportCount 个灯库")
+                toast(Lang.t(R.string.k_auto_updated_1_s_fixture_types, reimportCount))
             }, 1500)
         }
 
@@ -238,6 +291,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         wireInstanceMgrPage()
         wireSettingsPage()
         applySavedLanguage()
+        // 必须先 Lang.init：它用 applicationContext 建立"语言覆盖 Context"并遍历
+        // R.string 生成中英映射，之后 applySavedLanguage()/apply() 才有效。
+        Lang.init(this)
         showFxTab(true)     // 效果页默认显示"内置效果"
 
         b.btnConnect.setOnClickListener { onConnectClicked() }
@@ -268,10 +324,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      * 集中成常量是因为散落的 `pager.currentItem = 5` 这种魔数在增删页面时极易错位。
      */
     private object Page {
+        // ⚠ 页面序号必须与底部导航的**显示顺序**一致（推子/灯具/效果/灯库/设置）。
+        //   否则点第 2 项会跳到第 4 页（动画要滚过中间所有页），
+        //   回勾选状态也会标错项 —— 因为 ViewPager 是按位置索引的。
         const val FADER = 0
-        const val FX = 1           // 效果（含 内置效果/程序 两个页签）
-        const val FIXTURE = 2      // 灯具（含 App灯库/设备灯库/文件管理 三个页签）
-        const val INSTANCES = 3
+        const val INSTANCES = 1    // 灯具（已配接的灯具 + RDM）
+        const val FX = 2           // 效果（含 内置效果/程序 两个页签）
+        const val FIXTURE = 3      // 灯库（App灯库/设备灯库/文件管理 三个页签）
         const val SETTINGS = 4
         const val EDITOR = 5       // 不在底部导航
         const val COUNT = 6
@@ -279,7 +338,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     private fun setupPager() {
         // 程序页不再是一个独立的 pager 页面：它的根视图被装进"效果"页的程序容器里
-        val pages = listOf(fb.root, fxb.root, fixb.root, imfb.root, stb.root, edb.root)
+        // 顺序与 Page 常量、底部导航三者必须一致
+        val pages = listOf(fb.root, imfb.root, fxb.root, fixb.root, stb.root, edb.root)
         fxb.layoutProgram.addView(pb.root, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
         b.pager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -297,6 +357,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 (holder.itemView as FrameLayout).apply { removeAllViews(); addView(page) }
             }
         }
+        applySavedLanguage()   // 先恢复语言，再建页面，避免首屏闪一下中文
+        b.bottomNav.post { applyNavTitles() }
         b.pager.offscreenPageLimit = 5
         b.pager.isUserInputEnabled = false
 
@@ -316,17 +378,21 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         b.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(pos: Int) {
                 // 只有真正在底部导航里的页面才回勾选状态；灯库编辑页保持原选中项
-                val navPos = when (pos) {
-                    Page.FADER -> 0
-                    Page.FX -> 1
-                    Page.FIXTURE -> 2
-                    Page.INSTANCES -> 3
-                    Page.SETTINGS -> 4
+                // 按 **ID** 映射，不写死序号 —— 以后菜单顺序再变也不会错位
+                val navId = when (pos) {
+                    Page.FADER -> R.id.nav_fader
+                    Page.INSTANCES -> R.id.nav_instances
+                    Page.FX -> R.id.nav_fx
+                    Page.FIXTURE -> R.id.nav_fixture
+                    Page.SETTINGS -> R.id.nav_settings
                     else -> -1
                 }
-                if (navPos in 0 until b.bottomNav.menu.size()) {
-                    b.bottomNav.menu.getItem(navPos).isChecked = true
+                if (navId != -1) {
+                    b.bottomNav.menu.findItem(navId)?.isChecked = true
                 }
+                // 切页后统一刷新一次文案：每个页面在 onBindViewHolder 里用代码设过文字，
+                // 布局里的 android:text 也在这里被自动翻译覆盖（见 Lang.apply 的说明）。
+                b.root.post { Lang.apply(b.root); applyNavTitles() }
                 when (pos) {
                     Page.FX -> refreshFxPage()
                     Page.FIXTURE -> refreshFixturePage()
@@ -379,7 +445,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             val def = if (inst != null) fixtureStore.fixtureOf(inst)
                       else fixtureStore.currentFixture
             if (def == null) {
-                toast("请先在灯具页选择一个灯库或添加实例")
+                toast(Lang.t(R.string.k_select_a_fixture_type_or_add_fixtures_on_the_lib))
                 return@setOnClickListener
             }
             val targets = if (channelAdapter.isGroupMode()) groupInstances()
@@ -508,9 +574,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     /** 长按实例确认删除。 */
     private fun confirmDeleteInstance(inst: FixtureInstance) {
         MaterialAlertDialogBuilder(this)
-            .setTitle("删除实例")
-            .setMessage("删除实例「${inst.name}」（${inst.label()}）？")
-            .setPositiveButton("删除") { _, _ ->
+            .setTitle(Lang.t(R.string.k_delete_fixture))
+            .setMessage(Lang.t(R.string.k_delete_fixture_1_s_2_s, inst.name, inst.label()))
+            .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                 // 停止该实例的效果和程序（板载槽位释放，槽位绑定不重排）
                 FxEngine.stop(inst.id)
                 if (playingSlots.remove(inst.slot)) {
@@ -520,7 +586,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 fixtureStore.deleteInstance(inst.id)
                 selectedInstanceIds.remove(inst.id)
                 if (currentInstanceId == inst.id) currentInstanceId = groupInstances().firstOrNull()?.id
-                toast("已删除 ${inst.name}")
+                toast(Lang.t(R.string.k_deleted_1_s, inst.name))
                 renderInstanceBar()
                 refreshInstanceMgrList()
                 // 若无剩余实例（或剩余的一台都没被选中），回到裸通道模式
@@ -530,7 +596,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     applySelectedInstance()
                 }
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -569,9 +635,15 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshMasterScope()
     }
 
-    /** 按设置页的“推子页排列方式”套用自定义顺序（没有生效预设则回到通道顺序）。 */
+    /**
+     * 套用推子页的通道排列顺序。
+     *
+     * v9 起**固定按通道顺序**：原来的"自定义顺序 + 排列预设"整套已移除
+     * （用户要求）。参数保留是为了不改调用点，未使用。
+     */
+    @Suppress("UNUSED_PARAMETER")
     private fun applyFaderLayout(fixtureId: String?) {
-        channelAdapter.applyOrder(layoutStore.orderFor(fixtureId))
+        channelAdapter.applyOrder(null)
     }
 
     /**
@@ -837,14 +909,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val instId = currentInstId()
         val prog = steps.currentProgram
         if (prog == null || !steps.hasProgram(prog, instId)) {
-            toast("请到“程序”页新建或选择一个程序")
+            toast(Lang.t(R.string.k_create_or_select_a_program_on_the_programs_page))
             b.pager.currentItem = Page.FX
             showFxTab(false)      // 记录步 → 切到"效果"页的程序页签
             return
         }
         steps.addStep(prog, instId, steps.defaultTimeMs, sanitizeSnapshot())
         refreshStepsUI()
-        toast("已记录 → $prog 第 ${steps.stepCount(prog, instId)} 步")
+        toast(Lang.t(R.string.k_recorded_1_s_step_2_s, prog, steps.stepCount(prog, instId)))
     }
 
     // ---- 效果页 ----
@@ -904,20 +976,17 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 sw.setOnCheckedChangeListener { _, checked ->
                     if (checked) {
                         if (ble.state != BleManager.State.CONNECTED) {
-                            toast("请先连接设备再启动效果")
-                            sw.isChecked = false
+                            toast(Lang.t(R.string.k_connect_to_a_device_before_starting_effects))
                             return@setOnCheckedChangeListener
                         }
                         if (FxEngine.slotsFull()) {
-                            toast("效果槽已满(8个)")
-                            sw.isChecked = false
+                            toast(Lang.t(R.string.k_effect_slots_full_8))
                             return@setOnCheckedChangeListener
                         }
                         // v6：效果要作用到"整组"，组内必须是规则阵列（同灯型 + 等间距地址）
                         val (arrayOk, arrayMsg) = fxArrayInfo()
                         if (!arrayOk) {
-                            toast("无法作用到整组：$arrayMsg")
-                            sw.isChecked = false
+                            toast(Lang.t(R.string.k_cannot_apply_to_the_whole_group_1_s, arrayMsg))
                             return@setOnCheckedChangeListener
                         }
                         FxEngine.setSelectedPreset(currentInstanceId, def.id)
@@ -926,8 +995,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                             amp = FxEngine.getAmplitude(currentInstanceId),
                             speed = FxEngine.getSpeed(currentInstanceId))
                         if (!ok) {
-                            toast("无法启动：与现有效果通道冲突")
-                            sw.isChecked = false
+                            toast(Lang.t(R.string.k_cannot_start_channel_conflict_with_a_running_eff))
                         }
                     } else {
                         val slot = FxEngine.slotOf(currentInstanceId, def.id)
@@ -937,6 +1005,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 }
             }
         }
+        // v9：效果列表改 3 列网格（项变多时不用一直往下滚）
+        // v9.2：改回单列列表（每行一个效果，名称完整、开关好认）
         fxb.rvFxPresets.layoutManager = LinearLayoutManager(this)
         fxb.rvFxPresets.adapter = adapter
 
@@ -976,7 +1046,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fxb.seekSpread.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
                 FxEngine.setSpread(p, currentInstanceId)
-                fxb.tvSpread.text = "扩散: ${p * 360 / 255}°"
+                fxb.tvSpread.text = Lang.t(R.string.k_spread_1_s, p * 360 / 255)
             }
             override fun onStartTrackingTouch(s: SeekBar) {}
             override fun onStopTrackingTouch(s: SeekBar) {}
@@ -985,7 +1055,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fxb.seekPhase.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
                 FxEngine.setPhase(p, currentInstanceId)
-                fxb.tvPhase.text = "相位: ${p * 360 / 255}°"
+                fxb.tvPhase.text = Lang.t(R.string.k_phase_1_s, p * 360 / 255)
             }
             override fun onStartTrackingTouch(s: SeekBar) {}
             override fun onStopTrackingTouch(s: SeekBar) {}
@@ -1008,23 +1078,33 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // ---- 效果预设：一键保存 / 一键应用（数值 + 开关状态）----
         fxpAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, mutableListOf())
         fxpAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        fxb.spFxPreset.adapter = fxpAdapter
-        fxb.spFxPreset.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        // 预设弹窗：创建一次、保留绑定，按钮点开即可（引用 fxp.* 的地方都靠它）
+        fxp = layoutInflater.inflate(R.layout.dialog_fx_presets, null)
+        fxb.btnFxPresets.setOnClickListener {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(Lang.t(R.string.s_presets))
+                .setView(fxp)
+                .setPositiveButton(Lang.t(R.string.s_close), null)
+                .show()
+        }
+
+        fxpSpinner.adapter = fxpAdapter
+        fxpSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 if (!fxPresetUpdating) fxPresetSel = fxpAdapter.getItem(pos)
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
-        fxb.btnFxPresetSave.setOnClickListener { saveFxPreset() }
-        fxb.btnFxPresetApply.setOnClickListener {
-            applyFxPreset(fxPresetSel ?: fxb.spFxPreset.selectedItem as? String)
+        fxpSave.setOnClickListener { saveFxPreset() }
+        fxpApply.setOnClickListener {
+            applyFxPreset(fxPresetSel ?: fxpSpinner.selectedItem as? String)
         }
-        fxb.btnFxPresetOff.setOnClickListener {
+        fxpOff.setOnClickListener {
             FxEngine.stop(currentInstanceId)
-            toast("已关闭当前实例的全部效果")
+            toast(Lang.t(R.string.k_all_effects_stopped_for_the_current_fixture))
             refreshFxPage()
         }
-        fxb.btnFxPresetDel.setOnClickListener { deleteFxPreset() }
+        fxpDel.setOnClickListener { deleteFxPreset() }
 
         refreshFxPage()
     }
@@ -1050,7 +1130,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fxpAdapter.notifyDataSetChanged()
         val want = fxPresetSel?.takeIf { names.contains(it) } ?: names.firstOrNull()
         fxPresetSel = want
-        if (want != null) fxb.spFxPreset.setSelection(names.indexOf(want))
+        if (want != null) fxpSpinner.setSelection(names.indexOf(want))
         fxPresetUpdating = false
     }
 
@@ -1060,49 +1140,49 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             setText(fxPresetDefaultName())
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("保存效果预设")
-            .setMessage("保存当前「所有内置效果」的数值与开关状态")
+            .setTitle(Lang.t(R.string.k_save_effect_preset))
+            .setMessage(Lang.t(R.string.k_save_values_and_on_off_state_of_all_built_in_eff))
             .setView(input)
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(Lang.t(R.string.k_save)) { _, _ ->
                 val nm = input.text.toString().trim().ifEmpty { fxPresetDefaultName() }
                 fxPresetStore.save(FxPresetStore.Preset(
                     nm, currentInstanceId, FxEngine.snapshotParams(currentInstanceId)))
                 fxPresetSel = nm
                 refreshFxPage()
-                toast("已保存效果预设：$nm")
+                toast(Lang.t(R.string.k_effect_preset_saved_1_s, nm))
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
     private fun applyFxPreset(name: String?) {
-        if (name.isNullOrEmpty()) { toast("请先保存一个效果预设"); return }
-        if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return }
+        if (name.isNullOrEmpty()) { toast(Lang.t(R.string.k_save_an_effect_preset_first)); return }
+        if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return }
         val p = fxPresetStore.get(currentInstanceId, name) ?: return
         updateFxChannels()
         val failed = FxEngine.applyParams(engine, p.params, currentInstanceId)
-        if (failed.isEmpty()) toast("已应用效果预设：$name")
+        if (failed.isEmpty()) toast(Lang.t(R.string.k_effect_preset_applied_1_s, name))
         else {
             val nm = failed.joinToString("、") { id ->
                 FxEngine.presets.find { it.id == id }?.name ?: "#$id"
             }
-            toast("部分效果未启动（通道冲突/槽位已满）：$nm")
+            toast(Lang.t(R.string.k_some_effects_did_not_start_channel_conflict_slot, nm))
         }
         refreshFxPage()
     }
 
     private fun deleteFxPreset() {
-        val name = fxPresetSel ?: fxb.spFxPreset.selectedItem as? String
-        if (name.isNullOrEmpty()) { toast("暂无预设"); return }
+        val name = fxPresetSel ?: fxpSpinner.selectedItem as? String
+        if (name.isNullOrEmpty()) { toast(Lang.t(R.string.k_no_presets)); return }
         MaterialAlertDialogBuilder(this)
-            .setMessage("删除效果预设「$name」？")
-            .setPositiveButton("删除") { _, _ ->
+            .setMessage(Lang.t(R.string.k_delete_effect_preset_1_s, name))
+            .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                 fxPresetStore.delete(currentInstanceId, name)
                 fxPresetSel = null
                 refreshFxPage()
-                toast("已删除")
+                toast(Lang.t(R.string.k_deleted))
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -1202,23 +1282,24 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             fxUiUpdating = true
             val spread = FxEngine.getSpread(instId)
             fxb.seekSpread.progress = spread
-            fxb.tvSpread.text = "扩散: ${spread * 360 / 255}°"
+            fxb.tvSpread.text = Lang.t(R.string.k_spread_1_s_2, spread * 360 / 255)
             val phase = FxEngine.getPhase(instId)
             fxb.seekPhase.progress = phase
-            fxb.tvPhase.text = "相位: ${phase * 360 / 255}°"
+            fxb.tvPhase.text = Lang.t(R.string.k_phase_1_s_2, phase * 360 / 255)
             fxb.spShape.setSelection(FxEngine.getShape(instId))
             fxb.spDirection.setSelection(FxEngine.getDirection(instId))
             fxb.spEnvelope.setSelection(FxEngine.getEnvelope(instId))
             fxUiUpdating = false
         } else {
             // 未选中任何预设
-            fxb.tvFxStatus.text = "点击列表选择效果，用开关启用"
+            fxb.tvFxStatus.text = Lang.t(R.string.k_tap_a_row_to_select_an_effect_then_use_the_switc)
             fxb.tvFxStatus.setTextColor(ContextCompat.getColor(this, R.color.textDim))
             fxb.btnFxStop.visibility = View.GONE
             fxb.fxParams.visibility = View.GONE
         }
         // 刷新列表高亮 + 效果预设下拉
         fxb.rvFxPresets.adapter?.notifyDataSetChanged()
+        renderRunFxCards()
         refreshFxPresets()
     }
 
@@ -1245,13 +1326,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             setText(cur.toString())
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("通道 $chInFixture  数值 (0-255)")
+            .setTitle(Lang.t(R.string.k_channel_1_s_value_0_255, chInFixture))
             .setView(input)
-            .setPositiveButton("确定") { _, _ ->
+            .setPositiveButton(Lang.t(R.string.k_ok)) { _, _ ->
                 val v = (input.text.toString().toIntOrNull() ?: 0).coerceIn(0, 255)
                 setChannelValue(chInFixture, v); channelAdapter.refresh()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -1337,7 +1418,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         engine.sendProgPlay(slot, true)
         if (truncated > 0) {
-            toast("⚠ $truncated 步的通道变化超过 ${DmxProtocol.MAX_PROG_ITEMS_STEP} 条，已截断；建议减少同时录制的灯数")
+            toast(Lang.t(R.string.k_1_s_steps_had_more_than_2_s_channel_changes_and_, truncated, DmxProtocol.MAX_PROG_ITEMS_STEP))
         }
     }
 
@@ -1368,33 +1449,33 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         pb.btnNewProg.setOnClickListener {
             val input = EditText(this).apply { inputType = InputType.TYPE_CLASS_TEXT; hint = "程序名称" }
             MaterialAlertDialogBuilder(this)
-                .setTitle("新建程序")
+                .setTitle(Lang.t(R.string.k_new_program))
                 .setView(input)
-                .setPositiveButton("创建") { _, _ ->
+                .setPositiveButton(Lang.t(R.string.k_create)) { _, _ ->
                     val nm = input.text.toString().trim()
-                    if (nm.isEmpty()) { toast("请输入名称"); return@setPositiveButton }
-                    if (steps.hasProgram(nm, currentInstId())) { toast("已存在同名程序"); return@setPositiveButton }
-                    steps.addProgram(nm, currentInstId()); steps.currentProgram = nm; reloadProgramsUI(nm); toast("已新建：$nm")
+                    if (nm.isEmpty()) { toast(Lang.t(R.string.k_enter_a_name)); return@setPositiveButton }
+                    if (steps.hasProgram(nm, currentInstId())) { toast(Lang.t(R.string.k_a_program_with_that_name_already_exists)); return@setPositiveButton }
+                    steps.addProgram(nm, currentInstId()); steps.currentProgram = nm; reloadProgramsUI(nm); toast(Lang.t(R.string.k_created_1_s, nm))
                 }
-                .setNegativeButton("取消", null).show()
+                .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
         }
         pb.btnDelProg.setOnClickListener {
-            val prog = currentProgramSel() ?: run { toast("暂无程序"); return@setOnClickListener }
+            val prog = currentProgramSel() ?: run { toast(Lang.t(R.string.k_no_programs)); return@setOnClickListener }
             MaterialAlertDialogBuilder(this)
-                .setMessage("删除程序「$prog」？")
-                .setPositiveButton("删除") { _, _ ->
+                .setMessage(Lang.t(R.string.k_delete_program_1_s, prog))
+                .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                     val slot = currentProgSlot()
                     if (playingSlots.remove(slot)) { engine.sendProgStop(slot) }
                     steps.deleteProgram(prog, currentInstId())
                     if (steps.currentProgram == prog) steps.currentProgram = steps.programNames(currentInstId()).firstOrNull()
-                    reloadProgramsUI(null); updatePlayBtnUI(); toast("已删除")
+                    reloadProgramsUI(null); updatePlayBtnUI(); toast(Lang.t(R.string.k_deleted))
                 }
-                .setNegativeButton("取消", null).show()
+                .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
         }
         pb.btnSaveStep.setOnClickListener {
-            val prog = currentProgramSel() ?: run { toast("先新建一个程序"); return@setOnClickListener }
+            val prog = currentProgramSel() ?: run { toast(Lang.t(R.string.k_create_a_program_first)); return@setOnClickListener }
             steps.addStep(prog, currentInstId(), stepTimeMs(), sanitizeSnapshot()); refreshStepsUI()
-            toast("已记录第 ${steps.stepCount(prog, currentInstId())} 步")
+            toast(Lang.t(R.string.k_recorded_step_1_s, steps.stepCount(prog, currentInstId())))
         }
         pb.btnPlay.setOnClickListener {
             val slot = currentProgSlot()
@@ -1402,26 +1483,26 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 playingSlots.remove(slot)
                 engine.sendProgStop(slot)
             } else {
-                if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备再播放"); return@setOnClickListener }
-                val prog = currentProgramSel() ?: run { toast("先新建一个程序"); return@setOnClickListener }
+                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_before_playing)); return@setOnClickListener }
+                val prog = currentProgramSel() ?: run { toast(Lang.t(R.string.k_create_a_program_first)); return@setOnClickListener }
                 val s = steps.steps(prog, currentInstId())
-                if (s.isEmpty()) { toast("该程序还没有步"); return@setOnClickListener }
+                if (s.isEmpty()) { toast(Lang.t(R.string.k_this_program_has_no_steps_yet)); return@setOnClickListener }
                 uploadProgramAndPlay(s)
                 playingSlots.add(slot)
-                toast("已下发到设备播放（App 断连也继续）")
+                toast(Lang.t(R.string.k_sent_to_device_keeps_playing_if_the_app_disconne))
             }
             updatePlayBtnUI()
         }
         pb.btnClearSteps.setOnClickListener {
             val prog = currentProgramSel() ?: return@setOnClickListener
             MaterialAlertDialogBuilder(this)
-                .setMessage("清空「$prog」全部步？")
-                .setPositiveButton("清空") { _, _ ->
+                .setMessage(Lang.t(R.string.k_clear_all_steps_of_1_s, prog))
+                .setPositiveButton(Lang.t(R.string.k_clear)) { _, _ ->
                     val slot = currentProgSlot()
                     if (playingSlots.remove(slot)) { engine.sendProgStop(slot) }
-                    steps.clearSteps(prog, currentInstId()); refreshStepsUI(); updatePlayBtnUI(); toast("已清空")
+                    steps.clearSteps(prog, currentInstId()); refreshStepsUI(); updatePlayBtnUI(); toast(Lang.t(R.string.k_cleared))
                 }
-                .setNegativeButton("取消", null).show()
+                .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
         }
         pb.lvSteps.setOnItemClickListener { _, _, pos, _ ->
             val prog = currentProgramSel() ?: return@setOnItemClickListener
@@ -1444,15 +1525,15 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 } else {
                     engine.applyAll(s[pos].values); channelAdapter.refresh()
                 }
-                toast("预览第 ${pos + 1} 步")
+                toast(Lang.t(R.string.k_preview_step_1_s, pos + 1))
             }
         }
         pb.lvSteps.setOnItemLongClickListener { _, _, pos, _ ->
             val prog = currentProgramSel() ?: return@setOnItemLongClickListener true
             MaterialAlertDialogBuilder(this)
-                .setMessage("删除第 ${pos + 1} 步？")
-                .setPositiveButton("删除") { _, _ -> steps.removeStep(prog, currentInstId(), pos); refreshStepsUI() }
-                .setNegativeButton("取消", null).show()
+                .setMessage(Lang.t(R.string.k_delete_step_1_s, pos + 1))
+                .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ -> steps.removeStep(prog, currentInstId(), pos); refreshStepsUI() }
+                .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
             true
         }
         reloadProgramsUI(null); updatePlayBtnUI()
@@ -1505,7 +1586,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     intentionalDisconnect = true
                     reconnectHandler.removeCallbacksAndMessages(null)
                     ble.disconnect()
-                    toast("已断开 ${found.name}")
+                    toast(Lang.t(R.string.k_disconnected_1_s, found.name))
                     deviceAdapter?.notifyDataSetChanged()
                 } else {
                     intentionalDisconnect = false
@@ -1530,7 +1611,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         val connected = ble.state == BleManager.State.CONNECTED
         val title = if (connected) "设备管理" else "选择设备"
-        db.tvHint.text = "扫描中…（每隔几秒自动扫描）"
+        db.tvHint.text = Lang.t(R.string.k_scanning_auto_scans_every_few_seconds)
 
         val builder = MaterialAlertDialogBuilder(this)
             .setTitle(title)
@@ -1538,7 +1619,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             .setOnDismissListener { ble.stopPeriodicScan() }
 
         if (connected) {
-            builder.setNegativeButton("断开连接") { _, _ ->
+            builder.setNegativeButton(Lang.t(R.string.k_disconnect)) { _, _ ->
                 intentionalDisconnect = true
                 reconnectHandler.removeCallbacksAndMessages(null)
                 ble.disconnect()
@@ -1565,9 +1646,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     override fun onStateChanged(state: BleManager.State, info: String?) {
         updateStatusUi(state, info)
+        refreshStatusBar()
         when (state) {
             BleManager.State.CONNECTED -> {
-                toast("已连接")
+                toast(Lang.t(R.string.k_connected))
                 // 连接后先与设备同步状态（区分“单片机重启”与“App 重启/重连”两种情况），
                 // 不再无条件把 App 的（可能过期的）整帧推给设备。
                 beginStateSync()
@@ -1613,12 +1695,55 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      * 现在解析器对每个分支都做完整长度校验，非法帧直接丢弃。
      */
     override fun onNotify(data: ByteArray) {
+        // ---- RDM 应答（0x89/0x8A/0x8B）----
+        // 这三帧结构简单、与其它帧不冲突，直接在分发前处理掉。
+        if (data.isNotEmpty()) {
+            when (data[0].toInt() and 0xFF) {
+                DmxProtocol.RESP_RDM_SCAN -> {
+                    // 0x89 count uni ok simulate errLen err…
+                    if (data.size >= 6) {
+                        val count = data[1].toInt() and 0xFF
+                        val uni = data[2].toInt() and 0xFF
+                        val ok = (data[3].toInt() and 0xFF) == 0
+                        val sim = (data[4].toInt() and 0xFF) != 0
+                        val n = (data[5].toInt() and 0xFF).coerceAtMost(data.size - 6)
+                        val err = String(data, 6, n, Charsets.UTF_8)
+                        runOnUiThread { onRdmScanDone(count, uni, ok, sim, err) }
+                    }
+                    return
+                }
+                DmxProtocol.RESP_RDM_DEVICE -> {
+                    runOnUiThread { onRdmDevice(data) }
+                    return
+                }
+                DmxProtocol.RESP_RDM_RESULT -> {
+                    if (data.size >= 3) {
+                        val ok = (data[1].toInt() and 0xFF) == 0
+                        val n = (data[2].toInt() and 0xFF).coerceAtMost(data.size - 3)
+                        val err = String(data, 3, n, Charsets.UTF_8)
+                        runOnUiThread {
+                            toast(if (ok) "RDM 命令执行成功" else "RDM 失败：$err")
+                            refreshRdmList()
+                            // 地址写完 → 问是否把这些灯具也建成 App 里的实例
+                            if (ok) offerCreateInstances()
+                        }
+                    }
+                    return
+                }
+            }
+        }
         when (val m = DeviceMessages.parse(data)) {
             // ---- 状态同步应答（0x05 之后固件上报）----
             is Msg.StateHead -> {
                 devUptime = m.uptimeSec
                 devProgMask = m.progMask
+                devFxCount = m.fxCount
+                devDmxOk = m.dmxOk
+                devDmxFails = m.dmxFails
+                devFps1 = m.fps1
+                devFps2 = m.fps2
                 lastDevFx.clear()
+                runOnUiThread { refreshStatusBar() }
                 java.util.Arrays.fill(devChannels, 0)
             }
             is Msg.StateChunk -> {
@@ -1685,10 +1810,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     val imported = fixtureStore.importFile(downloadBuf.inputStream(), name)
                     runOnUiThread {
                         if (imported.isNotEmpty()) {
-                            toast("从设备导入 ${imported.size} 个灯具")
+                            toast(Lang.t(R.string.k_imported_1_s_fixtures_from_device, imported.size))
                             refreshFixturePage()
                         } else {
-                            toast("未能解析灯库")
+                            toast(Lang.t(R.string.k_could_not_parse_the_fixture_file))
                         }
                     }
                 } else {
@@ -1749,7 +1874,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         if (mcuRebooted) {
             // 设备重启过（或首次连接）：设备是空的，用 App 状态恢复
             engine.sendFullFrame()
-            if (lastSeen >= 0L) toast("设备重启过，已同步 App 状态")
+            if (lastSeen >= 0L) toast(Lang.t(R.string.k_device_was_restarted_app_state_synced))
         } else {
             // App 重启 / 重新连接：采纳设备上的状态
             engine.adoptDeviceState(devChannels)
@@ -1762,7 +1887,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
             refreshFxPage()
             refreshProgramPage()
-            toast("已从设备同步状态")
+            toast(Lang.t(R.string.k_state_synced_from_device))
         }
         if (mac != null) syncPrefs.edit().putLong("uptime_$mac", devUptime).apply()
     }
@@ -1779,7 +1904,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 不 mutate() 直接 setTint，会把 App 里所有用 @drawable/bg_pill 的控件（设备胶囊、通道数、
         // 输入框…）一起染色（连接后全变绿、断开后全变红）。mutate() 让状态点拿到独立 ConstantState。
         b.statusDot.background?.mutate()?.setTint(ContextCompat.getColor(this, colorRes))
-        b.btnConnect.text = "设备"
+        b.btnConnect.text = Lang.t(R.string.s_device)
     }
 
     override fun onDestroy() {
@@ -1842,7 +1967,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             val f = items[position]
             val isCurrent = f.device.address == connectedAddr()
             if (isCurrent) {
-                holder.b.tvName.text = "✓ ${f.name}（已连接）"
+                holder.b.tvName.text = Lang.t(R.string.k_1_s_connected, f.name)
                 holder.b.tvName.setTextColor(ContextCompat.getColor(holder.itemView.context, R.color.ok))
             } else {
                 holder.b.tvName.text = f.name
@@ -1892,7 +2017,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     onFixtureApplied(def)
                 }
                 b.pager.currentItem = Page.FADER
-                toast("已应用: ${def.name}" + if (inst != null) "（实例 ${inst.label()}）" else "")
+                toast(Lang.t(R.string.k_applied_1_s, def.name) + if (inst != null) "（${inst.label()}）" else "")
             },
             onSelectModeChanged = { on ->
                 selectMode = on
@@ -1929,13 +2054,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             val selected = fixtureAdapter?.getSelectedIds() ?: emptySet()
             if (selected.isEmpty()) return@setOnClickListener
             MaterialAlertDialogBuilder(this)
-                .setMessage("删除选中的 ${selected.size} 个灯具？")
-                .setPositiveButton("删除") { _, _ ->
+                .setMessage(Lang.t(R.string.k_delete_1_s_selected_fixtures, selected.size))
+                .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                     selected.forEach { fixtureStore.delete(it) }
                     refreshFixturePage()
-                    toast("已删除 ${selected.size} 个")
+                    toast(Lang.t(R.string.k_deleted_1_s_2, selected.size))
                 }
-                .setNegativeButton("取消", null).show()
+                .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
         }
 
         refreshFixturePage()
@@ -1984,7 +2109,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun updateBatchBar() {
         if (!selectMode) return
         val count = fixtureAdapter?.getSelectedCount() ?: 0
-        fixb.tvSelectedCount.text = "已选 $count"
+        fixb.tvSelectedCount.text = Lang.t(R.string.k_1_s_selected, count)
         fixb.btnDeleteSelected.isEnabled = count > 0
     }
 
@@ -2023,11 +2148,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 if (name.isEmpty()) name = uri.lastPathSegment ?: ""
                 scanned.add(raw to fixtureStore.inspect(raw.inputStream(), name))
             } catch (e: Exception) {
-                toast("读取失败: ${e.message}")
+                toast(Lang.t(R.string.k_read_failed_1_s, e.message))
             }
         }
         if (scanned.isEmpty()) {
-            toast("没读到文件")
+            toast(Lang.t(R.string.k_no_file_read))
             return
         }
 
@@ -2103,7 +2228,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             .setPositiveButton(if (allowImport) "导入 $totalImportable 个灯具" else "知道了") { _, _ ->
                 if (allowImport) doImportScanned(scanned)
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -2123,8 +2248,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         refreshFixturePage()
         when {
-            failures.isEmpty() -> toast("导入了 $total 个灯具")
-            total > 0 -> toast("导入了 $total 个灯具，另有 ${failures.size} 个失败")
+            failures.isEmpty() -> toast(Lang.t(R.string.k_imported_1_s_fixtures, total))
+            total > 0 -> toast(Lang.t(R.string.k_imported_1_s_fixtures_2_s_failed, total, failures.size))
             else -> showFailureDetails(failures)
         }
     }
@@ -2134,9 +2259,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val msg = failures.take(15).joinToString("\n") { "· $it" } +
                   if (failures.size > 15) "\n… 另有 ${failures.size - 15} 个" else ""
         MaterialAlertDialogBuilder(this)
-            .setTitle("导入失败（${failures.size} 个文件）")
+            .setTitle(Lang.t(R.string.k_import_failed_1_s_files, failures.size))
             .setMessage(msg)
-            .setPositiveButton("知道了", null)
+            .setPositiveButton(Lang.t(R.string.k_got_it), null)
             .show()
     }
 
@@ -2144,7 +2269,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun showAddInstanceDialog() {
         val defs = fixtureStore.fixtures
         if (defs.isEmpty()) {
-            toast("请先导入灯库")
+            toast(Lang.t(R.string.k_import_a_fixture_library_first))
             return
         }
         val names = defs.map { "${it.manufacturer} ${it.name} (${it.mode}) ${it.channelCount}CH" }.toTypedArray()
@@ -2160,6 +2285,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         // 通道 A/B（A = 宇宙1 口，B = 宇宙2 口），每个宇宙各自编号 1-512
         var band = 1
+        // 双宇宙关闭时只留 A 通道（避免把灯配到没接线的 B 口上）
+        btnBandB.visibility = if (dualUniverse) View.VISIBLE else View.GONE
+        holder.findViewById<TextView>(R.id.tvBandLabel).text = if (dualUniverse)
+            "通道 A / B（A = 宇宙1 口，B = 宇宙2 口）" else "通道 A（宇宙1 口，双宇宙已关闭）"
+        if (!dualUniverse) band = 1
         fun paintBand() {
             fun t(btn: TextView, on: Boolean) {
                 btn.setBackgroundResource(if (on) R.drawable.bg_pill_outline_accent
@@ -2225,9 +2355,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshPreview()
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("添加灯具实例")
+            .setTitle(Lang.t(R.string.k_add_fixture))
             .setView(holder)
-            .setPositiveButton("添加") { _, _ ->
+            .setPositiveButton(Lang.t(R.string.k_add)) { _, _ ->
                 val def = defs[spType.selectedItemPosition.coerceIn(0, defs.size - 1)]
                 val form = InstanceForm.of(
                     def,
@@ -2244,7 +2374,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     renderInstanceBar()
                 }
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -2330,7 +2460,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         lateinit var onChanged: () -> Unit
         onChanged = {
             fixtureEditor.renderChannels(edb.chList, onChanged)
-            edb.tvChCount.text = "${fixtureEditor.channels.size} 通道"
+            edb.tvChCount.text = Lang.t(R.string.k_1_s_channels, fixtureEditor.channels.size)
         }
 
         // 灯库编辑已移到设置页，这里提供返回设置页的入口
@@ -2345,10 +2475,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 编辑已有灯库
         edb.btnImportEdit.setOnClickListener {
             val defs = fixtureStore.fixtures
-            if (defs.isEmpty()) { toast("没有已导入的灯库"); return@setOnClickListener }
+            if (defs.isEmpty()) { toast(Lang.t(R.string.k_no_fixture_libraries_imported)); return@setOnClickListener }
             val names = defs.map { "${it.name} / ${it.mode} (${it.channelCount}CH)" }.toTypedArray()
             MaterialAlertDialogBuilder(this)
-                .setTitle("选择灯库编辑")
+                .setTitle(Lang.t(R.string.k_choose_a_fixture_library_to_edit))
                 .setItems(names) { _, idx ->
                     val def = defs[idx]
                     editorFixtureId = def.id
@@ -2366,12 +2496,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 导出 ZIP
         edb.btnExportZip.setOnClickListener {
             val name = edb.etFixName.text.toString().trim()
-            if (name.isEmpty()) { toast("请输入灯型名称"); return@setOnClickListener }
+            if (name.isEmpty()) { toast(Lang.t(R.string.k_enter_a_fixture_type_name)); return@setOnClickListener }
             val manu = edb.etFixManu.text.toString().trim().ifEmpty { "Unknown" }
             val mode = edb.etFixMode.text.toString().trim().ifEmpty { "1ch" }
             val pan = edb.etPanRange.text.toString().toFloatOrNull() ?: 0f
             val tilt = edb.etTiltRange.text.toString().toFloatOrNull() ?: 0f
-            if (fixtureEditor.channels.isEmpty()) { toast("请至少添加一个通道"); return@setOnClickListener }
+            if (fixtureEditor.channels.isEmpty()) { toast(Lang.t(R.string.k_add_at_least_one_channel)); return@setOnClickListener }
 
             val def = fixtureEditor.buildFixture(name, manu, mode, pan, tilt)
             // 保存到内部存储（后续可导入到灯具列表）
@@ -2381,7 +2511,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             refreshFixturePage()
             // 导出分享
             fixtureEditor.exportZip(def, contentResolver)
-            toast("已导出 ${name}")
+            toast(Lang.t(R.string.k_exported_1_s, name))
         }
     }
 
@@ -2389,252 +2519,238 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     // ---------------- 实例管理页 ----------------
     private fun wireInstanceMgrPage() {
         imfb.rvInstanceMgr.layoutManager = LinearLayoutManager(this)
+        // 少了这行 RecyclerView 不会渲染任何子项（列表看起来是空的）
+        imfb.rvRdm.layoutManager = LinearLayoutManager(this)
     }
 
     // ---------------- 设置页 ----------------
+    /** 双宇宙开关下方的说明文字（实时反映当前状态）。 */
+    private fun updateDualUniverseHint() {
+        stb.tvDualUniverseHint.text = if (dualUniverse)
+            "开启：A + B 两条 DMX（共 1024 通道）"
+        else
+            "关闭：只用 A 通道（512 路），B 通道的灯具不会输出"
+    }
+
+    /** RDM 开关下方的说明文字。 */
+    private fun updateRdmHint() {
+        stb.tvRdmHint.text = if (rdmEnabled)
+            "已开启：可在「灯具」页扫描并管理支持 RDM 的灯具"
+        else
+            "开启后可在「灯具」页扫描并管理支持 RDM 的灯具"
+        stb.tvRdmHint.setTextColor(ContextCompat.getColor(this,
+            if (rdmEnabled) R.color.ok else R.color.textDim))
+    }
+
     private fun wireSettingsPage() {
         // 语言：全局中英文切换（不再每个灯库单独设置）
         stb.btnLangZh.setOnClickListener { setLanguage(true) }
         stb.btnLangEn.setOnClickListener { setLanguage(false) }
 
+        // 双宇宙输出开关
+        stb.swDualUniverse.isChecked = dualUniverse
+        stb.swDualUniverse.setOnCheckedChangeListener { _, on ->
+            dualUniverse = on
+            updateDualUniverseHint()
+            if (!on) {
+                val bCount = fixtureStore.instances().count { it.universe == 2 }
+                if (bCount > 0) toast(Lang.t(R.string.k_dual_universe_off_1_s_fixtures_on_band_b_will_no, bCount))
+            }
+            renderInstanceBar()
+            refreshInstanceMgrList()
+        }
+        updateDualUniverseHint()
+
+        // RDM 开关
+        stb.swRdm.isChecked = rdmEnabled
+        stb.swRdm.setOnCheckedChangeListener { _, on ->
+            rdmEnabled = on
+            updateRdmHint()
+            instTabPatched = true
+            refreshInstanceMgrList()
+        }
+        updateRdmHint()
+
+        // 推子页按功能分组折叠（v9）
+        stb.swFaderGroup.isChecked = appSettings.getBoolean("fader_group", false)
+        stb.swFaderGroup.setOnCheckedChangeListener { _, on ->
+            appSettings.edit().putBoolean("fader_group", on).apply()
+            channelAdapter.groupByFunction = on       // setter 内部会 refresh
+            toast(Lang.t(if (on) R.string.k_fader_grouping_on else R.string.k_fader_grouping_off))
+        }
+        channelAdapter.groupByFunction = stb.swFaderGroup.isChecked
+        // 点整行也能切换开关（交互更自然，也让自动化可点）
+        stb.rowFaderGroup.setOnClickListener { stb.swFaderGroup.toggle() }
+        stb.rowDualUniverse.setOnClickListener { stb.swDualUniverse.toggle() }
+        stb.rowRdm.setOnClickListener { stb.swRdm.toggle() }
+
+        // RDM 建实例：地址冲突时覆盖 or 询问（v9.3）
+        rdmOverwrite = appSettings.getBoolean("rdm_overwrite", false)
+        stb.swRdmOverwrite.isChecked = rdmOverwrite
+        stb.swRdmOverwrite.setOnCheckedChangeListener { _, on ->
+            rdmOverwrite = on
+            appSettings.edit().putBoolean("rdm_overwrite", on).apply()
+            refreshRdmOverwriteHint()
+            toast(Lang.t(if (on) R.string.s_rdm_overwrite_toast_on else R.string.s_rdm_overwrite_toast_off))
+        }
+        stb.rowRdmOverwrite.setOnClickListener { stb.swRdmOverwrite.toggle() }
+        refreshRdmOverwriteHint()
+
         // 灯库编辑（从“灯具”页移入设置页）
         stb.btnOpenEditor.setOnClickListener { b.pager.currentItem = Page.EDITOR }
 
-        // 推子页排列方式
-        stb.btnLayoutChannel.setOnClickListener {
-            val id = layoutFixtureId()
-            if (id == null) { toast("请先在灯具页应用一个灯库/实例"); return@setOnClickListener }
-            layoutStore.setActive(id, null)
-            applyFaderLayout(id)
-            refreshSettingsPage()
-            toast("已切换为：按通道顺序")
-        }
-        stb.btnLayoutCustom.setOnClickListener {
-            val id = layoutFixtureId()
-            if (id == null) { toast("请先在灯具页应用一个灯库/实例"); return@setOnClickListener }
-            val first = layoutStore.presets(id).firstOrNull()
-            if (first == null) {
-                toast("还没有排列预设，请先“编辑顺序”并保存")
-                return@setOnClickListener
-            }
-            layoutStore.setActive(id, first.name)
-            applyFaderLayout(id)
-            refreshSettingsPage()
-            toast("已切换为自定义顺序：${first.name}")
-        }
-        stb.btnLayoutEdit.setOnClickListener { editLayoutOrder() }
-        stb.btnLayoutSave.setOnClickListener { saveLayoutPreset() }
-        stb.btnLayoutDelete.setOnClickListener { deleteLayoutPreset() }
-        stb.spLayoutPreset.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (layoutUpdating) return
-                val id0 = layoutFixtureId() ?: return
-                // 下拉第 0 项固定是“按通道顺序”，其余为各预设
-                if (pos <= 0) {
-                    layoutStore.setActive(id0, null)
-                } else {
-                    val name = layoutStore.presets(id0).getOrNull(pos - 1)?.name ?: return
-                    layoutStore.setActive(id0, name)
-                }
-                applyFaderLayout(id0)
-                refreshSettingsPage()
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
 
         refreshSettingsPage()
     }
 
-    private var layoutUpdating = false
-    private var layoutAdapter: ArrayAdapter<String>? = null
+
+    /**
+     * 应用保存的语言。
+     *
+     * 这里把两件事收敛到同一个开关下：
+     *   · [channelAdapter.translated] —— 灯库通道名的翻译（原有能力）
+     *   · [Lang]                     —— 整个界面的中英文（新增，全局）
+     * 两者共用 appSettings 的 "translated" 键（true = 中文），不引入第二份存储。
+     */
+    /**
+     * 翻译底部导航的标题。
+     *
+     * 必须单独做：BottomNavigationView 的菜单项不在普通 View 树里
+     * （它自己管理 item 的视图），所以 Lang.apply 的递归遍历覆盖不到它 ——
+     * 只靠遍历会出现"页面全变英文了、底部导航还是中文"。
+     */
+    private fun applyNavTitles() {
+        val m = b.bottomNav.menu
+        m.findItem(R.id.nav_fader)?.title = Lang.t(Lang.t(R.string.s_faders))
+        m.findItem(R.id.nav_instances)?.title = Lang.t(Lang.t(R.string.s_fixtures))
+        m.findItem(R.id.nav_fx)?.title = Lang.t(Lang.t(R.string.s_effects))
+        m.findItem(R.id.nav_fixture)?.title = Lang.t(Lang.t(R.string.s_library))
+        m.findItem(R.id.nav_settings)?.title = Lang.t(Lang.t(R.string.s_settings))
+    }
+
+    /**
+     * 刷新状态总览条。
+     *
+     * 数据来源：连接状态（本地）+ 固件 0x82 状态帧（uptime / 效果数 / 程序位图 / DMX 遥测）。
+     * DMX 遥测是 v9 固件才有的字段，旧固件下显示"--"，不会误报成故障。
+     */
+    private fun refreshStatusBar() {
+        val connected = ble.state == BleManager.State.CONNECTED
+        fb.tvStLink.text = if (connected) Lang.t(R.string.st_connected) else Lang.t(R.string.st_offline)
+        fb.tvStLink.setTextColor(ContextCompat.getColor(this,
+            if (connected) R.color.ok else R.color.err))
+
+        fb.tvStDmx.text = when {
+            !connected -> Lang.t(R.string.st_dmx_wait)
+            devDmxOk < 0 -> Lang.t(R.string.st_dmx_na)      // 旧固件无遥测
+            else -> {
+                val f1 = if (devFps1 in 0..255) devFps1 else 0
+                val f2 = if (devFps2 in 0..255) devFps2 else 0
+                val fps = if (dualUniverse) "$f1/$f2" else "$f1"
+                val fail = if (devDmxFails > 0) "  ✗${devDmxFails}" else ""
+                "${Lang.t(R.string.st_dmx)} ${fps}fps$fail"
+            }
+        }
+        fb.tvStDmx.setTextColor(ContextCompat.getColor(this,
+            if (connected && devDmxOk >= 0 && devDmxOk != 0) R.color.textDim else R.color.textDim))
+
+        fb.tvStRun.text = if (!connected) "" else {
+            val parts = ArrayList<String>()
+            if (devFxCount > 0) parts.add("${Lang.t(R.string.st_fx)} $devFxCount")
+            val progs = Integer.bitCount(devProgMask)
+            if (progs > 0) parts.add("${Lang.t(R.string.st_prog)} $progs")
+            if (devUptime > 0) parts.add(fmtUptime(devUptime))
+            parts.joinToString("  ")
+        }
+    }
+
+    private fun fmtUptime(sec: Long): String {
+        val h = sec / 3600; val m = (sec % 3600) / 60
+        return if (h > 0) "${h}h${m}m" else "${m}m"
+    }
+
+    /**
+     * 渲染"运行中效果卡片"（v9）。
+     *
+     * 数据来自固件 0x84 帧（lastDevFx）—— 也就是**设备实际在跑的效果**，
+     * 而不是 App 以为勾选了的。这样"以为开了其实没开"（槽位满/通道冲突）一眼可见。
+     */
+    private fun renderRunFxCards() {
+        if (!::fxb.isInitialized) return
+        val box = fxb.runFxCards
+        box.removeAllViews()
+        val density = resources.displayMetrics.density
+        if (lastDevFx.isEmpty()) {
+            fxb.runFxScroll.visibility = View.GONE
+            return
+        }
+        fxb.runFxScroll.visibility = View.VISIBLE
+        for (fx in lastDevFx.take(12)) {
+            val name = FxEngine.presets.getOrNull(fx.fxId)?.name ?: "FX${fx.fxId}"
+            val card = TextView(this).apply {
+                text = "$name\n${fx.amp16 * 100 / 255}%  ${fx.speed}"
+                setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.text))
+                textSize = 11f
+                gravity = android.view.Gravity.CENTER
+                setBackgroundResource(R.drawable.bg_pill)
+                val pad = (8 * density).toInt()
+                setPadding(pad, (5 * density).toInt(), pad, (5 * density).toInt())
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.rightMargin = (6 * density).toInt()
+            box.addView(card, lp)
+        }
+    }
+
+    /** 刷新"地址冲突时覆盖"的说明文字。 */
+    private fun refreshRdmOverwriteHint() {
+        if (!::stb.isInitialized) return
+        stb.tvRdmOverwriteHint.text = Lang.t(
+            if (rdmOverwrite) R.string.s_rdm_overwrite_on else R.string.s_rdm_overwrite_off)
+    }
 
     private fun applySavedLanguage() {
-        channelAdapter.translated = appSettings.getBoolean("translated", true)
+        val zh = appSettings.getBoolean("translated", true)
+        Lang.set(!zh)
+        channelAdapter.translated = zh
         channelAdapter.refresh()
     }
 
     private fun setLanguage(zh: Boolean) {
         appSettings.edit().putBoolean("translated", zh).apply()
+        Lang.set(!zh)
         channelAdapter.translated = zh
         channelAdapter.refresh()
+        // 立即把当前界面上所有 View 的文字换掉（布局里的 android:text 靠这个自动覆盖）
+        Lang.apply(b.root)
+        applyNavTitles()
         refreshSettingsPage()
         toast(if (zh) "已切换为中文" else "Switched to English")
     }
 
-    /** 当前用于排列预设的灯型 id（优先选中实例的灯型，其次当前灯库）。 */
-    private fun layoutFixtureId(): String? {
-        val inst = currentInstanceId?.let { id -> fixtureStore.instances().find { it.id == id } }
-        if (inst != null) return fixtureStore.fixtureOf(inst)?.id
-        return fixtureStore.currentFixture?.id
-    }
 
     private fun refreshSettingsPage() {
+        // 说明文字依赖 Lang.t()，而 wire* 阶段 Lang 还没初始化 → 每次进设置页重刷一遍
+        refreshRdmOverwriteHint()
         val zh = appSettings.getBoolean("translated", true)
         // 语言标签不显式指定文字颜色（沿用主题默认），故 setTextColor = false
         stylePillTab(stb.btnLangZh, zh, setTextColor = false)
         stylePillTab(stb.btnLangEn, !zh, setTextColor = false)
 
-        val id = layoutFixtureId()
-        val activeName = id?.let { layoutStore.active(it) }
-        stb.tvLayoutMode.text = when {
-            id == null -> "请先应用灯库/实例"
-            activeName == null -> "按通道顺序"
-            else -> "自定义顺序：$activeName"
-        }
-        val names = id?.let { layoutStore.presets(it).map { p -> p.name } } ?: emptyList()
-        // Spinner 内容固定为：按通道顺序 + 各预设
-        val opts = listOf("按通道顺序") + names
-        val ad = layoutAdapter
-        layoutUpdating = true
-        if (ad == null) {
-            layoutAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, opts.toMutableList()).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                stb.spLayoutPreset.adapter = it
-            }
-        } else {
-            ad.clear(); ad.addAll(opts); ad.notifyDataSetChanged()
-        }
-        stb.spLayoutPreset.setSelection(
-            if (activeName == null) 0 else (opts.indexOf(activeName).coerceAtLeast(0)))
-        layoutUpdating = false
-
-        stb.tvLayoutHint.text = if (id == null)
-            "先到“灯具”页应用一个灯库或选中一个实例，再回来调整推子页的通道排列顺序。"
-        else
-            "当前灯型：${fixtureStore.fixtures.find { it.id == id }?.name ?: id}，共 ${channelAdapter.channelCount()} 通道。\n" +
-            "点“编辑顺序”用 ↑/↓ 调整通道位置，“保存为预设”存下这套排列，之后可随时一键切换。"
     }
 
-    /** 编辑推子页通道排列顺序（↑/↓ 调整）。 */
-    private fun editLayoutOrder() {
-        val id = layoutFixtureId()
-        if (id == null) { toast("请先在灯具页应用一个灯库/实例"); return }
-        val n = channelAdapter.channelCount()
-        if (n <= 1) { toast("通道数不足，无需排列"); return }
-        val order = channelAdapter.currentOrder()
-        val labels = channelAdapter.channelLabels().toMutableList()
-
-        val ctx = this
-        val pad = (8 * resources.displayMetrics.density).toInt()
-        val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = android.widget.ScrollView(ctx).apply {
-            addView(list)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, (320 * resources.displayMetrics.density).toInt())
-        }
-
-        fun render() {
-            list.removeAllViews()
-            for (i in labels.indices) {
-                val row = LinearLayout(ctx).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    setPadding(pad, pad, pad, pad)
-                }
-                row.addView(TextView(ctx).apply {
-                    text = labels[i]
-                    setTextColor(getColor(R.color.text))
-                    textSize = 13f
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                row.addView(TextView(ctx).apply {
-                    text = "↑"
-                    textSize = 18f
-                    gravity = android.view.Gravity.CENTER
-                    setTextColor(getColor(R.color.accent))
-                    layoutParams = LinearLayout.LayoutParams(
-                        (40 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-                    setOnClickListener {
-                        if (i > 0) {
-                            val t = labels[i]; labels[i] = labels[i - 1]; labels[i - 1] = t
-                            val o = order[i]; order[i] = order[i - 1]; order[i - 1] = o
-                            render()
-                        }
-                    }
-                })
-                row.addView(TextView(ctx).apply {
-                    text = "↓"
-                    textSize = 18f
-                    gravity = android.view.Gravity.CENTER
-                    setTextColor(getColor(R.color.accent))
-                    layoutParams = LinearLayout.LayoutParams(
-                        (40 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-                    setOnClickListener {
-                        if (i < labels.size - 1) {
-                            val t = labels[i]; labels[i] = labels[i + 1]; labels[i + 1] = t
-                            val o = order[i]; order[i] = order[i + 1]; order[i + 1] = o
-                            render()
-                        }
-                    }
-                })
-                list.addView(row)
-            }
-        }
-        render()
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle("调整推子页顺序")
-            .setView(scroll)
-            .setPositiveButton("应用") { _, _ ->
-                channelAdapter.applyOrder(order)
-                toast("已应用新的排列顺序（保存为预设后可复用）")
-            }
-            .setNeutralButton("保存为预设") { _, _ -> saveLayoutPreset(order) }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    /** 保存当前顺序为预设（默认名字 = 灯型名）。 */
-    private fun saveLayoutPreset(order: IntArray? = null) {
-        val id = layoutFixtureId()
-        if (id == null) { toast("请先在灯具页应用一个灯库/实例"); return }
-        val o = order ?: channelAdapter.currentOrder()
-        val defName = fixtureStore.fixtures.find { it.id == id }?.name ?: "排列预设"
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(defName)
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("保存排列预设")
-            .setMessage("把这套通道顺序保存下来，之后可一键切换")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                val nm = input.text.toString().trim().ifEmpty { defName }
-                layoutStore.save(id, nm, o)
-                layoutStore.setActive(id, nm)
-                channelAdapter.applyOrder(o)
-                refreshSettingsPage()
-                toast("已保存排列预设：$nm")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun deleteLayoutPreset() {
-        val id = layoutFixtureId() ?: return
-        val name = layoutStore.active(id) ?: run {
-            toast("当前没有生效的排列预设"); return
-        }
-        MaterialAlertDialogBuilder(this)
-            .setMessage("删除排列预设「$name」？")
-            .setPositiveButton("删除") { _, _ ->
-                layoutStore.delete(id, name)
-                channelAdapter.applyOrder(layoutStore.orderFor(id))
-                refreshSettingsPage()
-                toast("已删除")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
 
     /** 刷新实例管理页列表（按 DMX 地址排序，勾选 = 参与同时控制）。 */
     /**
-     * 实例管理页列表。
+     * 灯具管理页列表。
      *
      * 两种模式共用同一个勾选框，避免多塞一个控件：
-     * - **平时**：勾选 = 该实例参与同时控制（selectedInstanceIds）
+     * - **平时**：勾选 = 该灯具参与同时控制（selectedInstanceIds）
      * - **长按进入多选后**：勾选 = 待删除（instEditSel）
      *   此时显示批量操作栏（全选 / 取消全选 / 删除选中 / 完成）
+     *
+     * RDM 打开时顶部出现页签，可切到 RDM 设备列表。
      */
     private fun refreshInstanceMgrList() {
         val insts = fixtureStore.instances().sortedBy { it.globalAddr() }
@@ -2647,7 +2763,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             refreshInstanceMgrList()
         }
         imfb.btnInstDeleteSel.setOnClickListener {
-            if (instEditSel.isEmpty()) { toast("请先勾选要删除的实例"); return@setOnClickListener }
+            if (instEditSel.isEmpty()) { toast(Lang.t(R.string.k_select_the_fixtures_to_delete_first)); return@setOnClickListener }
             confirmDeleteInstances(instEditSel.toList())
         }
         imfb.btnInstExitEdit.setOnClickListener {
@@ -2656,12 +2772,33 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             refreshInstanceMgrList()
         }
 
+        // ---- 页签：RDM 关闭时隐藏整条 ----
+        imfb.instTabBar.visibility = if (rdmEnabled) View.VISIBLE else View.GONE
+        if (!rdmEnabled) instTabPatched = true
+        imfb.layoutPatched.visibility = if (instTabPatched) View.VISIBLE else View.GONE
+        imfb.layoutRdm.visibility = if (!instTabPatched) View.VISIBLE else View.GONE
+
+        fun tab(btn: TextView, active: Boolean) {
+            btn.setBackgroundResource(if (active) R.drawable.bg_pill_outline_accent
+                                      else R.drawable.bg_pill_outline_white)
+            btn.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+        }
+        tab(imfb.btnTabPatched, instTabPatched)
+        tab(imfb.btnTabRdm, !instTabPatched)
+        imfb.btnTabPatched.setOnClickListener { instTabPatched = true; refreshInstanceMgrList() }
+        imfb.btnTabRdm.setOnClickListener { instTabPatched = false; refreshInstanceMgrList() }
+
+        if (!instTabPatched) {
+            refreshRdmList()
+            return                       // RDM 页签下不构建"已配接"列表
+        }
+
         imfb.instBatchBar.visibility = if (instEditMode) View.VISIBLE else View.GONE
         imfb.tvInstEditHint.visibility = if (instEditMode) View.VISIBLE else View.GONE
         imfb.tvInstListTitle.text = if (instEditMode) "多选删除模式"
-                                   else "参与同时控制的实例（勾选，按地址顺序）"
-        imfb.tvInstCount.text = "共 ${insts.size} 台"
-        imfb.tvInstSelCount.text = "已选 ${instEditSel.size}"
+                                   else "参与同时控制的灯具（点行勾选，按地址顺序）"
+        imfb.tvInstCount.text = Lang.t("共 %d 台", insts.size)
+        imfb.tvInstSelCount.text = Lang.t(R.string.k_1_s_selected_2, instEditSel.size)
 
         imfb.rvInstanceMgr.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = insts.size
@@ -2678,7 +2815,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 val tvCheck = root.findViewById<TextView>(R.id.tvInstCheck)
                 val btnEdit = root.findViewById<TextView>(R.id.btnInstEdit)
                 tvName.text = inst.name
-                tvInfo.text = "${inst.label()}  ${def?.channelCount ?: 0}CH  ${def?.name ?: ""}"
+                val dead = !dualUniverse && inst.universe == 2
+                val suffix = if (dead) "  ⚠ 双宇宙已关闭，无输出" else ""
+                tvInfo.text = "${inst.label()}  ${def?.channelCount ?: 0}CH  ${def?.name ?: ""}$suffix"
+                tvInfo.setTextColor(ContextCompat.getColor(this@MainActivity,
+                    if (dead) R.color.warn else R.color.textDim))
                 btnEdit.visibility = if (instEditMode) View.GONE else View.VISIBLE
 
                 // 选中状态用整行高亮 + 右侧标记表示（勾选框已去掉）
@@ -2702,7 +2843,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                         instEditMode = true
                         instEditSel.clear()
                         instEditSel.add(inst.id)
-                        toast("已进入多选，可「全选」后删除")
+                        toast(Lang.t(R.string.k_multi_select_on_use_select_all_then_delete))
                     } else {
                         toggleEditSel(inst.id)
                     }
@@ -2712,6 +2853,550 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 btnEdit.setOnClickListener { showEditInstanceDialog(inst) }
             }
         }
+    }
+
+    /** RDM 设备列表（真实/模拟扫描结果，由固件 0x8A 帧填充）。 */
+    private fun refreshRdmList() {
+        // 每次刷新都按用户保存的顺序重排一遍（幂等）。
+        // ⚠ 必须在这里做：底部导航切页会触发刷新，而列表显示用的是 rdmDevices，
+        //   它如果只在"扫描收到设备帧"时才排序，切页回来就退回固件顺序了 ——
+        //   现象就是"切页之后顺序错了"。
+        if (rdmDevices.isNotEmpty()) rdmDevices = applySavedRdmOrder(rdmDevices)
+        imfb.btnRdmScan.setOnClickListener { doRdmScan() }
+        imfb.btnRdmScan.isEnabled = !rdmScanning && !rdmReorderMode
+        imfb.btnRdmScan.text = if (rdmScanning) "扫描中…" else "扫描设备"
+        imfb.btnRdmReorder.isEnabled = rdmDevices.isNotEmpty() && !rdmScanning
+        imfb.btnRdmReorder.text = if (rdmReorderMode) "取消排序" else "编辑顺序"
+        imfb.btnRdmReorder.setOnClickListener {
+            rdmReorderMode = !rdmReorderMode
+            if (rdmReorderMode && rdmDevices.isNotEmpty()) rdmOrder = rdmDevices
+            refreshRdmList()
+        }
+        // 模拟开关：没有真实 RDM 灯具时用固件内置的虚拟灯具
+        imfb.btnRdmSim.setOnClickListener {
+            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
+            rdmSimOn = !rdmSimOn
+            engine.sendRaw(encodeRdmSimulate(rdmSimOn))
+            toast(if (rdmSimOn) "已开模拟：扫描会返回固件内置的虚拟灯具" else "已关模拟：扫描真实 RDM 总线")
+            refreshRdmList()
+        }
+
+        // 4 个操作按钮常驻，只按可用性禁用（与推子页那行一致：一直看得见，不闪）
+        imfb.btnRdmApplyOrder.isEnabled = rdmDevices.isNotEmpty()
+        imfb.btnRdmMakeInstances.isEnabled = rdmDevices.isNotEmpty()
+        // 只有"起始地址 + 完成排序"这一行随排序模式出现
+        imfb.rdmReorderBar.visibility = if (rdmReorderMode) View.VISIBLE else View.GONE
+        imfb.btnRdmSim.text = if (rdmSimOn) "模拟·开" else "模拟·关"
+        imfb.btnRdmSim.setTextColor(ContextCompat.getColor(this,
+            if (rdmSimOn) R.color.warn else R.color.textDim))
+        if (rdmReorderMode) {
+            val start = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
+                .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+            val plan = assignAddresses(rdmOrder, start)
+            imfb.tvRdmStatus.text = if (plan == null)
+                "⚠ 通道不够：共 ${rdmOrder.size} 台超出 ${DmxProtocol.UNIVERSE_SIZE} 通道，请减少灯具或把起始地址提前"
+            else "按住 ☰ 拖到任意位置调整顺序 · 共 ${rdmOrder.size} 台 · 占 ${plan.last().second + rdmOrder.last().channelCount - 1} 通道"
+            imfb.etRdmStart.setOnEditorActionListener { _, _, _ -> refreshRdmList(); true }
+            imfb.etRdmStart.setOnFocusChangeListener { _, has -> if (!has) refreshRdmList() }
+            imfb.btnRdmApplyOrder.setOnClickListener {
+                val p = assignAddresses(rdmOrder, start)
+                if (p == null) { toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return@setOnClickListener }
+                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
+                // 记住这批指派：写入成功后要问"是否同时在 App 里创建为灯具实例"
+                rdmPendingAssign = rdmOrder.zip(p) { d, pair -> d to pair.second }
+                engine.sendRaw(encodeRdmSetAddresses(rdmOrder.first().universe - 1, p))
+                toast(Lang.t(R.string.k_writing_new_addresses_for_1_s_fixtures_in_order, p.size))
+            }
+            // 常驻按钮：不必等"写入地址"的结果弹窗，随时可把当前顺序加成实例
+            imfb.btnRdmMakeInstances.setOnClickListener {
+                val p = assignAddresses(rdmOrder, start)
+                if (p == null) { toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return@setOnClickListener }
+                createInstancesFromRdm(rdmOrder.zip(p) { d, pair -> d to pair.second })
+            }
+            imfb.btnRdmReorderDone.setOnClickListener {
+                rdmReorderMode = false
+                refreshRdmList()
+            }
+        } else {
+            imfb.tvRdmStatus.text = when {
+                rdmScanning -> "正在扫描…（DMX 输出会暂停数秒）"
+                rdmDevices.isEmpty() -> rdmLastError.ifEmpty { "点「扫描设备」开始" }
+                rdmSimulated -> "⚠ 固件模拟数据 · ${rdmDevices.size} 台 · 点行看全部参数，长按可拖动排序"
+                else -> "${rdmDevices.size} 台设备 · 点行看全部参数 · 「编辑顺序」可拖动排序并自动分配地址"
+            }
+        }
+        val empty = !rdmReorderMode && rdmDevices.isEmpty() && !rdmScanning
+        imfb.tvRdmEmpty.visibility = if (empty) View.VISIBLE else View.GONE
+        imfb.tvRdmEmpty.text = if (rdmLastError.isNotEmpty())
+            "${rdmLastError}\n\n点上面的「扫描设备」重试\n或点「模拟·开」用固件内置虚拟灯具验证界面"
+        else "还没有扫描到 RDM 设备\n\n点上面的「扫描设备」开始\n（扫描期间该通道的 DMX 输出会短暂暂停）"
+
+        imfb.rvRdm.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun getItemCount() = (if (rdmReorderMode) rdmOrder else rdmDevices).size
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_rdm_device, parent, false)
+                return object : RecyclerView.ViewHolder(v) {}
+            }
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, pos: Int) {
+                val list = if (rdmReorderMode) rdmOrder else rdmDevices
+                if (pos >= list.size) return
+                val d = list[pos]
+                val root = holder.itemView
+                root.findViewById<TextView>(R.id.tvRdmUid).text = d.uid
+                root.findViewById<TextView>(R.id.tvRdmModel).text = "${d.manufacturer} ${d.model}"
+                root.findViewById<TextView>(R.id.tvRdmDrag).visibility =
+                    if (rdmReorderMode) View.VISIBLE else View.GONE
+
+                val dead = !dualUniverse && d.universe == 2
+                val tvAddr = root.findViewById<TextView>(R.id.tvRdmAddr)
+                val startAddr = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
+                    .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+                val target = if (rdmReorderMode)
+                    assignAddresses(rdmOrder, startAddr)?.getOrNull(pos)?.second else null
+                if (rdmReorderMode) {
+                    // 排序模式：右边**直接显示预期地址**（拖完它就在这个位置），
+                    // 不再显示"旧 → 新"的对照 —— 顺序变了以后旧地址已无意义。
+                    // 原地址确实不同时，挪到下面信息行里以小字注明。
+                    tvAddr.text = if (target == null) "✗ 放不下"
+                                  else "${if (d.universe == 1) "A" else "B"}@$target"
+                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
+                        if (target == null) R.color.err else R.color.ok))
+                } else {
+                    tvAddr.text = d.addrLabel()
+                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
+                        if (dead) R.color.err else R.color.warn))
+                }
+                root.findViewById<TextView>(R.id.tvRdmInfo).text = buildString {
+                    // 排序模式下通道范围要按**预期地址**算，否则会出现
+                    // "右边 A@1、左边却写占通道 80~99"（那是旧地址的范围）
+                    val lo = if (rdmReorderMode && target != null) target else d.address
+                    append("占通道 $lo ~ ${lo + d.channelCount - 1}（${d.channelCount}CH")
+                    if (d.personality.isNotEmpty()) append(" · ${d.personality}")
+                    if (d.personalityCount > 1) append(" · 模式${d.personalityNum}/${d.personalityCount}")
+                    append("）")
+                    // 排序模式下地址会被改写：原来的地址用小字保留，便于核对
+                    if (rdmReorderMode && target != null && target != d.address) {
+                        append(" · 原 ${d.addrLabel()}")
+                    }
+                    if (dead) append(" ⚠ 双宇宙已关闭")
+                }
+                // 排序模式下：**识别按钮保留**（现场对位时正是要边拖边闪灯找位置），
+                // 只隐藏"改址"（顺序才是指派方式，避免两套逻辑冲突）
+                root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRdmIdentify)
+                    .visibility = View.VISIBLE
+                root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRdmSetAddr)
+                    .visibility = if (rdmReorderMode) View.GONE else View.VISIBLE
+                root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRdmIdentify)
+                    .setOnClickListener { identifyRdmDevice(d) }
+                root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRdmSetAddr)
+                    .setOnClickListener { showRdmSetAddressDialog(d) }
+                root.setOnClickListener { if (!rdmReorderMode) showRdmDetailDialog(d) }
+            }
+        }
+
+        // 拖动排序（ItemTouchHelper）：只在"编辑顺序"模式生效
+        rdmTouchHelper?.attachToRecyclerView(null)
+        rdmTouchHelper = null
+        if (rdmReorderMode && imfb.rvRdm.adapter != null) {
+            // ⚠ 必须操作**同一个** MutableList 实例，不能每次 onMove 都 rdmOrder = 新表。
+            //   原因：拖到列表边缘时 ItemTouchHelper 会自动滚动页面（平移），onMove 被
+            //   连续调用几十次。若每次都"拷贝 → 重排 → 换新表"，后一次拷贝会基于动画中的
+            //   旧位置，索引越滚越偏，松手后顺序就错了（现象："平移页面时顺序错误"）。
+            val list = rdmOrder.toMutableList()
+            rdmOrder = list            // 让适配器读的就是这个实例
+            val cb = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
+                androidx.recyclerview.widget.ItemTouchHelper.UP or
+                androidx.recyclerview.widget.ItemTouchHelper.DOWN, 0) {
+                override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder,
+                                    tgt: RecyclerView.ViewHolder): Boolean {
+                    val a = vh.bindingAdapterPosition
+                    val b = tgt.bindingAdapterPosition
+                    if (a < 0 || b < 0 || a >= list.size || b >= list.size) return false
+                    // 就地逐格交换：中间任何一次回调被丢弃都不会累积错位
+                    if (a < b) for (i in a until b) java.util.Collections.swap(list, i, i + 1)
+                    else       for (i in a downTo b + 1) java.util.Collections.swap(list, i, i - 1)
+                    imfb.rvRdm.adapter?.notifyItemMoved(a, b)
+                    // ⚠ 这里**不能**调 refreshRdmList()：它会整个替换 adapter，
+                    //   手势会被打断，表现成"只能相邻换位"。只就地更新地址预览。
+                    updateRdmPreviews()
+                    return true
+                }
+                override fun onSwiped(vh: RecyclerView.ViewHolder, dir: Int) {}
+                override fun isLongPressDragEnabled() = true
+                override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+                    super.clearView(rv, vh)
+                    updateRdmPreviews()
+                    saveRdmOrder()          // 记住这次拖出来的顺序，下次扫描还按它排
+                }
+            }
+            rdmTouchHelper = androidx.recyclerview.widget.ItemTouchHelper(cb)
+            rdmTouchHelper?.attachToRecyclerView(imfb.rvRdm)
+        }
+    }
+
+    /**
+     * 只就地更新每行的"新地址"预览，**不重建 adapter**。
+     *
+     * 拖动过程中若调用 refreshRdmList()（内部会 `rvRdm.adapter = ...`），
+     * ItemTouchHelper 正在拖的那个 ViewHolder 会失效 → 手势中断，
+     * 表现成"每动一格就掉一下、只能相邻换位"。
+     */
+    private fun updateRdmPreviews() {
+        if (!rdmReorderMode) return
+        val start = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
+            .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+        val plan = assignAddresses(rdmOrder, start)
+        val rv = imfb.rvRdm
+        for (i in 0 until rv.childCount) {
+            val child = rv.getChildAt(i)
+            val pos = rv.getChildAdapterPosition(child)
+            if (pos < 0 || pos >= rdmOrder.size) continue
+            val d = rdmOrder[pos]
+            val tv = child.findViewById<TextView>(R.id.tvRdmAddr) ?: continue
+            val na = plan?.getOrNull(pos)?.second
+            // 与 onBindViewHolder 保持同一规则：右边只显示预期地址
+            tv.text = if (na == null) "✗ 放不下" else "${if (d.universe == 1) "A" else "B"}@$na"
+            tv.setTextColor(ContextCompat.getColor(this,
+                if (na == null) R.color.err else R.color.ok))
+            // 信息行里的小字"原地址"也跟着更新
+            val info = child.findViewById<TextView>(R.id.tvRdmInfo)
+            if (info != null) {
+                info.text = buildString {
+                    val lo2 = if (na != null) na else d.address
+                    append("占通道 $lo2 ~ ${lo2 + d.channelCount - 1}（${d.channelCount}CH")
+                    if (d.personality.isNotEmpty()) append(" · ${d.personality}")
+                    if (d.personalityCount > 1) append(" · 模式${d.personalityNum}/${d.personalityCount}")
+                    append("）")
+                    if (na != null && na != d.address) append(" · 原 ${d.addrLabel()}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 把 RDM 扫描到的灯具按当前排序**建成 App 里的灯具实例**。
+     *
+     * 为什么需要它：RDM 改的是灯具**内部**的地址，而 App 的推子/效果/程序都作用于
+     * "实例"。两边不同步的话，RDM 排完序还得在灯库里手工再配一遍。
+     */
+    private fun offerCreateInstances() {
+        val batch = rdmPendingAssign ?: return
+        rdmPendingAssign = null
+        if (batch.isEmpty()) return
+        // 先看能匹配上几个灯型，避免点了才发现没一个对得上
+        val matched = batch.count { matchRdmFixture(it.first) != null }
+        if (matched == 0) {
+            toast(Lang.t(R.string.k_address_set_no_matching_fixture_type_in_the_libr))
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(Lang.t(R.string.k_also_create_as_fixtures))
+            .setMessage(Lang.t(R.string.k_1_s_2_s_match_a_fixture_type_in_the_library_n_n, matched, batch.size) +
+                        "创建后就可以在推子页直接控制这些灯（地址与刚写入的一致）。")
+            .setPositiveButton(Lang.t(R.string.k_create)) { _, _ -> createInstancesFromRdm(batch) }
+            .setNegativeButton(Lang.t(R.string.k_no), null)
+            .show()
+    }
+
+    /** 在本地灯库里找与某台 RDM 设备匹配的灯型。 */
+    /**
+     * 在本地灯库里找与某台 RDM 设备匹配的灯型。
+     *
+     * ⚠ 匹配必须**保守**：宁可不建，也不能猜错。
+     *   猜错会静默产生一台"通道数对、属性全错"的实例（例如 RDM 报 ARES-S4 20CH，
+     *   灯库里却没有这个型号，按通道数就匹配到了 Eos B19），
+     *   现场表现为推子能推、灯乱动，比没建更难查。
+     */
+    private fun matchRdmFixture(d: RdmDevice): FixtureDef? {
+        fun norm(s: String) = s.uppercase().replace(" ", "").replace("-", "")
+            .replace("_", "").replace("(", "").replace(")", "")
+        val key = norm(d.modelDesc.ifEmpty { d.model })
+        if (key.isEmpty()) return null
+        val all = fixtureStore.fixtures
+        // 1) 名称互相包含，且**通道数也要对得上**（同一型号常有 15CH/20CH 等不同模式）
+        val byName = all.filter {
+            val n = norm(it.name)
+            n.contains(key) || key.contains(n)
+        }
+        byName.firstOrNull { it.channelCount == d.channelCount }?.let {
+            android.util.Log.d("RDM", "匹配 [$key] → 名称+通道数命中: ${it.name}(${it.channelCount}CH)")
+            return it
+        }
+        // 2) 名称命中但只有唯一一个候选（通道数不一致也认，型号名是更强证据）
+        if (byName.size == 1) {
+            android.util.Log.d("RDM", "匹配 [$key] → 仅名称命中: ${byName[0].name}(${byName[0].channelCount}CH)")
+            return byName[0]
+        }
+        // 3) 名称完全没命中：只有"通道数唯一"时才敢认，否则放弃
+        val byCh = all.filter { it.channelCount == d.channelCount }
+        android.util.Log.d("RDM", "匹配 [$key] 名称未命中（名称候选 ${byName.size} 个）；" +
+            "通道数 ${d.channelCount} 候选 ${byCh.size} 个: ${byCh.take(5).joinToString { it.name }}")
+        if (byName.isEmpty() && byCh.size == 1) return byCh[0]
+        return null      // 不确定 → 不建（由调用方明确提示）
+    }
+
+    /**
+     * 按 (设备 → 地址) 列表创建实例。
+     *
+     * ## 地址冲突怎么处理（v9.3）
+     * 扫描→排序→建实例时，同一地址上很可能已经有旧实例（换灯、重扫、改过地址都会）。
+     * 原来是一律跳过，用户只看到"跳过 N 台"却不知道该怎么办。现在两种模式：
+     *   · 设置页开关「地址冲突时覆盖」打开 → 直接覆盖（适合熟练用户批量重建）
+     *   · 关闭（默认）→ 弹窗问一次，二选一【覆盖】【跳过】，把决定权交回用户
+     */
+    private fun createInstancesFromRdm(batch: List<Pair<RdmDevice, Int>>) {
+        // 实例是按这个顺序建的，把顺序记下来，下次扫描仍按它排
+        if (batch.isNotEmpty()) rdmStore.saveOrder(batch.map { it.first.uid })
+
+        // 三分类：可直接建 / 灯库里没这个灯型 / 地址已被占用
+        val ready = ArrayList<Triple<FixtureDef, RdmDevice, Int>>()
+        val noMatch = ArrayList<String>()
+        val clash = ArrayList<Triple<FixtureDef, RdmDevice, Int>>()
+        for ((d, addr) in batch) {
+            val def = matchRdmFixture(d)
+            if (def == null) {
+                // 匹配不到就明确报告型号，让人知道该往灯库里加什么
+                noMatch.add("${d.modelDesc.ifEmpty { d.model }}(${d.channelCount}CH)")
+                continue
+            }
+            val taken = fixtureStore.instances().any { it.universe == d.universe && it.addr == addr }
+            if (taken) clash.add(Triple(def, d, addr)) else ready.add(Triple(def, d, addr))
+        }
+
+        if (clash.isEmpty()) {
+            commitRdmInstances(ready, emptyList(), noMatch)
+            return
+        }
+        if (rdmOverwrite) {
+            commitRdmInstances(ready, clash, noMatch)
+            return
+        }
+        // 提示模式：把冲突数量说清楚，让用户决定
+        MaterialAlertDialogBuilder(this)
+            .setTitle(Lang.t(R.string.s_rdm_clash_title))
+            .setMessage(Lang.t(R.string.s_rdm_clash_msg, clash.size, ready.size))
+            .setPositiveButton(Lang.t(R.string.s_overwrite)) { _, _ ->
+                commitRdmInstances(ready, clash, noMatch)
+            }
+            .setNegativeButton(Lang.t(R.string.s_skip)) { _, _ ->
+                commitRdmInstances(ready, emptyList(), noMatch)
+            }
+            .show()
+    }
+
+    /**
+     * 真正落盘：先按需删掉被占地址上的旧实例，再建新的。
+     *
+     * @param overwrite 需要覆盖的项（会先删掉同宇宙同地址的旧实例）
+     */
+    private fun commitRdmInstances(
+        ready: List<Triple<FixtureDef, RdmDevice, Int>>,
+        overwrite: List<Triple<FixtureDef, RdmDevice, Int>>,
+        noMatch: List<String>
+    ) {
+        var replaced = 0
+        for ((_, d, addr) in overwrite) {
+            val olds = fixtureStore.instances().filter { it.universe == d.universe && it.addr == addr }
+            if (olds.isNotEmpty()) {
+                fixtureStore.removeInstances(olds.map { it.id })
+                replaced++
+            }
+        }
+        var created = 0
+        var failed = 0
+        for ((def, d, addr) in ready + overwrite) {
+            val err = fixtureStore.addInstances(def.id, d.model.ifEmpty { def.name }, addr, 1, d.universe)
+            if (err == null) created++ else failed++
+        }
+        val msg = buildString {
+            append(Lang.t(R.string.s_created_n, created))
+            if (replaced > 0) append(Lang.t(R.string.s_replaced_n, replaced))
+            if (failed > 0) append(Lang.t(R.string.s_failed_n, failed))
+            if (noMatch.isNotEmpty()) {
+                append("\n\n" + Lang.t(R.string.s_n_no_match_p, noMatch.size) + "\n")
+                append(noMatch.joinToString("、"))
+                append("\n" + Lang.t(R.string.s_import_then_retry))
+            }
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(Lang.t(R.string.k_result))
+            .setMessage(msg)
+            .setPositiveButton(Lang.t(R.string.k_ok_2), null)
+            .show()
+        renderInstanceBar()
+        refreshInstanceMgrList()
+    }
+
+    /** 弹出某台 RDM 设备的**全部**参数（GET 到的每一项）。 */
+    private fun showRdmDetailDialog(d: RdmDevice) {
+        val lines = d.detailLines().joinToString("\n") { (k, v) -> "%-8s %s".format(k, v) }
+        val b = MaterialAlertDialogBuilder(this)
+            .setTitle(d.model)
+            .setMessage(lines)
+            .setPositiveButton(Lang.t(R.string.s_close), null)
+            .setNeutralButton(Lang.t(R.string.s_identify)) { _, _ -> identifyRdmDevice(d) }
+        // 灯库里没有匹配型号时，就地提供"建一个灯型"——
+        // 这正是用户发现缺型号的那一刻，比让他跑去灯库页找入口顺手得多
+        if (matchRdmFixture(d) == null) {
+            b.setNegativeButton(Lang.t(R.string.k_new_fixture_type)) { _, _ -> createFixtureFromRdm(d) }
+        }
+        b.show()
+    }
+
+    /**
+     * 用这台 RDM 灯的信息在灯库里新建一个**骨架灯型**，并立刻建成实例。
+     *
+     * 生成的是"通道数正确、通道含义待补"的灯型（RDM 拿不到每通道用途，
+     * 详见 FixtureStore.createFromRdm 的说明）。
+     */
+    private fun createFixtureFromRdm(d: RdmDevice) {
+        val def = fixtureStore.createFromRdm(
+            name = d.modelDesc.ifEmpty { d.model },
+            manufacturer = d.manufacturer,
+            channelCount = d.channelCount,
+            mode = d.personality
+        )
+        android.util.Log.d("RDM", "新建骨架灯型: ${def.name} ${def.channelCount}CH id=${def.id}")
+        // 顺手建实例：用户要的就是"能推到这台灯"，不必再点一次
+        val uni = d.universe
+        val addr = rdmPendingAssign?.firstOrNull { it.first.uid == d.uid }?.second ?: d.address
+        val err = fixtureStore.addInstances(def.id, d.model.ifEmpty { def.name }, addr, 1, uni)
+        val msg = buildString {
+            append("已新建灯型「${def.name}」（${def.channelCount}CH）")
+            if (err == null) {
+                append("\n并已在 ${if (uni == 1) "A" else "B"}@$addr 建好实例。")
+            } else {
+                append("\n但建实例失败：$err")
+            }
+            append("\n\n注意：RDM 读不到每个通道的用途，通道名暂为 CH1~CH${d.channelCount}。")
+            append("如需完整通道定义，请导入同型号灯库文件覆盖。")
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(Lang.t(R.string.k_new_fixture_type))
+            .setMessage(msg)
+            .setPositiveButton(Lang.t(R.string.k_ok_2)) { _, _ ->
+                renderInstanceBar()
+                refreshInstanceMgrList()
+                refreshFixturePage()
+            }
+            .show()
+    }
+
+    /**
+     * 扫描 RDM 总线（真实扫描：固件做设备发现 + 逐台 GET 参数）。
+     *
+     * 流程：发 0x40 → 固件暂停该通道 DMX → RDM 发现 + 读参数 → 回 0x89 头
+     *       → 每台一条 0x8A（全部参数）→ App 逐条解析入列表。
+     * 扫描期间保持"扫描中"状态，收到 0x89 头即视为结束（0x8A 先于头之前到达也无妨，
+     * 因为固件是先发头再发设备帧）。
+     */
+    private fun doRdmScan() {
+        android.util.Log.d("RDM", "doRdmScan 进入: bleState=${ble.state} scanning=$rdmScanning")
+        if (rdmScanning) return
+        if (ble.state != BleManager.State.CONNECTED) {
+            android.util.Log.w("RDM", "扫描被拒：未连接（state=${ble.state}）")
+            toast(Lang.t(R.string.k_connect_to_a_device_first)); return
+        }
+        rdmScanning = true
+        rdmDevices = emptyList()
+        rdmLastError = ""
+        refreshRdmList()
+        // 一次扫描最多可能几秒（设备多、响应慢），超时兜底避免一直转圈
+        syncHandler.postDelayed({
+            if (rdmScanning) {
+                rdmScanning = false
+                if (rdmLastError.isEmpty()) rdmLastError = "扫描超时（设备无响应）"
+                refreshRdmList()
+                toast(Lang.t(R.string.k_rdm_scan_timed_out))
+            }
+        }, 15000)
+        // A 通道（宇宙 0）。B 通道（宇宙 1）在双宇宙打开且需要时可再加一个按钮。
+        engine.sendRaw(encodeRdmScan(0))
+        android.util.Log.d("RDM", "已发送 0x40 扫描帧（A 通道）")
+    }
+
+    /** 收到固件 0x89 扫描头：结束"扫描中"状态。 */
+    private fun onRdmScanDone(count: Int, universe: Int, ok: Boolean, simulate: Boolean, err: String) {
+        syncHandler.removeCallbacksAndMessages(null)
+        rdmScanning = false
+        rdmSimulated = simulate
+        rdmLastError = if (ok) "" else err.ifEmpty { "未发现 RDM 设备" }
+        // 扫描结果是固件侧的 UID 顺序，这里套用用户保存过的顺序
+        rdmDevices = applySavedRdmOrder(rdmDevices)
+        if (rdmReorderMode) rdmOrder = rdmDevices
+        refreshRdmList()
+        toast(if (ok) "发现 $count 台 RDM 设备${if (simulate) "（模拟）" else ""}" else rdmLastError)
+    }
+
+    /** 收到固件 0x8A 设备帧：解析出全部参数并加入列表。 */
+    private fun onRdmDevice(d: ByteArray) {
+        val dev = parseRdmDevice(d) ?: return
+        // ⚠ 顺序必须在这里套用，不能只放在 onRdmScanDone：
+        //   固件是"先发 0x89 头、再逐条发 0x8A 设备"，头到达时列表还是空的，
+        //   在那一刻排序等于没排。每来一台就按保存的顺序插入，才是对的。
+        rdmDevices = applySavedRdmOrder(
+            rdmDevices.filterNot { it.uid == dev.uid } + dev)
+        if (rdmReorderMode) rdmOrder = rdmDevices
+        refreshRdmList()
+    }
+
+    /**
+     * 按用户保存的顺序重排扫描结果。
+     *
+     * 为什么需要：RDM 发现算法返回的顺序由 UID 决定（跟现场位置无关），
+     * 用户辛苦拖出来的顺序如果一扫描就没了，等于白拖。
+     * 保存的是 UID 列表，所以灯换个口/换个地址也还认得出同一台。
+     */
+    private fun applySavedRdmOrder(list: List<RdmDevice>): List<RdmDevice> {
+        val saved = rdmStore.savedOrder()
+        if (saved.isEmpty()) return list
+        val idx = saved.withIndex().associate { it.value to it.index }
+        // 保存过顺序的按记录排；新出现的（索引 -1）拍到末尾
+        return list.sortedBy { idx[it.uid] ?: Int.MAX_VALUE }
+    }
+
+    /** 把当前顺序存起来（拖动结束、加实例时调用）。 */
+    private fun saveRdmOrder() {
+        // 让 rdmDevices 与 rdmOrder 保持一致：非排序模式下列表读的是 rdmDevices，
+        // 不同步的话"拖完退出排序 → 列表又变回原顺序"。
+        if (rdmOrder.isNotEmpty()) rdmDevices = rdmOrder
+        if (rdmOrder.isNotEmpty()) rdmStore.saveOrder(rdmOrder.map { it.uid })
+        else if (rdmDevices.isNotEmpty()) rdmStore.saveOrder(rdmDevices.map { it.uid })
+    }
+
+    /** 识别：让灯具闪烁，便于现场对位。 */
+    private fun identifyRdmDevice(d: RdmDevice) {
+        if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return }
+        engine.sendRaw(encodeRdmIdentify(d.universe - 1, d.uidBytes, true))
+        syncHandler.postDelayed({
+            engine.sendRaw(encodeRdmIdentify(d.universe - 1, d.uidBytes, false))
+        }, 1500)
+        toast(Lang.t(R.string.k_1_s_will_flash_for_1_5_s, d.model))
+    }
+
+    /** 远程改地址（RDM SET DMX_START_ADDRESS）。 */
+    private fun showRdmSetAddressDialog(d: RdmDevice) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(d.address.toString())
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(Lang.t(R.string.k_set_address_1_s, d.model))
+            .setMessage(Lang.t(R.string.k_uid_1_s_nnow_2_s_3_s_channels, d.uid, d.addrLabel(), d.channelCount))
+            .setView(input)
+            .setPositiveButton(Lang.t(R.string.k_write)) { _, _ ->
+                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setPositiveButton }
+                val a = input.text.toString().toIntOrNull() ?: return@setPositiveButton
+                if (a < 1 || a + d.channelCount - 1 > DmxProtocol.UNIVERSE_SIZE) {
+                    toast(Lang.t(R.string.k_out_of_range_needs_1_s_2_s_universe_limit_3_s, a, a + d.channelCount - 1, DmxProtocol.UNIVERSE_SIZE))
+                    return@setPositiveButton
+                }
+                engine.sendRaw(encodeRdmSetAddress(d.universe - 1, d.uidBytes, a))
+                rdmStore.setCachedAddress(d.uid, d.universe, a)
+                toast(Lang.t(R.string.k_address_command_sent_waiting_for_the_device))
+            }
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
+            .show()
     }
 
     /** 多选模式下切换某行的待删除状态。 */
@@ -2740,9 +3425,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val detail = if (names.size <= 5) names.joinToString("、")
                      else names.take(5).joinToString("、") + " 等 ${names.size} 台"
         MaterialAlertDialogBuilder(this)
-            .setTitle("删除 ${ids.size} 个实例？")
-            .setMessage("$detail\n\n该操作不可撤销。")
-            .setPositiveButton("删除") { _, _ ->
+            .setTitle(Lang.t(R.string.k_delete_1_s_fixtures, ids.size))
+            .setMessage(Lang.t(R.string.k_1_s_n_nthis_cannot_be_undone, detail))
+            .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                 // 与单台删除保持同一套清理：停效果/程序 → 删数据 → 清选择 → 刷 UI。
                 // （早期批量删除漏了停止与清模式，导致删光后推子页仍停在灯具模式）
                 val victims = all.filter { it.id in ids }
@@ -2759,7 +3444,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     currentInstanceId = groupInstances().firstOrNull()?.id
                 }
                 instEditMode = false
-                toast("已删除 ${ids.size} 个实例")
+                toast(Lang.t(R.string.k_deleted_1_s_fixtures, ids.size))
 
                 renderInstanceBar()
                 refreshInstanceMgrList()
@@ -2774,7 +3459,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     applySelectedInstance()
                 }
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -2808,7 +3493,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             val ch = def.channelCount.coerceAtLeast(1)
             val a = etAddr.text.toString().toIntOrNull() ?: 1
             val bn = if (band == 1) "A" else "B"
-            tvChCount.text = "「${inst.name}」占 $ch 个通道"
+            tvChCount.text = Lang.t(R.string.k_1_s_uses_2_s_channels, inst.name, ch)
             tvPreview.text = if (a + ch - 1 > DmxProtocol.UNIVERSE_SIZE)
                 "⚠ $bn 通道放不下：需要 $a~${a + ch - 1}，本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}"
             else "$bn 通道 $a ~ ${a + ch - 1}"
@@ -2824,25 +3509,25 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         paintBand(); refresh()
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("修改地址")
+            .setTitle(Lang.t(R.string.k_set_address))
             .setView(holder)
-            .setPositiveButton("保存") { _, _ ->
+            .setPositiveButton(Lang.t(R.string.k_save)) { _, _ ->
                 val a = (etAddr.text.toString().toIntOrNull() ?: 1)
                     .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
                 val before = inst
                 fixtureStore.updateInstance(inst.copy(addr = a, universe = band))
                 val after = fixtureStore.instances().find { it.id == inst.id }
                 if (after == null || after.addr != a || after.universe != band) {
-                    toast("保存失败：${if (band == 1) "A" else "B"} 通道 $a 越界或与已有实例重叠")
+                    toast("保存失败：${if (band == 1) "A" else "B"} 通道 $a 越界或与已有灯具重叠")
                 } else {
-                    toast("已改为 ${after.label()}")
+                    toast(Lang.t(R.string.k_changed_to_1_s, after.label()))
                 }
                 refreshInstanceMgrList()
                 renderInstanceBar()
                 refreshFixturePage()
                 if (before.id == currentInstanceId) applySelectedInstance()
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
     }
 
@@ -2850,19 +3535,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         var mscEnabled = false
         fixb.swMsc.setOnClickListener {
             if (!mscEnabled) {
-                if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                 engine.sendRawCmd(0x30, 1)
                 mscEnabled = true
-                fixb.swMsc.text = "关闭"
+                fixb.swMsc.text = Lang.t(R.string.s_close)
                 fixb.swMsc.setBackgroundColor(getColor(R.color.ok))
-                fixb.tvMscStatus.text = "已开启 — 控台可访问 ESP32 灯库文件"
+                fixb.tvMscStatus.text = Lang.t(R.string.k_enabled_the_console_can_access_the_esp32_fixture)
                 fixb.tvMscStatus.setTextColor(getColor(R.color.ok))
             } else {
                 engine.sendRawCmd(0x30, 0)
                 mscEnabled = false
-                fixb.swMsc.text = "开启"
+                fixb.swMsc.text = Lang.t(R.string.s_on)
                 fixb.swMsc.setBackgroundColor(getColor(R.color.surface2))
-                fixb.tvMscStatus.text = "关闭"
+                fixb.tvMscStatus.text = Lang.t(R.string.s_close)
                 fixb.tvMscStatus.setTextColor(getColor(R.color.textDim))
             }
         }
@@ -2875,7 +3560,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
 
         fixb.btnDeviceLibs.setOnClickListener {
-            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
             storageMode = 1
             curPath = ""            // 设备灯库固定显示根目录
             fixb.btnNewFolder.visibility = View.GONE
@@ -2883,7 +3568,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
 
         fixb.btnFileMgr.setOnClickListener {
-            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
             storageMode = 2
             fixb.btnNewFolder.visibility = View.VISIBLE
             refreshDeviceFiles()
@@ -2892,31 +3577,31 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 返回上级目录（文件管理页签）
         fixb.btnGoUp.setOnClickListener {
             if (storageMode != 2) return@setOnClickListener
-            if (curPath.isEmpty()) { toast("已在根目录"); return@setOnClickListener }
+            if (curPath.isEmpty()) { toast(Lang.t(R.string.k_already_at_root)); return@setOnClickListener }
             curPath = curPath.substringBeforeLast('/', "")
             refreshDeviceFiles()
         }
 
         // 新建文件夹
         fixb.btnNewFolder.setOnClickListener {
-            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
             val input = EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_TEXT
                 hint = "文件夹名（不含 / 或 \\）"
             }
             MaterialAlertDialogBuilder(this)
-                .setTitle("新建文件夹")
+                .setTitle(Lang.t(R.string.k_new_folder))
                 .setView(input)
-                .setPositiveButton("创建") { _, _ ->
+                .setPositiveButton(Lang.t(R.string.k_create)) { _, _ ->
                     val nm = input.text.toString().trim()
                     if (nm.isEmpty() || nm.contains('/') || nm.contains('\\')) {
-                        toast("名称无效")
+                        toast(Lang.t(R.string.k_invalid_name))
                         return@setPositiveButton
                     }
                     dirOpName = nm
                     engine.sendMkdir(curPath, nm)
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton(Lang.t(R.string.k_cancel), null)
                 .show()
         }
 
@@ -2930,20 +3615,20 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         showDeviceFiles = true
         refreshStoragePage()
         fixb.tvListTitle.text = if (storageMode == 2) "ESP32 文件管理" else "ESP32 设备灯库"
-        fixb.tvListHint.text = "正在获取..."
+        fixb.tvListHint.text = Lang.t(R.string.k_fetching)
         engine.sendListFiles(curPath)
     }
 
     /** 确认删除设备文件夹（空文件夹）。 */
     private fun rmdirConfirm(name: String) {
         MaterialAlertDialogBuilder(this)
-            .setTitle("删除文件夹")
-            .setMessage("删除设备上的空文件夹「$name」？（文件夹非空将失败）")
-            .setPositiveButton("删除") { _, _ ->
+            .setTitle(Lang.t(R.string.k_delete_folder))
+            .setMessage(Lang.t(R.string.k_delete_empty_folder_1_s_on_device_fails_if_not_e, name))
+            .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                 dirOpName = name
                 engine.sendRmdir(curPath, name)
             }
-            .setNegativeButton("取消", null).show()
+            .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
     }
 
     /** 重命名设备文件/文件夹。 */
@@ -2953,45 +3638,45 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             setText(oldName)
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("重命名")
-            .setMessage("原名：$oldName")
+            .setTitle(Lang.t(R.string.k_rename))
+            .setMessage(Lang.t(R.string.k_original_name_1_s, oldName))
             .setView(input)
-            .setPositiveButton("确定") { _, _ ->
+            .setPositiveButton(Lang.t(R.string.k_ok)) { _, _ ->
                 val nm = input.text.toString().trim()
                 if (nm.isEmpty() || nm.contains('/') || nm.contains('\\')) {
-                    toast("名称无效")
+                    toast(Lang.t(R.string.k_invalid_name))
                     return@setPositiveButton
                 }
                 dirOpName = nm
                 engine.sendRename(curPath, oldName, nm)
             }
-            .setNegativeButton("取消", null).show()
+            .setNegativeButton(Lang.t(R.string.k_cancel), null).show()
     }
 
     /** 移动/复制目标选择：先请求设备全量目录树（0x3C），收集完（0x98）后弹窗选择。 */
     private fun pickDestDialog(name: String, isCopy: Boolean) {
-        if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return }
+        if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return }
         dirList.clear()
         dirCollectCb = {
             val act = if (isCopy) "复制" else "移动"
             val opts = mutableListOf("（根目录）")
             opts.addAll(dirList)
             MaterialAlertDialogBuilder(this@MainActivity)
-                .setTitle("$act「$name」到")
+                .setTitle(Lang.t(R.string.k_1_s_2_s_to, act, name))
                 .setItems(opts.toTypedArray()) { _, which ->
                     val dst = if (which == 0) "" else opts[which]
-                    if (dst == curPath) { toast("目标与当前位置相同"); return@setItems }
+                    if (dst == curPath) { toast(Lang.t(R.string.k_target_is_the_same_as_the_current_position)); return@setItems }
                     val dstShow = if (dst.isEmpty()) "根目录" else dst
                     moveOp = "$act: $name → $dstShow"
                     if (isCopy) engine.sendCopy(curPath, name, dst)
                     else        engine.sendMove(curPath, name, dst)
-                    toast("正在${act}到 $dstShow...")
+                    toast(Lang.t(R.string.k_in_progress_1_s_to_2_s, act, dstShow))
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton(Lang.t(R.string.k_cancel), null)
                 .show()
         }
         engine.sendListDirs()
-        toast("正在获取设备目录...")
+        toast(Lang.t(R.string.k_fetching_device_folders))
     }
 
     private fun moveDialog(name: String) = pickDestDialog(name, false)
@@ -3032,23 +3717,23 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     val f = shownDev[pos]
                     if (f.isDir) {
                         tvName.text = "📁 ${f.name}"
-                        tvInfo.text = "文件夹"
-                        btn.text = "删除"
+                        tvInfo.text = Lang.t(R.string.k_folder)
+                        btn.text = Lang.t(R.string.s_delete)
                         btn.setOnClickListener {
-                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                             rmdirConfirm(f.name)
                         }
                         // 文件管理页签：点按进入文件夹
                         root.setOnClickListener {
                             if (storageMode != 2) return@setOnClickListener
-                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                             curPath = if (curPath.isEmpty()) f.name else "$curPath/${f.name}"
                             refreshDeviceFiles()
                         }
                         // 长按文件夹 → 重命名 / 移动 / 删除（仅文件管理页签）
                         root.setOnLongClickListener {
                             if (storageMode != 2) return@setOnLongClickListener true
-                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnLongClickListener true }
+                            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnLongClickListener true }
                             val opts = arrayOf("重命名", "移动", "删除")
                             MaterialAlertDialogBuilder(this@MainActivity)
                                 .setTitle(f.name)
@@ -3064,19 +3749,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                         }
                     } else {
                         tvName.text = f.name
-                        tvInfo.text = "${f.size} 字节"
-                        btn.text = "下载"
+                        tvInfo.text = Lang.t(R.string.k_1_s_bytes, f.size)
+                        btn.text = Lang.t(R.string.k_download)
                         btn.setOnClickListener {
-                            if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                             downloadingFile = f.name
                             downloadBuf = ByteArray(0)
                             engine.sendDownloadFile(curPath, f.name)
-                            toast("正在下载 ${f.name}...")
+                            toast(Lang.t(R.string.k_downloading_1_s, f.name))
                         }
                         // 长按设备文件：文件管理页签 → 重命名/移动/复制/删除
                         root.setOnLongClickListener {
                             if (ble.state != BleManager.State.CONNECTED) {
-                                toast("请先连接设备")
+                                toast(Lang.t(R.string.k_connect_to_a_device_first))
                                 return@setOnLongClickListener true
                             }
                             if (storageMode == 2) {
@@ -3091,21 +3776,21 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                                             else -> {
                                                 deletingFile = f.name
                                                 engine.sendDeleteFile(curPath, f.name)
-                                                toast("正在删除 ${f.name}...")
+                                                toast(Lang.t(R.string.k_deleting_1_s, f.name))
                                             }
                                         }
                                     }
                                     .show()
                             } else {
                                 MaterialAlertDialogBuilder(this@MainActivity)
-                                    .setTitle("删除文件")
-                                    .setMessage("删除设备上的文件「${f.name}」？")
-                                    .setPositiveButton("删除") { _, _ ->
+                                    .setTitle(Lang.t(R.string.k_delete_file))
+                                    .setMessage(Lang.t(R.string.k_delete_file_1_s_on_device, f.name))
+                                    .setPositiveButton(Lang.t(R.string.s_delete)) { _, _ ->
                                         deletingFile = f.name
                                         engine.sendDeleteFile(curPath, f.name)
-                                        toast("正在删除 ${f.name}...")
+                                        toast(Lang.t(R.string.k_deleting_1_s, f.name))
                                     }
-                                    .setNegativeButton("取消", null)
+                                    .setNegativeButton(Lang.t(R.string.k_cancel), null)
                                     .show()
                             }
                             true
@@ -3115,10 +3800,10 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     val lib = libs[pos]
                     tvName.text = "${lib.manufacturer} ${lib.name}"
                     tvInfo.text = "${lib.mode}  ${lib.channelCount}CH"
-                    btn.text = "上传"
+                    btn.text = Lang.t(R.string.k_upload)
                     root.setOnLongClickListener(null)
                     btn.setOnClickListener {
-                        if (ble.state != BleManager.State.CONNECTED) { toast("请先连接设备"); return@setOnClickListener }
+                        if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                         // 优先上传保存的原始文件（xml/d4/r20 三种）；无原始文件则重建 xml
                         val raws = fixtureStore.rawFiles(lib)
                         if (raws.isNotEmpty()) {
@@ -3147,7 +3832,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         } else {
             fixb.btnNewFolder.visibility = View.GONE
             fixb.btnGoUp.visibility = View.GONE
-            fixb.tvListTitle.text = "App 端已保存灯库"
+            fixb.tvListTitle.text = Lang.t(R.string.k_saved_in_the_app)
             fixb.tvListHint.text = if (libs.isEmpty()) "暂无灯库" else "${libs.size} 个 — 点按上传到设备"
         }
     }
@@ -3184,13 +3869,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
         }
         uploadHandler.post(sendChunk)
-        toast("正在上传 ${fileName}...")
+        toast(Lang.t(R.string.k_uploading_1_s, fileName))
     }
 
     /** 顺序上传一个灯具的全部原始文件（xml/d4/r20）。 */
     private fun uploadFilesSequential(files: List<File>, label: String) {
         fun next(idx: Int) {
-            if (idx >= files.size) { toast("全部上传完成: $label"); return }
+            if (idx >= files.size) { toast(Lang.t(R.string.k_all_uploads_complete_1_s, label)); return }
             val f = files[idx]
             uploadFileData(f.name, f.readBytes()) {
                 uploadHandler.postDelayed({ next(idx + 1) }, 300)

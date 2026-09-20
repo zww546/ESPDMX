@@ -49,6 +49,40 @@ class BleManager(private val ctx: Context) {
     @Volatile private var deviceAddress: String? = null
 
     private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * "连接中"看门狗：连上后若 N 秒还没进 CONNECTED，就再推一次服务发现。
+     *
+     * 为什么需要：BLE 状态机依赖一系列回调（连接 → 服务发现 → 使能通知），
+     * 任何一个回调丢失都会让 `state` 永久停在 CONNECTING —— 界面上看起来"已连接"，
+     * 但所有操作都报"请先连接设备"。实测某些 ROM 确实会丢回调。
+     */
+    private var connectWatchdog: Runnable? = null
+    @Volatile private var retriedDiscover = false
+    private val connectTimeoutMs = 6000L
+
+    private fun armConnectWatchdog(g: BluetoothGatt) {
+        cancelConnectWatchdog()
+        val r = Runnable {
+            // 用 gatt 引用相等代替 isStale：看门狗在外层类里，拿不到内部对象的私有方法
+            if (state == State.CONNECTING && gatt === g) {
+                android.util.Log.w("BLE", "连接超时仍在 CONNECTING，重试服务发现")
+                if (!g.discoverServices()) {
+                    setState(State.DISCONNECTED, "连接超时")
+                } else {
+                    retriedDiscover = true
+                    armConnectWatchdog(g)      // 再给一次机会
+                }
+            }
+        }
+        connectWatchdog = r
+        main.postDelayed(r, connectTimeoutMs)
+    }
+
+    private fun cancelConnectWatchdog() {
+        connectWatchdog?.let { main.removeCallbacks(it) }
+        connectWatchdog = null
+    }
     private val btManager = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter: BluetoothAdapter? = btManager.adapter
 
@@ -78,6 +112,9 @@ class BleManager(private val ctx: Context) {
     fun connectedDevice(): BluetoothDevice? = if (state == State.CONNECTED) connectedDevice else null
 
     private fun setState(s: State, info: String? = null) {
+        // 状态迁移全部打日志：这个状态机一旦卡住，"看起来已连接但什么都干不了"，
+        // 只有把每次迁移和来源打出来才查得动。
+        android.util.Log.d("BLE", "state ${state} → $s  (${info ?: ""})")
         state = s
         main.post { listener?.onStateChanged(s, info) }
     }
@@ -150,10 +187,21 @@ class BleManager(private val ctx: Context) {
 
     // ---------------- 连接 ----------------
     fun connect(device: BluetoothDevice) {
+        // ⚠ 已连上时**拒绝**重复连接请求。
+        //   重连定时器（MainActivity 收到 DISCONNECTED 后 2 秒触发）可能在连接
+        //   已经成功之后才跑 —— connect() 第一件事是 setState(CONNECTING)，
+        //   于是把刚置好的 CONNECTED 打回去。而底层的 GATT 链路一直是好的
+        //   （板子日志能看到 connected + mtu + state sync 全部正常），
+        //   结果就是"明明连着、所有操作却提示未连接"，极难排查。
+        if (state == State.CONNECTED && gatt != null) {
+            android.util.Log.w("BLE", "忽略重复连接请求（已 CONNECTED）: ${device.address}")
+            return
+        }
         stopPeriodicScan()   // 连接时停止周期扫描，避免干扰 GATT 连接
         stopScan()
         deviceAddress = device.address
         connectedDevice = device
+        retriedDiscover = false
         setState(State.CONNECTING, device.address)
         close()
         gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
@@ -206,9 +254,21 @@ class BleManager(private val ctx: Context) {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (isStale(g)) return
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                // 先协商更大 MTU，回调里再发现服务
-                if (!g.requestMtu(517)) g.discoverServices()
+                // ⚠ 不要把服务发现挂在 onMtuChanged 上！
+                //   旧实现是 requestMtu() → 在 MTU 回调里才 discoverServices()。
+                //   但有些 ROM（实测小米）协商 MTU 后**不回调 onMtuChanged**，
+                //   于是状态永远停在 CONNECTING：所有功能都提示"请先连接设备"，
+                //   而表面上"已经连上了"，极难排查。
+                //   现在改成：**立即发现服务**，MTU 协商降级为尽力而为。
+                android.util.Log.d("BLE", "已连接，开始发现服务")
+                if (!g.discoverServices()) {
+                    setState(State.DISCONNECTED, "服务发现启动失败")
+                    return
+                }
+                g.requestMtu(517)      // 拿不到大 MTU 也能用（分块发送会自动适配）
+                armConnectWatchdog(g)  // 兜底：卡住就重试一次
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                cancelConnectWatchdog()
                 clearLinkState()
                 setState(State.DISCONNECTED, "status=$status")
             }
@@ -216,14 +276,23 @@ class BleManager(private val ctx: Context) {
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             if (isStale(g)) return
-            g.discoverServices()
+            android.util.Log.d("BLE", "MTU=$mtu status=$status")
+            // 只记录，不触发服务发现（服务发现已在连接回调里启动）
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             if (isStale(g)) return
+            cancelConnectWatchdog()
             if (status != BluetoothGatt.GATT_SUCCESS) {
+                android.util.Log.w("BLE", "服务发现失败 status=$status，重试一次")
+                // 有些 ROM 第一次服务发现会返回失败，重试一次通常就好
+                if (!retriedDiscover && g.discoverServices()) {
+                    retriedDiscover = true
+                    return
+                }
                 setState(State.DISCONNECTED, "服务发现失败 $status"); return
             }
+            android.util.Log.d("BLE", "服务发现成功")
             val svc = g.getService(DmxProtocol.SERVICE_UUID)
             if (svc == null) {
                 setState(State.DISCONNECTED, "未找到 DMX 服务")

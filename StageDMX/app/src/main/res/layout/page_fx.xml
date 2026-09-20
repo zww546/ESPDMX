@@ -57,6 +57,19 @@
         android:gravity="center_vertical"
         android:paddingBottom="4dp">
 
+        <HorizontalScrollView
+            android:id="@+id/runFxScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingBottom="4dp">
+            <LinearLayout
+                android:id="@+id/runFxCards"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
         <TextView
             android:id="@+id/tvFxStatus"
             android:layout_width="0dp"
@@ -67,6 +80,15 @@
             android:textSize="15sp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFxPresets"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="6dp"
+            android:textSize="12sp"
+            android:text="@string/s_presets" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFxStop"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
@@ -74,99 +96,6 @@
             android:text="停止"
             android:textSize="12sp"
             android:visibility="gone" />
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="内置效果"
-        android:textColor="@color/textDim"
-        android:textSize="12sp"
-        android:paddingBottom="4dp" />
-
-    <!-- 效果预设：一键保存/恢复当前所有内置效果的数值与开关状态 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:background="@drawable/bg_card"
-        android:padding="6dp"
-        android:layout_marginBottom="4dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="效果预设"
-                android:textColor="@color/text"
-                android:textSize="12sp" />
-
-            <Spinner
-                android:id="@+id/spFxPreset"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="2dp">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnFxPresetSave"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="34dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="4dp"
-                android:textSize="11sp"
-                android:text="保存当前" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnFxPresetApply"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="4dp"
-                android:textSize="11sp"
-                android:text="一键应用" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnFxPresetOff"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="4dp"
-                android:textSize="11sp"
-                android:text="全部关闭" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnFxPresetDel"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="4dp"
-                android:textSize="11sp"
-                android:text="删除" />
-        </LinearLayout>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView

@@ -210,6 +210,9 @@ class DmxEngine(private val ble: BleManager) {
         ble.send(byteArrayOf(0xA0.toByte(), cmd.toByte(), arg.toByte()))
     }
 
+    /** 直接发送一帧已编码好的指令（RDM 等自定义帧用）。 */
+    fun sendRaw(frame: ByteArray) = ble.send(frame)
+
     // ---- 文件传输（dir = 相对 /fw 目录，空串 = 根目录）----
     fun sendUploadStart(dir: String, name: String, size: Int) = ble.send(DmxProtocol.encodeUploadStart(dir, name, size))
     fun sendUploadChunk(seq: Int, data: ByteArray) = ble.send(DmxProtocol.encodeUploadChunk(seq, data))

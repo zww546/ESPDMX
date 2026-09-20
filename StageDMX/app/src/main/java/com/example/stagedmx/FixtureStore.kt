@@ -299,6 +299,57 @@ class FixtureStore(context: Context) {
             return list.sortedBy { it.name }
         }
 
+    /**
+     * 用 RDM 扫到的信息新建一个灯型（**骨架灯型**）。
+     *
+     * ⚠ RDM 只能告诉我们"型号名 + 占用通道数"，拿不到每个通道的用途
+     *   （那要读 SLOT_INFO，很多灯根本不填）。所以这里生成的通道名是 CH1..CHn、
+     *   只有第 1 通道标了 DIM —— 通道数和型号是对的，**通道含义仍需要用户补充**，
+     *   或者之后导入同型号的灯库文件覆盖它。
+     *
+     * 这样做的价值：现场扫到一台灯库里没有的灯时，能立刻建出实例并推到推子上，
+     * 不用先去找厂家灯库文件。
+     *
+     * @return 新建的灯型
+     */
+    fun createFromRdm(
+        name: String,
+        manufacturer: String,
+        channelCount: Int,
+        mode: String = ""
+    ): FixtureDef {
+        val safeName = name.ifBlank { "RDM-${channelCount}CH" }.trim()
+        val safeManu = manufacturer.ifBlank { "RDM" }.trim()
+        val safeMode = mode.ifBlank { "${channelCount}CH" }
+        // id 里只留小写字母/数字/下划线，避免和导入的灯库 id 撞车时产生非法文件名
+        val slug = safeName.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+        var id = "rdm_${slug}_${channelCount}ch"
+        // 同名同通道数的灯型已存在 → 加后缀，不覆盖用户已有的
+        var n = 2
+        while (File(dir, "$id.json").exists()) id = "rdm_${slug}_${channelCount}ch_${n++}"
+
+        val channels = (1..channelCount).map { k ->
+            FixtureChannel(
+                number = k,
+                name = "CH$k",
+                originalName = "CH$k",
+                attribute = if (k == 1) "DIM" else "",
+                defaultValue = 0,
+                highlightValue = 255
+            )
+        }
+        val def = FixtureDef(
+            id = id,
+            name = safeName,
+            manufacturer = safeManu,
+            mode = safeMode,
+            channelCount = channelCount,
+            channels = channels
+        )
+        File(dir, "$id.json").writeText(fixtureToJson(def).toString(2))
+        return def
+    }
+
     /** 指定原始格式（"xml"/"d4"/"r20"）的灯库列表（按是否保存了该格式原始文件过滤）。 */
     fun fixturesOfFormat(ext: String): List<FixtureDef> =
         fixtures.filter { File(dir, "${it.id}.$ext").exists() }
