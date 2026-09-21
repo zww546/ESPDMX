@@ -89,6 +89,7 @@ static volatile bool     s_last_ok[DMX_UNIVERSES];
 static inline void dmx_transceiver_tx(const dmx_out_t *o);
 static inline void dmx_transceiver_rx(const dmx_out_t *o);
 static inline void dmx_transceiver_idle(const dmx_out_t *o);
+static bool dmx_install_driver(dmx_out_t *o);   // RDM 结束后整口重装要用
 
 // ---- RDM 用的输出暂停/恢复 ----
 // RDM 要独占总线：控制器发请求、灯具应答，期间不能再有 DMX 帧插进来。
@@ -130,12 +131,24 @@ bool dmx_rdm_mode(uint8_t universe, bool on)
         gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
         uart_flush_input(o->port);
     } else {
-        // 解绑 RX：接收通路整个消失，不会再有 RX 溢出/伪 break 中断
-        if (!dmx_set_pin(o->port, o->tx_pin, -1, -1)) {
-            ESP_LOGE(TAG, "U%d RDM: 恢复引脚失败", universe + 1);
+        // ⚠ 只调 dmx_set_pin 把引脚解绑是**不够的** —— 实测踩过：
+        //   RDM 扫描跑完后 U1 的发送会变成"瞬时完成"（fps 从 41 飙到 250+，
+        //   ok=1 但一帧根本不再耗时 22.6ms），也就是 UART 没在移出数据。
+        //   现象是"灯收不到有效 DMX → 复位、乱动"，而且**只能重启恢复**。
+        //   原因：RDM 会话把驱动与 UART 的状态都改了（收发器交给 RTS 控制、
+        //   RX 被绑定、时序常量按 RDM 走），仅解绑引脚解不开这些。
+        //
+        //   所以这里**整口重装**：delete + install，保证回到安装时的干净状态。
+        //   此时 DMX 输出任务已被 dmx_output_pause() 停住，重装是安全的。
+        if (dmx_driver_is_installed(o->port)) {
+            dmx_driver_delete(o->port);
+        }
+        if (!dmx_install_driver(o)) {
+            ESP_LOGE(TAG, "U%d RDM: 驱动重装失败 —— DMX 输出可能已停", universe + 1);
             return false;
         }
         dmx_transceiver_tx(o);      // 收回方向控制：保持发送态
+        ESP_LOGI(TAG, "U%d RDM: 驱动已重装，DMX 输出恢复正常", universe + 1);
     }
     return true;
 }

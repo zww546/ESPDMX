@@ -1,0 +1,12 @@
+# 控制台走原生 USB-Serial-JTAG（和主控一致）
+#
+# 为什么必须显式指定：ESP32-S3 的默认是 console on UART0，
+# 而多数 S3 开发板插电脑上的那个口是**原生 USB**（USB-Serial-JTAG）。
+# 两者不是同一个口 —— 控制台留在 UART0 的话，USB 口上什么都不会出现，
+# 看起来就像"板子没启动"。
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# 日志级别
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
