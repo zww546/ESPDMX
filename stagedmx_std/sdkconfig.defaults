@@ -1,34 +1,37 @@
 CONFIG_IDF_TARGET="esp32s3"
 
-# 16MB Flash + 自定义分区
+# 16MB flash + custom partition table
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# 控制台走 USB-Serial/JTAG
+# Console on USB-Serial/JTAG
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
-# ===== DMX 时序（承重配置，勿删）=====
-# dmx.c 顶部记录了历史故障：UART TX_DONE 中断被 cache 停顿饿死 → 驱动卡在
-# DMX_STATUS_SENDING → 之后 dmx_send() 恒返回 0，DMX 停发但 BLE 一切正常，
-# 只能重启恢复。把 DMX ISR 常驻 IRAM 后该故障彻底消失。
-# ⚠ 这条以前只存在于被提交的 sdkconfig（idf.py 生成的派生文件）里，改 defaults 不生效；
-#   现在显式写在这里，sdkconfig 已从版本控制移除。
+# ===== DMX timing (load-bearing, do not delete) =====
+# dmx.c documents the historical failure: the UART TX_DONE interrupt was starved
+# by a cache stall -> the driver got stuck in DMX_STATUS_SENDING -> dmx_send()
+# returned 0 forever; DMX stopped while BLE kept working, and only a reboot
+# recovered it. Keeping the DMX ISR resident in IRAM made that failure disappear.
+# NOTE: this line used to live only in the committed sdkconfig (a generated file),
+# so editing the defaults had no effect. It is explicit here now, and sdkconfig
+# has been removed from version control.
 CONFIG_DMX_ISR_IN_IRAM=y
 
-# FATFS 长文件名（灯库文件名如 "omarte_ares_p7_34_channels.xml" 远超 8.3 限制）
+# FATFS long file names (fixture file names such as
+# "omarte_ares_p7_34_channels.xml" are far beyond the 8.3 limit)
 CONFIG_FATFS_LFN_NONE=n
 CONFIG_FATFS_LFN_HEAP=y
 
-# 逻辑扇区 512（专业控台 U盘兼容标准）
+# 512-byte logical sectors (matches professional console USB-stick standard)
 CONFIG_FATFS_SECTOR_512=y
 CONFIG_WL_SECTOR_SIZE_512=y
 
-# FreeRTOS 1000Hz
+# FreeRTOS 1000 Hz
 CONFIG_FREERTOS_HZ=1000
 
-# 蓝牙 NimBLE（从机/广播）
+# BLE NimBLE (peripheral / broadcaster)
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
@@ -36,21 +39,23 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
 # CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
 # CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512
-# host_task 会在其内做文件列表/挂载等大栈操作，默认 4KB 太小会栈溢出
+# The host task does large-stack work (file listing / mounting); the default
+# 4KB stack overflows, hence 8KB.
 CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192
 
-# USB MSC U盘模式 (TinyUSB)
+# USB MSC (mass storage) mode via TinyUSB
 CONFIG_TINYUSB=y
 CONFIG_TINYUSB_MSC_ENABLED=y
-# MSC 写缓冲必须 >= WL sector size (4096)，否则 tinyusb_msc_new_storage_spiflash 会拒绝创建
+# The MSC write buffer must be >= the WL sector size (4096), otherwise
+# tinyusb_msc_new_storage_spiflash refuses to create the storage.
 CONFIG_TINYUSB_MSC_BUFSIZE=4096
 CONFIG_TINYUSB_MSC_MOUNT_PATH="/fw"
 CONFIG_TINYUSB_CDC_ENABLED=n
 CONFIG_TINYUSB_HID_ENABLED=n
-# PSRAM 用于 RAM 盘
+# PSRAM used for the RAM disk
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
-# 增大 malloc 上限以容纳 RAM 盘
+# Raise the malloc limit to accommodate the RAM disk
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
