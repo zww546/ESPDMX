@@ -37,82 +37,16 @@ static void set_err(const char *fmt, ...)
 
 const char *rdm_last_error(void) { return s_err; }
 
-// ==================== 模拟模式 ====================
-// 没有真实 RDM 灯具时，用下面这张表填充扫描结果。
-// 字段与真实 RDM GET 到的完全同构（DEVICE_INFO + 5 段文本参数），
-// 所以 App 的解析、显示、改址、识别全都能照常验证。
-static bool s_simulate = true;      // 默认开：现场没有 RDM 灯时先验证 UI
+// ==================== 说明 ====================
+// 这里只做**真实** RDM 扫描。
+//
+// 曾经有一份"模拟模式"（一个默认打开的开关）：扫描时不碰总线、直接填一张
+// 内置虚拟灯具表，用来在没有真灯时验证 App 的 UI。它有两个害处：
+//   1. 默认开 → 真灯在场也扫不到，排查时极易误判成"总线/接线有问题"；
+//   2. 它让"扫描成功"这件事变得不可信。
+// 现在有了 stagedmx_sniff（第二块 S3 当灯具模拟器，走真实 RDM 协议），
+// 那份假数据已无必要，整体移除。
 
-void rdm_set_simulate(bool on) { s_simulate = on; }
-bool rdm_get_simulate(void)    { return s_simulate; }
-
-/** 虚拟灯具表：{UID, 厂商, 型号描述, 设备标签, 地址, 通道数, 模式名, 模式号, 模式数,
- *               型号ID, 产品类别, 软件版本ID, 软件标签} */
-typedef struct {
-    uint8_t uid[6];
-    const char *manufacturer;
-    const char *model_desc;
-    const char *device_label;
-    uint16_t addr;
-    uint16_t footprint;
-    const char *personality;
-    uint8_t  pers_num, pers_count;
-    uint16_t model_id;
-    uint16_t category;
-    uint32_t sw_id;
-    const char *sw_label;
-} rdm_sim_t;
-
-static const rdm_sim_t SIM_A[] = {
-    { {0x4F,0x4D,0x00,0x12,0xA4}, "OMARTE", "ARES-S4",       "摇头灯-左", 1,  20, "Basic",    1, 3, 0x0102, 0x0102, 0x00010203, "V1.2.3" },
-    { {0x4F,0x4D,0x00,0x12,0xA5}, "OMARTE", "ARES-S4",       "摇头灯-中", 21, 20, "Basic",    1, 3, 0x0102, 0x0102, 0x00010203, "V1.2.3" },
-    { {0x4F,0x4D,0x00,0x33,0xB1}, "OMARTE", "Ares-FP2600",   "图案灯",    41, 39, "Extended", 2, 2, 0x0201, 0x0103, 0x00020508, "V2.5.8" },
-    { {0x4F,0x4D,0x00,0x77,0x02}, "OMARTE", "BeeEye-19-40w", "矩阵灯",    80, 20, "Standard", 1, 2, 0x0305, 0x0107, 0x00030100, "V3.1.0" },
-};
-static const rdm_sim_t SIM_B[] = {
-    { {0x4F,0x4D,0x00,0x55,0xC7}, "OMARTE", "BeeEye-19-40w", "B通道-矩阵", 1, 20, "Standard", 1, 2, 0x0305, 0x0107, 0x00030100, "V3.1.0" },
-    { {0x4F,0x4D,0x00,0x55,0xC8}, "OMARTE", "ARES-S4",       "B通道-摇头", 21, 20, "Basic",   1, 3, 0x0102, 0x0102, 0x00010203, "V1.2.3" },
-};
-
-int rdm_sim_count(uint8_t universe)
-{
-    if (universe == 0) return (int)(sizeof(SIM_A) / sizeof(SIM_A[0]));
-    if (universe == 1) return (int)(sizeof(SIM_B) / sizeof(SIM_B[0]));
-    return 0;
-}
-
-/** 用虚拟灯具填充设备表。 */
-static int rdm_sim_fill(uint8_t universe)
-{
-    const rdm_sim_t *tbl = (universe == 0) ? SIM_A : (universe == 1) ? SIM_B : NULL;
-    const int n = rdm_sim_count(universe);
-    if (!tbl) return 0;
-    for (int i = 0; i < n && i < RDM_MAX_DEVICES; i++) {
-        rdm_device_t *d = dev_slot(universe, i);
-        if (!d) break;
-        const rdm_sim_t *s = &tbl[i];
-        memset(d, 0, sizeof(*d));
-        memcpy(d->uid, s->uid, 6);
-        d->valid = true;
-        d->rdm_version          = 0x0100;      // RDM 1.0
-        d->model_id             = s->model_id;
-        d->product_category     = s->category;
-        d->software_version_id  = s->sw_id;
-        d->footprint            = s->footprint;
-        d->personality          = s->pers_num;
-        d->personality_count    = s->pers_count;
-        d->start_addr           = s->addr;
-        d->sub_device_count     = 0;
-        d->sensor_count         = (uint8_t)(i % 3);      // 有的带 0/1/2 个传感器
-        snprintf(d->manufacturer,     RDM_LABEL_LEN, "%s", s->manufacturer);
-        snprintf(d->model_desc,       RDM_LABEL_LEN, "%s", s->model_desc);
-        snprintf(d->device_label,     RDM_LABEL_LEN, "%s", s->device_label);
-        snprintf(d->software_label,   RDM_LABEL_LEN, "%s", s->sw_label);
-        snprintf(d->personality_desc, RDM_LABEL_LEN, "%s", s->personality);
-    }
-    s_count[universe] = n;
-    return n;
-}
 
 void rdm_init(void)
 {
@@ -212,22 +146,28 @@ static void read_device_params(uint8_t universe, dmx_port_t port, int idx)
     d->personality_desc[0] = '\0';
     if (d->personality > 0) {
         const uint8_t pn = d->personality;
+        // ⚠ rdm_request_t 里有**两个** format，别搞混：
+        //     request->format  —— 请求里参数数据的格式（这里要发 1 字节模式号）
+        //     rdm_send_request() 的第 3 个参数 —— 应答里参数数据的格式
+        //   漏掉 request->format 会直接踩 utils.c:23 的断言
+        //   （request->format != NULL || request->pd == NULL）→ 控台重启。
         const rdm_request_t req = {
             .dest_uid = &uid,
             .sub_device = RDM_SUB_DEVICE_ROOT,
             .cc = RDM_CC_GET_COMMAND,
             .pid = RDM_PID_DMX_PERSONALITY_DESCRIPTION,
+            .format = "b",          // ← 请求：1 字节模式号
             .pd = &pn,
             .pdl = 1,
         };
-        uint8_t pd[2 + RDM_LABEL_LEN];
+        // 应答 = 模式号(1B) + 最大通道数(2B) + 名称(ASCII)
+        // 所以要按 "bwa$" 读，才能把名称落到 pd+3；只写 "w$" 的话名称永远是空的。
+        uint8_t pd[3 + RDM_LABEL_LEN];
         memset(pd, 0, sizeof(pd));
-        if (rdm_send_request(port, &req, "w$", pd, sizeof(pd), &ack) > 0) {
-            // 应答 = 模式号(1B) + 最大通道数(2B) + 名称
-            const size_t copy = sizeof(pd) - 3;
+        if (rdm_send_request(port, &req, "bwa$", pd, sizeof(pd), &ack) > 0) {
+            const size_t copy = RDM_LABEL_LEN - 1;
             memcpy(d->personality_desc, pd + 3, copy);
             d->personality_desc[copy] = '\0';
-            d->personality_desc[RDM_LABEL_LEN - 1] = '\0';
         }
     }
 
@@ -243,14 +183,6 @@ int rdm_scan(uint8_t universe)
     if (!s_dev) { set_err("RDM 未初始化（PSRAM 分配失败）"); return -1; }
     if (universe >= DMX_UNIVERSES) { set_err("宇宙号无效"); return -1; }
     if (!dmx_port_ready(universe)) { set_err("该宇宙的 DMX 驱动未就绪"); return -1; }
-
-    // ---- 模拟模式：不碰总线，直接给虚拟灯具（用于无真实 RDM 灯时验证 UI）----
-    if (s_simulate) {
-        const int n = rdm_sim_fill(universe);
-        ESP_LOGW(TAG, "U%d 【模拟模式】返回 %d 台虚拟灯具（未访问 RDM 总线）",
-                 universe + 1, n);
-        return n;
-    }
 
     const dmx_port_t port = (dmx_port_t)dmx_port_of(universe);
     s_count[universe] = 0;
@@ -324,20 +256,6 @@ bool rdm_set_address(uint8_t universe, const uint8_t uid[6], uint16_t addr)
         set_err("RDM 不可用");
         return false;
     }
-    // 模拟模式：不动总线，只更新虚拟灯具的地址（保证 UI 流程可完整走通）
-    if (s_simulate) {
-        for (int i = 0; i < s_count[universe]; i++) {
-            rdm_device_t *d = dev_slot(universe, i);
-            if (d && memcmp(d->uid, uid, 6) == 0) {
-                d->start_addr = addr;
-                ESP_LOGW(TAG, "U%d 【模拟】改址 %02X%02X:%02X%02X%02X%02X → %u",
-                         universe + 1, uid[0], uid[1], uid[2], uid[3], uid[4], uid[5], addr);
-                return true;
-            }
-        }
-        set_err("模拟设备中找不到该 UID");
-        return false;
-    }
     const dmx_port_t port = (dmx_port_t)dmx_port_of(universe);
     rdm_uid_t u;
     to_uid(uid, &u);
@@ -381,18 +299,6 @@ int rdm_set_addresses(uint8_t universe, const rdm_addr_set_t *list, int count)
     }
     if (!list || count <= 0) { set_err("没有要改的灯具"); return -1; }
 
-    if (s_simulate) {
-        int ok = 0;
-        for (int i = 0; i < count; i++) {
-            for (int k = 0; k < s_count[universe]; k++) {
-                rdm_device_t *d = dev_slot(universe, k);
-                if (d && memcmp(d->uid, list[i].uid, 6) == 0) { d->start_addr = list[i].addr; ok++; break; }
-            }
-        }
-        ESP_LOGW(TAG, "U%d 【模拟】批量改址 %d/%d 台", universe + 1, ok, count);
-        return ok;
-    }
-
     const dmx_port_t port = (dmx_port_t)dmx_port_of(universe);
     if (!dmx_output_pause(universe)) { set_err("无法暂停 DMX 输出"); return -1; }
     if (!dmx_rdm_mode(universe, true)) {
@@ -431,13 +337,6 @@ bool rdm_identify(uint8_t universe, const uint8_t uid[6], bool on){
     if (!s_dev || universe >= DMX_UNIVERSES || !dmx_port_ready(universe)) {
         set_err("RDM 不可用");
         return false;
-    }
-    // 模拟模式：不动总线（真实灯具不在场，发出去也没人应）
-    if (s_simulate) {
-        ESP_LOGW(TAG, "U%d 【模拟】识别 %02X%02X:%02X%02X%02X%02X %s",
-                 universe + 1, uid[0], uid[1], uid[2], uid[3], uid[4], uid[5],
-                 on ? "开" : "关");
-        return true;
     }
     const dmx_port_t port = (dmx_port_t)dmx_port_of(universe);
     rdm_uid_t u;

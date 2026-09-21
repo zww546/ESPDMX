@@ -274,7 +274,7 @@ static void rdm_task(void *arg)
         switch (req) {
         case RDM_REQ_SCAN: {
             int found = rdm_scan(uni);
-            // 0x89 扫描头：count(1) universe(1) ok(1) errLen(1) err…
+            // 0x89 扫描头：0x89 count(1) universe(1) ok(1) errLen(1) err…
             uint8_t buf[128];
             const char *err = (found <= 0) ? rdm_last_error() : "";
             size_t n = strlen(err);
@@ -284,12 +284,11 @@ static void rdm_task(void *arg)
             buf[i++] = (uint8_t)(found < 0 ? 0 : found);
             buf[i++] = uni;
             buf[i++] = (found > 0) ? 0 : 1;
-            buf[i++] = rdm_get_simulate() ? 1 : 0;   // 模拟标记：App 要显式标出来
             buf[i++] = (uint8_t)n;
             memcpy(&buf[i], err, n);
             i += n;
-            ESP_LOGI(TAG, "RDM 回 0x89: found=%d 模拟=%d 帧长=%d connected=%d",
-                     found, (int)rdm_get_simulate(), i, (int)s_connected);
+            ESP_LOGI(TAG, "RDM 回 0x89: found=%d 帧长=%d connected=%d",
+                     found, i, (int)s_connected);
             ble_dmx_notify(buf, (uint16_t)i);
             for (int k = 0; k < (found > 0 ? found : 0); k++) {
                 rdm_send_device(uni, k);
@@ -404,14 +403,6 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         if (len < 10) return;
         uint16_t addr = ((uint16_t)d[8] << 8) | d[9];
         rdm_post(RDM_REQ_SETADDR, d[1], &d[2], 0, addr);
-        break;
-    }
-    case 0x43: { // 模拟模式开关: 0x43 on  （没有真实 RDM 灯具时用虚拟灯具验证 UI）
-        if (len < 2) return;
-        rdm_set_simulate(d[1] != 0);
-        uint8_t resp[2] = { 0x8B, 0 };      // 0 = 成功
-        ble_dmx_notify(resp, 2);
-        ESP_LOGW(TAG, "RDM 模拟模式: %s", d[1] ? "开（返回虚拟灯具）" : "关（真实扫描）");
         break;
     }
     case 0x44: { // 批量改址: 0x44 universe count (uid(6) addrHi addrLo)*

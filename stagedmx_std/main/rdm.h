@@ -85,20 +85,6 @@ bool rdm_identify(uint8_t universe, const uint8_t uid[6], bool on);
 /** 上一次操作的错误描述（供 UI 提示）。 */
 const char *rdm_last_error(void);
 
-// ---------------------------------------------------------------------------
-// 模拟模式（没有真实 RDM 灯具时用）
-//
-// 打开后 [rdm_scan] **不碰总线**，直接用固件内置的虚拟灯具填充结果，
-// 以便验证 App 的解析/显示与整条 BLE 链路。参数与真实 RDM GET 到的完全同构。
-//
-// ⚠ 这只是数据来源的替换：真正的 RDM 协议、发现算法、时序仍然走 esp_dmx 库。
-//   关掉它（或在屏上看到"模拟"标记）即为真实扫描。
-// ---------------------------------------------------------------------------
-void rdm_set_simulate(bool on);
-bool rdm_get_simulate(void);
-/** 模拟的虚拟灯具数量（按宇宙）。 */
-int rdm_sim_count(uint8_t universe);
-
 #ifdef __cplusplus
 }
 #endif
