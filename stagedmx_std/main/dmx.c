@@ -40,7 +40,21 @@ static const char *TAG = "dmx";
 //   不会变成 C 预处理宏（实测确认过）。改这一行，或者用
 //   target_compile_definitions(${COMPONENT_LIB} PRIVATE DMX_RX_ENABLE=1)。
 #ifndef DMX_RX_ENABLE
+// 接收功能保持关闭：没有消费者，开着只有副作用（半双工回波 / 伪 break 搅动状态机）。
+// ⚠ 实测复核（2026-09）：为验证 EN/RX 收回修复临时置 1，U2 立刻复现了
+//   "fps 从 41 飙到 237、ok=1 但一帧不再耗时 22.6ms" 的故障形态 ——
+//   说明当初关掉它的判断**现在依然成立**。要真正恢复接收，
+//   除了打开这个宏，还必须先解决伪 break 问题并补上接收任务。
 #define DMX_RX_ENABLE       0
+#endif
+
+// 编译期开关：RDM 重装后是否把被 UART 借走的 EN/RX 收回来（见 dmx_pins_reclaim）。
+//   1 = 收回（生产值）
+//   0 = 不收回 —— **仅用于 A/B 对照**，用来证明这个修复确实在起作用：
+//       置 0 时 EN 仍由 UART RTS 驱动，gpio_set_level() 对它无效，
+//       于是打开 DMX_RX_ENABLE 后 EN 也不会在收发之间翻转。
+#ifndef DMX_RECLAIM_PINS
+#define DMX_RECLAIM_PINS    1
 #endif
 
 // 历史说明（勿删，避免以后重复踩坑）：
@@ -97,6 +111,13 @@ static bool dmx_install_driver(dmx_out_t *o);   // RDM 结束后整口重装要�
 static volatile bool s_paused[DMX_UNIVERSES];
 static SemaphoreHandle_t s_pause_ack[DMX_UNIVERSES];
 
+// RDM 结束后的"整口重装"握手。
+// 请求方（rdm_task，跑在 core 0）只置标志，真正执行重装的是 **core 1 的 dmx_task**。
+// 原因见 dmx_rdm_mode()：esp_intr_alloc() 把中断路由到调用核，谁 install
+// 中断就落在谁身上 —— 在 core 0 重装会把 DMX 中断永久搬到射频核。
+static volatile bool s_reinstall_req[DMX_UNIVERSES];
+static SemaphoreHandle_t s_reinstall_ack[DMX_UNIVERSES];
+
 bool dmx_output_pause(uint8_t universe)
 {
     if (universe >= DMX_UNIVERSES || !s_out[universe].ok) return false;
@@ -104,6 +125,10 @@ bool dmx_output_pause(uint8_t universe)
     if (!s_pause_ack[universe]) {
         s_pause_ack[universe] = xSemaphoreCreateBinary();
         if (!s_pause_ack[universe]) return false;
+    }
+    if (!s_reinstall_ack[universe]) {
+        s_reinstall_ack[universe] = xSemaphoreCreateBinary();
+        if (!s_reinstall_ack[universe]) return false;
     }
     xSemaphoreTake(s_pause_ack[universe], 0);      // 清掉旧信号
     s_paused[universe] = true;
@@ -131,24 +156,29 @@ bool dmx_rdm_mode(uint8_t universe, bool on)
         gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
         uart_flush_input(o->port);
     } else {
-        // ⚠ 只调 dmx_set_pin 把引脚解绑是**不够的** —— 实测踩过：
-        //   RDM 扫描跑完后 U1 的发送会变成"瞬时完成"（fps 从 41 飙到 250+，
-        //   ok=1 但一帧根本不再耗时 22.6ms），也就是 UART 没在移出数据。
-        //   现象是"灯收不到有效 DMX → 复位、乱动"，而且**只能重启恢复**。
-        //   原因：RDM 会话把驱动与 UART 的状态都改了（收发器交给 RTS 控制、
-        //   RX 被绑定、时序常量按 RDM 走），仅解绑引脚解不开这些。
+        // ⚠ 重装**不能在这里做**。本函数由 rdm_scan() → rdm_task 调进来，
+        //   而 rdm_task 钉在 core 0（ble_dmx.c）。dmx_driver_install() 内部
+        //   的 esp_intr_alloc() 会把中断路由到「调用它的那个核」，于是在 core 0
+        //   重装 = 把 DMX 的 UART/GPTimer 中断从 core 1 永久搬到 core 0，
+        //   让它去和 BLE/Wi-Fi 抢 → dmx_wait_sent() 恒超时 → dmx_send() 恒返回 0
+        //   → fail 以帧率增长、灯收不到 DMX，**只能重启恢复**。
         //
-        //   所以这里**整口重装**：delete + install，保证回到安装时的干净状态。
-        //   此时 DMX 输出任务已被 dmx_output_pause() 停住，重装是安全的。
-        if (dmx_driver_is_installed(o->port)) {
-            dmx_driver_delete(o->port);
-        }
-        if (!dmx_install_driver(o)) {
-            ESP_LOGE(TAG, "U%d RDM: 驱动重装失败 —— DMX 输出可能已停", universe + 1);
+        //   所以这里只发请求，实际重装交给 core 1 的 dmx_task 执行
+        //   （它此刻正停在 s_paused 分支里，没有在用驱动，是安全点）。
+        if (!s_reinstall_ack[universe]) {
+            ESP_LOGE(TAG, "U%d RDM: 重装信号量未创建（dmx_output_pause 没跑过？）",
+                     universe + 1);
             return false;
         }
-        dmx_transceiver_tx(o);      // 收回方向控制：保持发送态
-        ESP_LOGI(TAG, "U%d RDM: 驱动已重装，DMX 输出恢复正常", universe + 1);
+        xSemaphoreTake(s_reinstall_ack[universe], 0);   // 清掉旧信号
+        s_reinstall_req[universe] = true;
+        if (xSemaphoreTake(s_reinstall_ack[universe], pdMS_TO_TICKS(500)) != pdTRUE) {
+            s_reinstall_req[universe] = false;
+            ESP_LOGE(TAG, "U%d RDM: 驱动重装超时（core1 的 dmx_task 没响应）",
+                     universe + 1);
+            return false;
+        }
+        ESP_LOGI(TAG, "U%d RDM: 驱动重装完成，DMX 输出恢复正常", universe + 1);
     }
     return true;
 }
@@ -227,6 +257,45 @@ static inline void dmx_transceiver_idle(const dmx_out_t *o)
 #endif
 }
 
+/**
+ * RDM 结束后，把被 UART 外设"借走"的引脚收回来。
+ *
+ * ⚠ 为什么必须做：dmx_rdm_mode(true) 用 dmx_set_pin(port, tx, rx, en_pin)
+ *   把 **EN 绑成了 UART RTS**、**RX 绑成了 UART RX**。而回程的重装解不开它们：
+ *     · IDF uart_set_pin() 只在「新引脚 >= 0」时才释放旧引脚
+ *       （uart.c: `uart_release_pin(uart, tx>=0, rx>=0, rts>=0, cts>=0)`），
+ *       而 dmx_install_driver() 传的是 rts = -1（RX 在 DMX_RX_ENABLE=0 时也是 -1）
+ *       → 那两路 release=false，**根本不会被释放**；
+ *     · dmx_uart_deinit() 只做 periph_module_disable()，不碰引脚。
+ *   后果：重装之后 EN 仍由 RTS 信号驱动，而 dmx_transceiver_tx/rx() 用的
+ *   gpio_set_level() 只写 GPIO_OUT_REG、不改 GPIO_FUNCx_OUT_SEL_CFG → **对它无效**。
+ *
+ * 当前 DMX_RX_ENABLE=0 时 EN 恰好没暴露：重装里的 periph_module_reset() 把
+ * conf0.sw_rts 清零，而 sw_rts=0 正是发送态（由 RDM 能正常应答反推得到），
+ * 与"常驻发送态"的意图一致 —— 但这是巧合。一旦打开 DMX_RX_ENABLE，
+ * dmx_transceiver_rx() 需要把 EN 拉低，就会立刻失效。
+ */
+static void dmx_pins_reclaim(const dmx_out_t *o)
+{
+    if (o->en_pin >= 0) {
+        // gpio_set_direction(OUTPUT) → gpio_output_enable()
+        //   → gpio_hal_matrix_out_default()
+        //   → REG_WRITE(GPIO_FUNC0_OUT_SEL_CFG_REG + gpio*4, SIG_GPIO_OUT_IDX)
+        // 正好把输出源从 UART RTS 改回普通 GPIO，恢复 gpio_set_level() 的控制权。
+        gpio_set_direction((gpio_num_t)o->en_pin, GPIO_MODE_OUTPUT);
+    }
+#if !DMX_RX_ENABLE
+    if (o->rx_pin >= 0) {
+        // 本意是"接收通路整个不存在"（见 dmx_install_driver 的说明）。
+        // gpio_reset_pin() 内部会 gpio_input_disable()，即切断焊盘到 GPIO 矩阵的
+        // 输入通路 —— 这正是 IDF 自己在 uart_release_pin() 里释放 RX 引脚所做的
+        // 同一件事。顺带使能上拉，避免 SP3485 的 RO 高阻时悬空拾噪
+        // （否则 RX 溢出 / 伪 break 中断又会回来）。
+        gpio_reset_pin((gpio_num_t)o->rx_pin);
+    }
+#endif
+}
+
 static bool dmx_install_driver(dmx_out_t *o)
 {
     dmx_config_t cfg = DMX_CONFIG_DEFAULT;
@@ -299,7 +368,32 @@ static void dmx_task(void *arg)
         if (s_paused[u]) {
             dmx_transceiver_idle(o);
             if (s_pause_ack[u]) xSemaphoreGive(s_pause_ack[u]);
-            while (s_paused[u]) vTaskDelay(pdMS_TO_TICKS(5));
+            while (s_paused[u]) {
+                // RDM 结束后的整口重装 —— **必须在本任务（core 1）里做**。
+                // ⚠ 这就是"RDM 扫描后 DMX 永久不工作、只能重启恢复"的根因：
+                //   原先这段重装在 rdm_task(core 0) 里执行，而 esp_intr_alloc()
+                //   把中断路由到调用核 → DMX 的 UART/GPTimer 中断被搬到 core 0
+                //   去和 BLE/Wi-Fi 抢 → dmx_wait_sent() 永远超时 →
+                //   dmx_send() 永远返回 0 → fail 以帧率持续增长。
+                if (s_reinstall_req[u]) {
+                    if (dmx_driver_is_installed(o->port)) {
+                        dmx_driver_delete(o->port);
+                    }
+                    bool okr = dmx_install_driver(o);
+#if DMX_RECLAIM_PINS
+                    dmx_pins_reclaim(o);   // ← 先收回被 UART 借走的 EN/RX，见函数说明
+#else
+                    ESP_LOGW(TAG, "U%d RDM: 【A/B 对照】跳过引脚收回", u + 1);
+#endif
+                    dmx_transceiver_tx(o); // 现在这一句才真正作用到引脚上
+                    s_out[u].ok = okr;
+                    s_reinstall_req[u] = false;
+                    ESP_LOGW(TAG, "U%d RDM: 驱动已在 CPU%d 重装 ok=%d",
+                             u + 1, xPortGetCoreID(), (int)okr);
+                    if (s_reinstall_ack[u]) xSemaphoreGive(s_reinstall_ack[u]);
+                }
+                vTaskDelay(pdMS_TO_TICKS(5));
+            }
             continue;
         }
         // 半双工：驱动总线前先切到发送态（DE=1, /RE=1）。
@@ -343,16 +437,32 @@ static void dmx_telemetry_task(void *arg)
             last[u] = f;
             s_fps[u] = (uint8_t)(fps > 255 ? 255 : fps);
             uint16_t off = (uint16_t)u * DMX_UNIVERSE_SIZE;
-            // 取该宇宙末端的最后 16 个通道（避免超出 1024 缓冲：u=1 时 off=1024）
-            uint16_t base = (uint16_t)(off + DMX_UNIVERSE_SIZE);
-            if (base > DMX_CHANNELS) base = DMX_CHANNELS;
-            uint16_t start16 = (uint16_t)(base - 16);
-            int nz = 0; for (int i = 0; i < 16; i++) if (ch[start16 + i]) nz++;
-            ESP_LOGI(TAG, "U%d frm=%u fps=%u ok=%d fail=%u nz16=%d ch%d..%d=%d %d %d %d %d %d %d %d",
-                     u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad, nz,
-                     start16 + 1, start16 + 16,
-                     ch[start16], ch[start16+1], ch[start16+2], ch[start16+3],
-                     ch[start16+4], ch[start16+5], ch[start16+6], ch[start16+7]);
+
+            // ---- 数据窗口 ----
+            // 以前这里只看"该宇宙末端 16 个通道"（U1 = ch497..512、U2 = ch1009..1024），
+            // 而灯具**绝大多数配在低地址** —— 于是这块遥测在回答"推子到底有没有写进去"
+            // 时永远是 0，只会误导（实测踩过：模拟器报 非零=10，这里却写 nz16=0）。
+            // 现在改成看整个宇宙：非零总数 + 第一个非零通道号 + **开头 8 个通道的值**。
+            // 开销可忽略：512 次比较，每 5 秒一次，而且跑在 core 0 的遥测任务里，
+            // 不在 DMX 输出任务上。
+            int nz = 0;
+            int first_nz = 0;                       // 0 = 全零（用 1-based 全局通道号）
+            for (int i = 0; i < DMX_UNIVERSE_SIZE; i++) {
+                if (ch[off + i]) {
+                    nz++;
+                    if (first_nz == 0) first_nz = off + i + 1;
+                }
+            }
+            char firstbuf[10];
+            if (first_nz) snprintf(firstbuf, sizeof(firstbuf), "ch%d", first_nz);
+            else          snprintf(firstbuf, sizeof(firstbuf), "--");
+
+            ESP_LOGI(TAG,
+                     "U%d frm=%u fps=%u ok=%d fail=%u | 非零=%d 首个=%s | ch%d..%d=%d %d %d %d %d %d %d %d",
+                     u + 1, (unsigned)f, (unsigned)fps, (int)s_last_ok[u], (unsigned)bad,
+                     nz, firstbuf, off + 1, off + 8,
+                     ch[off], ch[off+1], ch[off+2], ch[off+3],
+                     ch[off+4], ch[off+5], ch[off+6], ch[off+7]);
         }
     }
 }
