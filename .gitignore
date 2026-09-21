@@ -14,6 +14,13 @@ stagedmx_std/managed_components/
 # sdkconfig 是 idf.py 生成的派生文件：入库会永久屏蔽 sdkconfig.defaults
 # （改 defaults 不生效）。只保留 sdkconfig.defaults。
 stagedmx_std/sdkconfig
+# 同理：stagedmx_sniff/sdkconfig 也是 idf.py 生成的派生文件。
+# 它以前被误入库 —— 结果是每次 idf.py build 都会改它、脏掉工作区。
+# ⚠ .gitignore 对「已跟踪」的文件无效：还需要执行一次
+#      git rm --cached stagedmx_sniff/sdkconfig
+#   把它从索引里摘掉，之后才会真正被忽略。
+stagedmx_sniff/sdkconfig
+stagedmx_sniff/build/
 *.elf
 *.map
 # Python 工具链缓存
