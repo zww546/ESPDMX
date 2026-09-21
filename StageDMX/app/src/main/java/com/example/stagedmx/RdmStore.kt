@@ -155,10 +155,6 @@ fun encodeRdmSetAddresses(universe: Int, list: List<Pair<ByteArray, Int>>): Byte
     return out
 }
 
-/** 开关固件模拟模式（没有真实 RDM 灯具时返回虚拟灯具）。 */
-fun encodeRdmSimulate(on: Boolean): ByteArray =
-    byteArrayOf(DmxProtocol.CMD_RDM_SIMULATE.toByte(), if (on) 1 else 0)
-
 /**
  * 按当前顺序把地址依次分配下去（自动排地址）。
  *

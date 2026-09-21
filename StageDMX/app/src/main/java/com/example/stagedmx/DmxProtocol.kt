@@ -69,7 +69,6 @@ object DmxProtocol {
     const val CMD_RDM_SCAN: Int = 0x40        // + universe
     const val CMD_RDM_IDENTIFY: Int = 0x41    // + universe + uid(6) + on
     const val CMD_RDM_SET_ADDR: Int = 0x42    // + universe + uid(6) + addrHi + addrLo
-    const val CMD_RDM_SIMULATE: Int = 0x43    // + on（无真实 RDM 灯时用虚拟灯具）
     const val CMD_RDM_SET_ADDRS: Int = 0x44   // + universe + count + (uid(6) addr)* 批量改址
 
     // ESP32 → App notify 响应

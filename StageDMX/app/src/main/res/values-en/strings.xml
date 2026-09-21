@@ -88,7 +88,6 @@
     <string name="s_scope_single">Scope: single</string>
     <string name="s_select_all">Select all</string>
     <string name="s_settings">Settings</string>
-    <string name="s_simulate">Simulate</string>
     <string name="s_speed_128">Speed: 128</string>
     <string name="s_spread_0">Spread: 0°</string>
     <string name="s_start_addr">Start addr</string>
@@ -307,7 +306,6 @@
     <string name="t_folder_operation_succeeded_name_let_it">Folder operation succeeded${name?.let { ": $it" } ?: ""}</string>
     <string name="t_for_a_full_channel_definition_import_the_mat">For a full channel definition, import the matching fixture library to overwrite it.</string>
     <string name="t_forward">Forward</string>
-    <string name="t_found_count_rdm_devices_if_simulate_simulate">Found $count RDM devices${if (simulate) " (simulated)" else ""}</string>
     <string name="t_global">Global</string>
     <string name="t_gobo_wheel_rotate">Gobo wheel rotate</string>
     <string name="t_gobo_wheel_swing">Gobo wheel swing</string>
@@ -372,7 +370,6 @@
     <string name="t_rdm_command_succeeded">RDM command succeeded</string>
     <string name="t_rdm_failed_err">RDM failed: $err</string>
     <string name="t_rdmdevices_size_devices_tap_a_row_for_all_pa">${rdmDevices.size} devices · tap a row for all parameters · Reorder lets you drag to sort and auto-assign addresses</string>
-    <string name="t_rdmlasterror_n_ntap_scan_to_retry_nor_turn_s">${rdmLastError}\n\nTap Scan to retry\nor turn Sim ON to test the UI with built-in virtual fixtures</string>
     <string name="t_report_sourcename_ifempty_archive_n">■ ${report.sourceName.ifEmpty { "archive" }}\n</string>
     <string name="t_reverse">Reverse</string>
     <string name="t_rgb_colour">RGB colour</string>
@@ -391,11 +388,6 @@
     <string name="t_service_discovery_failed_status">Service discovery failed $status</string>
     <string name="t_showndev_size_fixture_types_tap_to_download_">${shownDev.size} fixture types - tap to download to the app</string>
     <string name="t_showndev_size_items_tap_a_folder_to_enter_lo">${shownDev.size} items - tap a folder to enter, long-press for actions</string>
-    <string name="t_sim_off">Sim OFF</string>
-    <string name="t_sim_on">Sim ON</string>
-    <string name="t_simulated_data_rdmdevices_size_devices_tap_a">⚠ Simulated data · ${rdmDevices.size} devices · tap a row for all parameters, long-press to drag-sort</string>
-    <string name="t_simulation_off_scanning_the_real_rdm_bus">Simulation off - scanning the real RDM bus</string>
-    <string name="t_simulation_on_scanning_returns_the_firmware_">Simulation on - scanning returns the firmware\'s built-in virtual fixtures</string>
     <string name="t_sine">Sine</string>
     <string name="t_single">Single</string>
     <string name="t_skip">Skip</string>

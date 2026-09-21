@@ -88,7 +88,6 @@
     <string name="s_scope_single">作用范围：单台</string>
     <string name="s_select_all">全选</string>
     <string name="s_settings">设置</string>
-    <string name="s_simulate">模拟</string>
     <string name="s_speed_128">速度: 128</string>
     <string name="s_spread_0">扩散: 0°</string>
     <string name="s_start_addr">起始地址</string>
@@ -307,7 +306,6 @@
     <string name="t_folder_operation_succeeded_name_let_it">文件夹操作成功${name?.let { "：$it" } ?: ""}</string>
     <string name="t_for_a_full_channel_definition_import_the_mat">如需完整通道定义，请导入同型号灯库文件覆盖。</string>
     <string name="t_forward">正序</string>
-    <string name="t_found_count_rdm_devices_if_simulate_simulate">发现 $count 台 RDM 设备${if (simulate) "（模拟）" else ""}</string>
     <string name="t_global">全局</string>
     <string name="t_gobo_wheel_rotate">图案盘自转</string>
     <string name="t_gobo_wheel_swing">图案盘摆动</string>
@@ -372,7 +370,6 @@
     <string name="t_rdm_command_succeeded">RDM 命令执行成功</string>
     <string name="t_rdm_failed_err">RDM 失败：$err</string>
     <string name="t_rdmdevices_size_devices_tap_a_row_for_all_pa">${rdmDevices.size} 台设备 · 点行看全部参数 · 「编辑顺序」可拖动排序并自动分配地址</string>
-    <string name="t_rdmlasterror_n_ntap_scan_to_retry_nor_turn_s">${rdmLastError}\n\n点上面的「扫描设备」重试\n或点「模拟·开」用固件内置虚拟灯具验证界面</string>
     <string name="t_report_sourcename_ifempty_archive_n">■ ${report.sourceName.ifEmpty { "压缩包" }}\n</string>
     <string name="t_reverse">反序</string>
     <string name="t_rgb_colour">RGB变色</string>
@@ -391,11 +388,6 @@
     <string name="t_service_discovery_failed_status">服务发现失败 $status</string>
     <string name="t_showndev_size_fixture_types_tap_to_download_">${shownDev.size} 个灯库 — 点按下载到 App</string>
     <string name="t_showndev_size_items_tap_a_folder_to_enter_lo">${shownDev.size} 个条目 — 点文件夹进入，长按操作</string>
-    <string name="t_sim_off">模拟·关</string>
-    <string name="t_sim_on">模拟·开</string>
-    <string name="t_simulated_data_rdmdevices_size_devices_tap_a">⚠ 固件模拟数据 · ${rdmDevices.size} 台 · 点行看全部参数，长按可拖动排序</string>
-    <string name="t_simulation_off_scanning_the_real_rdm_bus">已关模拟：扫描真实 RDM 总线</string>
-    <string name="t_simulation_on_scanning_returns_the_firmware_">已开模拟：扫描会返回固件内置的虚拟灯具</string>
     <string name="t_sine">正弦</string>
     <string name="t_single">单台</string>
     <string name="t_skip">跳过</string>

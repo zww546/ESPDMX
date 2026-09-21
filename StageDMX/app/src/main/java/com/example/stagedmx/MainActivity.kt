@@ -122,10 +122,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private var rdmDevices: List<RdmDevice> = emptyList()
     private var rdmScanning = false
     private var rdmLastError = ""
-    /** 固件当前是否处于 RDM 模拟模式（没有真实 RDM 灯具时返回虚拟灯具）。 */
-    private var rdmSimulated = false
-    /** App 侧记住的模拟开关状态（与固件同步）。 */
-    private var rdmSimOn = true
     // 状态总览条的数据（来自固件 0x82）
     private var devFxCount = 0
     /** RDM 建实例时地址冲突是否直接覆盖（设置页开关，默认关闭=先询问） */
@@ -1698,15 +1694,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         if (data.isNotEmpty()) {
             when (data[0].toInt() and 0xFF) {
                 DmxProtocol.RESP_RDM_SCAN -> {
-                    // 0x89 count uni ok simulate errLen err…
-                    if (data.size >= 6) {
+                    // 0x89 count uni ok errLen err…
+                    if (data.size >= 5) {
                         val count = data[1].toInt() and 0xFF
                         val uni = data[2].toInt() and 0xFF
                         val ok = (data[3].toInt() and 0xFF) == 0
-                        val sim = (data[4].toInt() and 0xFF) != 0
-                        val n = (data[5].toInt() and 0xFF).coerceAtMost(data.size - 6)
-                        val err = String(data, 6, n, Charsets.UTF_8)
-                        runOnUiThread { onRdmScanDone(count, uni, ok, sim, err) }
+                        val n = (data[4].toInt() and 0xFF).coerceAtMost(data.size - 5)
+                        val err = String(data, 5, n, Charsets.UTF_8)
+                        runOnUiThread { onRdmScanDone(count, uni, ok, err) }
                     }
                     return
                 }
@@ -2853,7 +2848,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
     }
 
-    /** RDM 设备列表（真实/模拟扫描结果，由固件 0x8A 帧填充）。 */
+    /** RDM 设备列表（扫描结果，由固件 0x8A 帧填充）。 */
     private fun refreshRdmList() {
         // 每次刷新都按用户保存的顺序重排一遍（幂等）。
         // ⚠ 必须在这里做：底部导航切页会触发刷新，而列表显示用的是 rdmDevices，
@@ -2870,23 +2865,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             if (rdmReorderMode && rdmDevices.isNotEmpty()) rdmOrder = rdmDevices
             refreshRdmList()
         }
-        // 模拟开关：没有真实 RDM 灯具时用固件内置的虚拟灯具
-        imfb.btnRdmSim.setOnClickListener {
-            if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
-            rdmSimOn = !rdmSimOn
-            engine.sendRaw(encodeRdmSimulate(rdmSimOn))
-            toast(if (rdmSimOn) "已开模拟：扫描会返回固件内置的虚拟灯具" else "已关模拟：扫描真实 RDM 总线")
-            refreshRdmList()
-        }
-
         // 4 个操作按钮常驻，只按可用性禁用（与推子页那行一致：一直看得见，不闪）
         imfb.btnRdmApplyOrder.isEnabled = rdmDevices.isNotEmpty()
         imfb.btnRdmMakeInstances.isEnabled = rdmDevices.isNotEmpty()
         // 只有"起始地址 + 完成排序"这一行随排序模式出现
         imfb.rdmReorderBar.visibility = if (rdmReorderMode) View.VISIBLE else View.GONE
-        imfb.btnRdmSim.text = if (rdmSimOn) "模拟·开" else "模拟·关"
-        imfb.btnRdmSim.setTextColor(ContextCompat.getColor(this,
-            if (rdmSimOn) R.color.warn else R.color.textDim))
         if (rdmReorderMode) {
             val start = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
                 .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
@@ -2919,14 +2902,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             imfb.tvRdmStatus.text = when {
                 rdmScanning -> "正在扫描…（DMX 输出会暂停数秒）"
                 rdmDevices.isEmpty() -> rdmLastError.ifEmpty { "点「扫描设备」开始" }
-                rdmSimulated -> "⚠ 固件模拟数据 · ${rdmDevices.size} 台 · 点行看全部参数，长按可拖动排序"
                 else -> "${rdmDevices.size} 台设备 · 点行看全部参数 · 「编辑顺序」可拖动排序并自动分配地址"
             }
         }
         val empty = !rdmReorderMode && rdmDevices.isEmpty() && !rdmScanning
         imfb.tvRdmEmpty.visibility = if (empty) View.VISIBLE else View.GONE
         imfb.tvRdmEmpty.text = if (rdmLastError.isNotEmpty())
-            "${rdmLastError}\n\n点上面的「扫描设备」重试\n或点「模拟·开」用固件内置虚拟灯具验证界面"
+            "${rdmLastError}\n\n点上面的「扫描设备」重试"
         else "还没有扫描到 RDM 设备\n\n点上面的「扫描设备」开始\n（扫描期间该通道的 DMX 输出会短暂暂停）"
 
         imfb.rvRdm.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -3314,16 +3296,15 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     /** 收到固件 0x89 扫描头：结束"扫描中"状态。 */
-    private fun onRdmScanDone(count: Int, universe: Int, ok: Boolean, simulate: Boolean, err: String) {
+    private fun onRdmScanDone(count: Int, universe: Int, ok: Boolean, err: String) {
         syncHandler.removeCallbacksAndMessages(null)
         rdmScanning = false
-        rdmSimulated = simulate
         rdmLastError = if (ok) "" else err.ifEmpty { "未发现 RDM 设备" }
         // 扫描结果是固件侧的 UID 顺序，这里套用用户保存过的顺序
         rdmDevices = applySavedRdmOrder(rdmDevices)
         if (rdmReorderMode) rdmOrder = rdmDevices
         refreshRdmList()
-        toast(if (ok) "发现 $count 台 RDM 设备${if (simulate) "（模拟）" else ""}" else rdmLastError)
+        toast(if (ok) "发现 $count 台 RDM 设备" else rdmLastError)
     }
 
     /** 收到固件 0x8A 设备帧：解析出全部参数并加入列表。 */
