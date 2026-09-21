@@ -14,19 +14,33 @@
 // ⚠ DE 与 RE 电平**相反**（SP3485: DE 高=驱动总线，RE 低=使能接收），
 //   千万不要把两个脚接到同一个 GPIO。两者同时有效 = 一边驱动一边接收，
 //   轻则收到自己的回波、重则总线上两个驱动源打架。
-//   接法二选一，见 pins.h 末尾「DE/RE 接法」。
+//   你的模块是单 EN 脚（内部已处理），所以只需一个 GPIO —— 见文末「EN 说明」。
+
+// ==================== v8 引脚调整 ====================
+// 从 "17/15/2 + 18/16/4" 调整为：
+//     宇宙1: TX=17  RX=18  EN=4
+//     宇宙2: TX=15  RX=16  EN=5
+//
+// 两点说明：
+//   1. **U1 用上了 UART1 的原生引脚（17=TX / 18=RX）** —— ESP32-S3 的 UART1
+//      默认就是这两个脚。走原生脚可以省掉 GPIO Matrix 的额外路由。
+//   2. **EN 从 2 挪走**：GPIO2 在部分 S3 开发板上接了板载器件（且靠近 strapping
+//      区），换到 4 / 5 更干净。改完后 **GPIO2 不再使用**，可留作他用。
+//
+// ⚠ 换脚必须**同时改硬件接线**，否则表现是"发送正常但收不到"或完全无输出。
+//   改完建议用环回自检确认（A/B 短接时应能读回自己发的字节）。
 
 // ---- 宇宙 1（UART1）----
-#define DMX_TX_PIN      17    // ESP TXD → 模块 TXD (DI)
-#define DMX_RX_PIN      15    // ESP RXD ← 模块 RXD (RO)   (UART1 默认 RX)
-#define DMX_EN_PIN      2     // ESP → 模块 EN（单方向脚）
+#define DMX_TX_PIN      17    // ESP TXD → 模块 TXD (DI)   (UART1 原生 TX)
+#define DMX_RX_PIN      18    // ESP RXD ← 模块 RXD (RO)   (UART1 原生 RX)
+#define DMX_EN_PIN      4     // ESP → 模块 EN（方向脚）
 
 // ---- 宇宙 2（UART2）----
 // ⚠ ESP32-S3 的 UART2 **没有原生引脚**（soc/uart_pins.h: U2RXD/U2TXD = -1），
 //   必须经 GPIO Matrix 路由 —— 所以下面三个脚可以任选空闲 GPIO。
-#define DMX_TX2_PIN     18    // 第二片模块的 TXD
+#define DMX_TX2_PIN     15    // 第二片模块的 TXD
 #define DMX_RX2_PIN     16    // 第二片模块的 RXD
-#define DMX_EN2_PIN     4     // 第二片模块的 EN
+#define DMX_EN2_PIN     5     // 第二片模块的 EN
 
 // 引脚避让（N16R8 模块）：
 //   GPIO26~32  → SPI flash
@@ -36,8 +50,8 @@
 //   GPIO0/3/45/46 → strapping，不要用作普通输出
 //
 // 未被占用的脚（可留给按键 / 状态灯 / 扩展）：
-//   5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 38, 39, 40, 41, 42, 47, 48
-//   （48 = 多数 S3 开发板的板载 RGB LED）
+//   2, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 38, 39, 40, 41, 42, 47, 48
+//   （48 = 多数 S3 开发板的板载 RGB LED；2 = v8 起空闲）
 
 // ==================== EN 是单个方向脚（不是分开的 DE + /RE）====================
 // 用户模块的引脚是: EN, A, B, GND, TXD, RXD, VCC —— 只有一个 EN。
@@ -54,13 +68,16 @@
 //   要恢复接收：把 dmx.c 里的 DMX_RX_ENABLE 改成 1，并补上接收任务。
 //
 //   硬件上 RXD 仍然接着，不影响；只是固件不去听。
+//
+//   ⚠ RDM 例外：RDM 是双向协议，dmx_rdm_mode() 会在扫描期间**临时**绑定 RX
+//     并把 EN 交给 UART 的 RTS 自动换向，扫完恢复。所以 RDM 不依赖这个宏。
 
 // ==================== 模块接线（每口一片）====================
 //   VCC  → 3.3V
-//   GND  → GND
-//   TXD  → ESP GPIO17 (宇宙1) / GPIO18 (宇宙2)   [ESP 输出 → 模块 DI]
-//   RXD  → ESP GPIO15 (宇宙1) / GPIO16 (宇宙2)   [ESP 输入 ← 模块 RO]
-//   EN   → ESP GPIO2  (宇宙1) / GPIO4  (宇宙2)   [方向控制]
+//   GND  → GND（两个模块必须与 ESP32 共地）
+//   TXD  → ESP GPIO17 (宇宙1) / GPIO15 (宇宙2)   [ESP 输出 → 模块 DI]
+//   RXD  → ESP GPIO18 (宇宙1) / GPIO16 (宇宙2)   [ESP 输入 ← 模块 RO]
+//   EN   → ESP GPIO4  (宇宙1) / GPIO5  (宇宙2)   [方向控制]
 //   A    → DMX 总线 A (XLR 母头 pin3)
 //   B    → DMX 总线 B (XLR 母头 pin2)
 //   末端设备 A/B 间并 120Ω 终端电阻
