@@ -1,12 +1,19 @@
-# 控制台走原生 USB-Serial-JTAG（和主控一致）
+# ---- Flash / PSRAM：必须匹配板子，否则根本不启动 ----
 #
-# 为什么必须显式指定：ESP32-S3 的默认是 console on UART0，
-# 而多数 S3 开发板插电脑上的那个口是**原生 USB**（USB-Serial-JTAG）。
-# 两者不是同一个口 —— 控制台留在 UART0 的话，USB 口上什么都不会出现，
-# 看起来就像"板子没启动"。
+# ⚠ 踩过的坑：这里原来用的是 ESP-IDF 默认值（2MB flash、无 PSRAM），
+#   烧到「微雪 ESP32-S3（16MB flash + 8MB Octal PSRAM）」上表现为
+#   **esptool 能烧录、能复位，但串口一个字节都没有** —— 因为 bootloader
+#   按 2MB flash 去初始化，启动就失败了，连 ROM 日志都出不来。
+#   和主控工程保持一致即可。
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+
+# ---- 控制台走原生 USB-Serial-JTAG（和主控一致）----
+# ESP32-S3 的默认是 console on UART0，而板上插的那个口是原生 USB，
+# 两者不是同一个口 —— 留 UART0 的话 USB 上什么都看不到。
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_UART_DEFAULT=n
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
-# 日志级别
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
