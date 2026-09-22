@@ -78,9 +78,25 @@
                 android:layout_width="0dp"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:text="@string/s_fixtures_controlled_together_tap_rows_to"
                 android:textColor="@color/textDim"
                 android:textSize="12sp" />
+
+            <!-- 按分组整组选择（树形多选弹窗）。文字在 Kotlin 里设。 -->
+            <TextView
+                android:id="@+id/btnInstGroupPick"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:layout_marginEnd="8dp"
+                android:paddingHorizontal="10dp"
+                android:gravity="center"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:background="@drawable/bg_pill"
+                android:clickable="true"
+                android:focusable="true" />
 
             <TextView
                 android:id="@+id/tvInstCount"
@@ -199,6 +215,28 @@
                 android:text="@string/s_tap_scan_to_start"
                 android:textColor="@color/textDim"
                 android:textSize="12sp" />
+
+            <!-- 演示数据：不接任何硬件，直接注入几台虚拟 RDM 设备，
+                 用来预览"按型号分组 / 组内配地址 / 加实例"这套流程。
+                 文字在 Kotlin 里设（不新增字符串资源）。 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmDemo"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="8dp"
+                android:textSize="12sp" />
+
+            <!-- 列表视图切换：按型号分组 / 平铺 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRdmGroup"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="8dp"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <FrameLayout
@@ -226,60 +264,10 @@
         </FrameLayout>
 
         <!--
-          排序模式专用行：起始地址 + 完成。
-          只在"编辑顺序"打开时出现（不在排序时它没有意义），
-          位置固定在按钮行上方，作为 FrameLayout 的兄弟节点，不会遮住列表数据。
+          注意：这里**没有**"起始地址"行 —— 起始地址改成了**每个分组一个**，
+          就在各自分组头那一行的「起始」框里（见 item_channel_group.xml）。
+          全局起始地址框已移除；进/出排序模式由下面那一个按钮切换。
         -->
-        <LinearLayout
-            android:id="@+id/rdmReorderBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="6dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/s_start_addr"
-                android:textColor="@color/textDim"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/etRdmStart"
-                android:layout_width="58dp"
-                android:layout_height="36dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                android:maxHeight="36dp"
-                android:layout_marginStart="6dp"
-                android:background="@drawable/bg_input_pill"
-                android:gravity="center"
-                android:inputType="number"
-                android:maxLength="3"
-                android:padding="0dp"
-                android:includeFontPadding="false"
-                android:text="1"
-                android:textColor="@color/text"
-                android:textSize="13sp"
-                android:importantForAutofill="no" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRdmReorderDone"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="16dp"
-                android:textSize="12sp"
-                android:text="@string/s_finish" />
-        </LinearLayout>
 
         <!--
           4 个操作按钮：完全按推子页那一行的规格 ——

@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import java.util.ArrayDeque
 
 /**
@@ -36,6 +37,15 @@ class BleManager(private val ctx: Context) {
         fun onScanResult(found: Found) {}
         fun onStateChanged(state: State, info: String?) {}
         fun onNotify(data: ByteArray) {}
+        /**
+         * 帧**没能发出去**（未连接 / 连续写失败导致传输中止）。
+         *
+         * ⚠ 加这个回调是因为以前这两种情况都是**静默**的：未连接时 `send()` 直接
+         *   return，写失败超限时清空整个队列 —— 用户点了"写入地址""上传"看不出
+         *   任何异常，只能靠"怎么没反应"去猜。Reliable 帧（用户主动发起的动作、
+         *   文件分块）尤其不能安静地丢。
+         */
+        fun onSendStalled(reason: String) {}
     }
 
     var listener: Listener? = null
@@ -59,19 +69,39 @@ class BleManager(private val ctx: Context) {
      */
     private var connectWatchdog: Runnable? = null
     @Volatile private var retriedDiscover = false
+    /**
+     * 看门狗自己的重试计数。
+     *
+     * ⚠ 必须和 [retriedDiscover] 分开：那个是 `onServicesDiscovered` 失败时
+     *   "再发现一次"的额度（:289）。以前看门狗也去写同一个标志，于是
+     *   **看门狗先超时就把这份额度吃掉了** —— 服务发现回调随后带着失败状态到达时，
+     *   本该发生的重试被跳过，直接断开。
+     */
+    private var watchdogRetries = 0
     private val connectTimeoutMs = 6000L
+    /** 看门狗最多额外重试几次服务发现（超过就明确报错，不再死循环）。 */
+    private val maxWatchdogRetries = 2
 
     private fun armConnectWatchdog(g: BluetoothGatt) {
         cancelConnectWatchdog()
         val r = Runnable {
             // 用 gatt 引用相等代替 isStale：看门狗在外层类里，拿不到内部对象的私有方法
             if (state == State.CONNECTING && gatt === g) {
-                android.util.Log.w("BLE", "连接超时仍在 CONNECTING，重试服务发现")
+                // ⚠ 上限。以前是"discoverServices() 成功就再排一个 6 秒"，**没有次数上限**：
+                //   只要服务发现回调一直不来、而 discoverServices() 一直返回 true，
+                //   就会每 6 秒重做一次，永远不停，而且从不让用户知道出了什么问题 ——
+                //   界面永远"连接中"，所有操作都报"请先连接设备"。
+                if (watchdogRetries >= maxWatchdogRetries) {
+                    android.util.Log.w("BLE", "服务发现重试 $watchdogRetries 次仍无响应，放弃")
+                    setState(State.DISCONNECTED, "连接超时：设备无响应，请重连")
+                    return@Runnable
+                }
+                android.util.Log.w("BLE", "连接超时仍在 CONNECTING，第 ${watchdogRetries + 1} 次重试服务发现")
                 if (!g.discoverServices()) {
                     setState(State.DISCONNECTED, "连接超时")
                 } else {
-                    retriedDiscover = true
-                    armConnectWatchdog(g)      // 再给一次机会
+                    watchdogRetries++         // 只加自己的计数，不碰 retriedDiscover
+                    armConnectWatchdog(g)
                 }
             }
         }
@@ -102,6 +132,8 @@ class BleManager(private val ctx: Context) {
     private var writeInFlight = false
     private var writeFailCount = 0          // 连续提交失败计数
     private val writeFailMax = 3            // 超过则丢弃，避免死循环
+    /** 进入 CONNECTED 的时刻（elapsedRealtime），用于区分"刚连上的暖机失败"和真故障。 */
+    @Volatile private var connectedAtMs = 0L
 
     fun isBluetoothOn(): Boolean = adapter?.isEnabled == true
 
@@ -115,6 +147,7 @@ class BleManager(private val ctx: Context) {
         // 状态迁移全部打日志：这个状态机一旦卡住，"看起来已连接但什么都干不了"，
         // 只有把每次迁移和来源打出来才查得动。
         android.util.Log.d("BLE", "state ${state} → $s  (${info ?: ""})")
+        if (s == State.CONNECTED) connectedAtMs = SystemClock.elapsedRealtime()
         state = s
         main.post { listener?.onStateChanged(s, info) }
     }
@@ -202,6 +235,7 @@ class BleManager(private val ctx: Context) {
         deviceAddress = device.address
         connectedDevice = device
         retriedDiscover = false
+        watchdogRetries = 0        // 新一次连接，看门狗计数归零
         setState(State.CONNECTING, device.address)
         close()
         gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
@@ -358,7 +392,13 @@ class BleManager(private val ctx: Context) {
      *   但**最新一次刷新的所有块完整保留**。
      */
     fun send(frame: ByteArray, kind: FrameKind = FrameKind.Reliable) {
-        if (gatt == null || writeChar == null) return
+        if (gatt == null || writeChar == null) {
+            // ⚠ Control 是高频状态流（推子/效果，30Hz），未连接时静默丢弃是合理的，
+            //   否则每秒几十条提示。Reliable 是用户主动发起的动作（写入地址/扫描/
+            //   上传），必须让用户知道它根本没发出去。
+            if (kind == FrameKind.Reliable) listener?.onSendStalled("未连接设备，指令未发出")
+            return
+        }
         synchronized(writeLock) {
             if (kind == FrameKind.Control) {
                 // 去掉排队中所有尚未发出的 Control 帧（它们已被本次状态取代）
@@ -395,7 +435,31 @@ class BleManager(private val ctx: Context) {
                 writeInFlight = false
                 if (++writeFailCount >= writeFailMax) {
                     writeFailCount = 0
-                    writeQueue.clear()
+                    // ⚠ **只丢 Control**。Control 是"绝对状态覆盖"，被更新的同类帧取代
+                    //   没有损失；Reliable 是**有状态序列**（文件分块、程序上传），
+                    //   丢一块就废掉整个传输 —— 上面 FrameKind 的约定也写着"绝不丢弃"。
+                    //   以前这里无条件 writeQueue.clear()，把两者一起清了，而且不报错：
+                    //   用户看到"上传失败"却不知道是自己链路的问题，程序上传更是会
+                    //   静默写进一个缺步的程序。
+                    var reliableAtRisk = (item.kind == FrameKind.Reliable)
+                    val it = writeQueue.iterator()
+                    while (it.hasNext()) {
+                        val q = it.next()
+                        if (q.kind == FrameKind.Control) it.remove() else reliableAtRisk = true
+                    }
+                    if (reliableAtRisk) {
+                        // 别装作没事：中止这次传输并明确告诉上层。
+                        // ⚠ 但刚连上的头一秒半里报这个会变成假警报 —— 服务发现还没
+                        //   跑完时前几次写失败是**已知正常**现象（MainActivity 那边
+                        //   专门为此补发了一次 0x05），而且状态同步本身有 2.5s 兜底。
+                        //   那种情况安静重试即可，别让用户去查一个不存在的问题。
+                        writeQueue.removeAll { it.kind == FrameKind.Reliable }
+                        val warmup = SystemClock.elapsedRealtime() - connectedAtMs < 1500
+                        if (!warmup) {
+                            listener?.onSendStalled(
+                                "连续 $writeFailMax 次发送失败，传输已中止（链路不稳，请靠近设备后重试）")
+                        }
+                    }
                     return
                 }
                 writeQueue.addFirst(item)

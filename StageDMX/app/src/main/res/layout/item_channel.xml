@@ -11,10 +11,17 @@
     android:paddingBottom="12dp"
     android:layout_margin="4dp">
 
-    <!-- 通道名：留足 5 个字宽度（13sp 约 65dp），文字居中 -->
+    <!-- 通道名：宽度**固定**，不是自适应。
+         ⚠ 这里以前是 wrap_content + minWidth 66dp + maxWidth 120dp，于是
+           "名字有多长"会改变这一行的横向布局：名字长的行把滑块整体往右推，
+           结果**同一页里每行推子的起点都不一样**（推子位置看起来在跳）。
+           名字长度是内容，不该影响控件的几何。
+           现在固定 72dp（13sp 下约 5 个汉字），超出就**跑马灯循环滚动**。
+         ⚠ 跑马灯只写 XML 不会动：必须在对 TextView 调 isSelected = true
+           （见 ChannelAdapter.onBindViewHolder）。这是最容易漏的一步。 -->
     <TextView
         android:id="@+id/tvCh"
-        android:layout_width="66dp"
+        android:layout_width="72dp"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:text="CH 1"
@@ -22,7 +29,11 @@
         android:textStyle="bold"
         android:textSize="13sp"
         android:maxLines="1"
-        android:ellipsize="end" />
+        android:scrollHorizontally="true"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
 
     <!-- 滑块：固定高度一行字（20dp），右移并加长 -->
     <SeekBar

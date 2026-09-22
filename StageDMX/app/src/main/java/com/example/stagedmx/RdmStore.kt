@@ -30,7 +30,7 @@ data class RdmDevice(
     val sensorCount: Int = 0,
 ) {
     /** "A@1" / "B@128" */
-    fun addrLabel(): String = "${if (universe == 1) "A" else "B"}@$address"
+    fun addrLabel(): String = "${DmxProtocol.bandLabel(universe)}@$address"
 
     fun footprint(): String = "$address ~ ${address + channelCount - 1}"
 
@@ -173,6 +173,72 @@ fun assignAddresses(devices: List<RdmDevice>, startAddr: Int): List<Pair<ByteArr
         if (cursor + ch - 1 > DmxProtocol.UNIVERSE_SIZE) return null   // 本宇宙放不下
         out.add(d.uidBytes to cursor)
         cursor += ch
+    }
+    return out
+}
+
+/**
+ * 按**分组**分配地址：每组有自己的起始地址。
+ *
+ * 组的先后 = 在 [devices] 里首次出现的次序（也就是排序后的顺序）；
+ * 每组从自己的起始地址开始、按各自 footprint 顺延。
+ * [starts] 里没有的组 = "自动接上一组的末尾"，第一组因此自然从 1 开始。
+ *
+ * 例：A 组 2 台 20ch（起始 1）、B 组 1 台 12ch（未设起始）
+ *     → A: 1~20、21~40；B: 41~52
+ *
+ * @param groupOf 设备 → 组键
+ * @param starts  组键 → 起始地址（缺省表示接上一组）
+ * @param footprintOf 设备 → 实际占用通道数。
+ *        ⚠ 默认是 RDM 报的占用通道数，但**配上灯库后调用方要传灯库的通道数**
+ *          （见 MainActivity.rdmFootprint）——否则配出来的地址和按灯库加的实例会错位。
+ * @param sameOf  组键 → 是否"全组同一地址"。true 时整组都指向起始地址、
+ *        整组只占**一台**的宽度（后面那组才能紧跟着排）。
+ * @return 每台的 (设备, 新地址)；任一台越界（超出 512）返回 null。
+ *         ⚠ 占用通道数 ≤ 0 的设备（RDM DEVICE_INFO 没读到 → 参数未知）**不会**出现在
+ *           结果里：它不占地址空间、也不会把后面各组的起始地址顶偏。调用方按
+ *           "uid 不在表里" 处理（界面显示参数未知、跳过写入）。
+ */
+fun assignAddressesByGroup(
+    devices: List<RdmDevice>,
+    groupOf: (RdmDevice) -> String,
+    starts: Map<String, Int>,
+    footprintOf: (RdmDevice) -> Int = { it.channelCount },
+    sameOf: (String) -> Boolean = { false },
+): List<Pair<RdmDevice, Int>>? {
+    // 0) 先把"参数未知"的剔掉
+    val known = devices.filter { footprintOf(it) > 0 }
+    if (known.isEmpty()) return emptyList()
+
+    // 1) 组顺序 + 每组占用的通道跨度（"相同"模式下整组只占一台的宽度）
+    val span = LinkedHashMap<String, Int>()
+    val widest = HashMap<String, Int>()
+    for (d in known) {
+        val g = groupOf(d)
+        val fp = footprintOf(d)
+        span[g] = (span[g] ?: 0) + fp
+        widest[g] = maxOf(widest[g] ?: 0, fp)
+    }
+    for (g in span.keys) if (sameOf(g)) span[g] = widest[g] ?: 1
+
+    // 2) 每组落一个起始地址：设过用设的，没设的接上一组末尾
+    val cursorOf = LinkedHashMap<String, Int>()
+    var auto = 1
+    for ((g, ch) in span) {
+        val s = starts[g]?.coerceIn(1, DmxProtocol.UNIVERSE_SIZE) ?: auto
+        cursorOf[g] = s
+        auto = maxOf(auto, s + ch)
+    }
+
+    // 3) 逐台在**自己组内**顺延；"相同"模式的组全部指向同一个地址
+    val out = ArrayList<Pair<RdmDevice, Int>>(known.size)
+    for (d in known) {
+        val g = groupOf(d)
+        val a = cursorOf.getValue(g)
+        val ch = footprintOf(d)
+        if (a + ch - 1 > DmxProtocol.UNIVERSE_SIZE) return null   // 本宇宙放不下
+        out.add(d to a)
+        if (!sameOf(g)) cursorOf[g] = a + ch
     }
     return out
 }

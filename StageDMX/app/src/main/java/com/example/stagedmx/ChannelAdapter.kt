@@ -333,6 +333,9 @@ class ChannelAdapter(
         val v = engine.get(dmxChannel(p))
         vh.binding = true
         vh.tvCh.text = displayName(p)
+        // 让通道名跑马灯动起来：TV 只在 isSelected 时才会滚（XML 里配好 ellipsize=marquee
+        // 还不够）。名字没超宽时不会有可见效果，所以无条件设置是安全的。
+        vh.tvCh.isSelected = true
         vh.seek.progress = v
         vh.tvVal.text = v.toString()
         vh.binding = false

@@ -1,20 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  推子页的功能分组标题行（v9）。
+  分组标题行（三处共用：推子页功能分组 / 已配接分组 / RDM 型号分组）。
 
-  点整行折叠/展开该组。左侧一条竖色条让它在视觉上"压住"下面的通道行，
-  一眼能看出这是分组而不是又一个通道。
+  **只有一行**，从左到右依次是：
+    竖色条 + 整组勾选框(仅已配接) + 组名 + 数量/折叠箭头 + 组级动作(RDM)
+
+  RDM 的组级动作 = 起始 + 加实例 + 配址 + 写入 + 灯库，全部挤在同一行里，
+  不再另起第二行。这样分组条只占一行高，下面扫到的灯就从它正下方接着排，
+  不会出现"分组那一块又高又厚、看着像压在灯具行上"的感觉。
+
+  ⚠ layout_marginBottom 必须有：分组条是**没有圆角的竖色条横排**，而下面的
+    设备行是圆角卡片。两者之间不留白，视觉上会糊成一块，分不清哪是组头。
+
+  各处的可见性由各自的 Adapter 决定（groupActions / tvGroupCheck 默认 gone）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:minHeight="42dp"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@color/surface2"
     android:paddingStart="8dp"
-    android:paddingEnd="10dp"
-    android:paddingTop="7dp"
-    android:paddingBottom="7dp"
+    android:paddingEnd="6dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
+    android:layout_marginBottom="5dp"
     android:clickable="true"
     android:focusable="true">
 
@@ -23,12 +34,27 @@
         android:layout_height="16dp"
         android:background="@color/accent" />
 
+    <!-- 整组快捷勾选。默认隐藏 —— 只有「已配接」页会显示它（点一下 = 整组进/出
+         同时控制），推子页的功能分组和 RDM 的分组头都不显示。 -->
+    <TextView
+        android:id="@+id/tvGroupCheck"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textSize="16sp"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/tvGroupName"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:layout_marginStart="8dp"
+        android:layout_marginEnd="4dp"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textColor="@color/text"
         android:textSize="13sp"
         android:textStyle="bold" />
@@ -37,6 +63,97 @@
         android:id="@+id/tvGroupCount"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textColor="@color/textDim"
         android:textSize="11sp" />
+
+    <!-- 组级动作（目前只有 RDM 分组头显示：起始 / 加实例 / 递增 / 相同 / 灯库）。
+         文字在 Kotlin 里设，不新增字符串资源。 -->
+    <LinearLayout
+        android:id="@+id/groupActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/s_start"
+            android:textColor="@color/textDim"
+            android:textSize="11sp" />
+
+        <!-- 每组的起始地址。留空 = 自动接上一组的末尾（第一组 = 1）。 -->
+        <EditText
+            android:id="@+id/etGroupStart"
+            android:layout_width="36dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="3dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:maxHeight="30dp"
+            android:background="@drawable/bg_input_pill"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="3"
+            android:padding="0dp"
+            android:includeFontPadding="false"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:importantForAutofill="no" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGroupMake"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:layout_marginStart="4dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textSize="11sp" />
+
+        <!-- 配址方式二选一（递增 / 全部相同）收在一个按钮里，点开选 ——
+             一行里要放"起始 + 加实例 + 配址 + 写入 + 灯库"，两个按钮并排太挤。 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGroupAddr"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:layout_marginStart="2dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textSize="11sp" />
+
+        <!-- 把本组的地址真正下发到硬件（先在 App 里按"配址"方式排一遍再发） -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGroupWrite"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:layout_marginStart="2dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textSize="11sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGroupLib"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:layout_marginStart="2dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="4dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:textSize="11sp" />
+    </LinearLayout>
 </LinearLayout>

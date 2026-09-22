@@ -85,6 +85,15 @@ object DmxProtocol {
     const val RESP_RDM_DEVICE: Int = 0x8A    // 每台设备的全部参数，见 parseRdmDevice()
     const val RESP_RDM_RESULT: Int = 0x8B    // ok(1) errLen(1) err…（识别/改址的结果）
 
+    /**
+     * 宇宙号 → 面板上的 "A" / "B"。
+     *
+     * ⚠ 以前这个映射有**三套**写法：`FixtureInstance.label()`、`RdmDevice.addrLabel()`，
+     *   外加 MainActivity 里 4 处内联 `if (universe == 1) "A" else "B"`。
+     *   统一到这里，省得改一处分不清别处要不要跟着改。
+     */
+    fun bandLabel(universe: Int): String = if (universe == 1) "A" else "B"
+
     // ---- 状态同步（0x05 的应答，固件 → App）----
     // 0x82 flags(1) uptime(4,秒,大端) fxCount(1) progMask(1)
     const val RESP_STATE_HEAD: Int = 0x82

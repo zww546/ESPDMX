@@ -23,7 +23,7 @@ class InstanceForm(
     count: Int,
     universe: Int
 ) {
-    val band: String = if (universe.coerceIn(1, DmxProtocol.UNIVERSES) == 1) "A" else "B"
+    val band: String = DmxProtocol.bandLabel(universe.coerceIn(1, DmxProtocol.UNIVERSES))
 
     /** 灯型通道数（至少 1）。 */
     val pitch: Int = fixtureChannelCount.coerceAtLeast(1)

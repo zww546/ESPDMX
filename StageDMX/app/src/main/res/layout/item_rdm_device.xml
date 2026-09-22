@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- RDM 设备行：UID / 厂商型号 / 当前地址 / 通道数 + 识别、改址 -->
+<!--
+  RDM 设备行：拖动把手 / UID / 厂商型号 / 当前地址 + 识别、改址。
+  第二行是通道占用等细节。
+
+  两行都压得很紧（行高约 56dp，原来是 ~84dp）：
+    - 上下 padding 只留 5dp（原来 10dp），卡片间距 3dp（原来 6dp）
+    - 识别/改址搬到了**第一行右侧**，第二行只剩一行小字，不再被 34dp 的按钮撑高
+    - 所有文字 includeFontPadding=false，去掉了字体自带的上下空白
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_card"
-    android:padding="10dp"
-    android:layout_marginBottom="6dp">
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="5dp"
+    android:layout_marginBottom="3dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -19,20 +28,22 @@
             android:id="@+id/tvRdmDrag"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minWidth="28dp"
+            android:minWidth="22dp"
             android:gravity="center"
             android:text="☰"
             android:textColor="@color/accent"
-            android:textSize="16sp"
+            android:textSize="15sp"
+            android:includeFontPadding="false"
             android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvRdmUid"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minWidth="110dp"
+            android:minWidth="98dp"
             android:textColor="@color/accent"
             android:textSize="12sp"
+            android:includeFontPadding="false"
             android:fontFamily="monospace" />
 
         <TextView
@@ -40,53 +51,61 @@
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
             android:textColor="@color/text"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:includeFontPadding="false"
             android:singleLine="true"
             android:ellipsize="end" />
 
+        <!-- ⚠ 宽度**固定**：这个位置在"型号(weight=1)"和右边两个按钮之间，
+             用 wrap_content 的话 "A@1" 和 "A@100" 宽度不同，会把
+             识别/改址 两个按钮按行推来推去。内容不该影响控件几何。 -->
         <TextView
             android:id="@+id/tvRdmAddr"
-            android:layout_width="wrap_content"
+            android:layout_width="48dp"
             android:layout_height="wrap_content"
+            android:layout_marginEnd="2dp"
+            android:gravity="center"
             android:textColor="@color/warn"
             android:textSize="13sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginTop="4dp">
-
-        <TextView
-            android:id="@+id/tvRdmInfo"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:textColor="@color/textDim"
-            android:textSize="11sp" />
+            android:textStyle="bold"
+            android:includeFontPadding="false" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRdmIdentify"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
-            android:layout_height="34dp"
+            android:layout_height="28dp"
             android:minWidth="0dp"
-            android:paddingHorizontal="10dp"
+            android:paddingHorizontal="7dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
             android:text="@string/s_identify"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRdmSetAddr"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"
-            android:layout_height="34dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="3dp"
             android:minWidth="0dp"
-            android:paddingHorizontal="10dp"
+            android:paddingHorizontal="7dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
             android:text="@string/s_address"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvRdmInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/textDim"
+        android:textSize="11sp"
+        android:includeFontPadding="false" />
 </LinearLayout>

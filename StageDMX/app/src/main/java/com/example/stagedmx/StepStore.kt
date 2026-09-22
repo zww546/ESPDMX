@@ -36,31 +36,68 @@ class StepStore(ctx: Context) {
     // ---------- 读写 ----------
     fun programs(): MutableList<Program> {
         val raw = prefs.getString(keyProgs, null) ?: return mutableListOf()
+        val arr = try {
+            JSONArray(raw)
+        } catch (_: Exception) {
+            stashRawBackup(raw)
+            return mutableListOf()
+        }
         val out = mutableListOf<Program>()
-        try {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val po = arr.getJSONObject(i)
-                val name = po.getString("n")
-                val instanceId = if (po.has("i")) po.getString("i") else null
-                val steps = mutableListOf<Step>()
-                val sa = po.getJSONArray("s")
-                for (j in 0 until sa.length()) {
-                    val so = sa.getJSONObject(j)
-                    val t = so.getInt("t")
-                    val bytes = Base64.decode(so.getString("d"), Base64.DEFAULT)
-                    val vals = IntArray(DmxProtocol.MAX_CHANNELS)
-                    val n = minOf(bytes.size, vals.size)
-                    for (k in 0 until n) vals[k] = bytes[k].toInt() and 0xFF
-                    steps.add(Step(t, vals))
-                }
-                out.add(Program(name, steps, instanceId))
+        var bad = 0
+        for (i in 0 until arr.length()) {
+            // ⚠ **逐条隔离**：一条坏程序只丢它自己。
+            //   以前整个循环包在一个 try 里，任意一条解析失败（最常见：某步的 Base64
+            //   被截断）就让**整张表读成 0..i-1**，而所有写操作都是"读-改-写"
+            //   （addProgram / deleteProgram / addStep / removeStep / clearSteps），
+            //   于是随便新建一个程序，剩下的程序就**永久消失**了。
+            try {
+                out.add(parseProgram(arr.getJSONObject(i)))
+            } catch (_: Exception) {
+                bad++
             }
-        } catch (_: Exception) {}
+        }
+        if (bad > 0) {
+            stashRawBackup(raw)
+            android.util.Log.w("StepStore",
+                "跳过 $bad 条损坏的程序（原始存档已备份到 $keyProgs.backup）")
+        }
         return out
     }
 
+    /** 解析单条程序记录。 */
+    private fun parseProgram(po: JSONObject): Program {
+        val name = po.getString("n")
+        val instanceId = if (po.has("i")) po.getString("i") else null
+        val steps = mutableListOf<Step>()
+        val sa = po.getJSONArray("s")
+        for (j in 0 until sa.length()) {
+            val so = sa.getJSONObject(j)
+            val t = so.getInt("t")
+            val bytes = Base64.decode(so.getString("d"), Base64.DEFAULT)
+            val vals = IntArray(DmxProtocol.MAX_CHANNELS)
+            val n = minOf(bytes.size, vals.size)
+            for (k in 0 until n) vals[k] = bytes[k].toInt() and 0xFF
+            steps.add(Step(t, vals))
+        }
+        return Program(name, steps, instanceId)
+    }
+
+    /**
+     * 存档读坏/被清空时把原始 JSON 另存一份。
+     *
+     * 一个 key 存整张表的覆盖式存储，一旦写错就不可逆 —— 留一份原文成本几乎为零。
+     */
+    private fun stashRawBackup(raw: String) {
+        if (raw.isEmpty()) return
+        prefs.edit()
+            .putString("$keyProgs.backup", raw)
+            .putLong("$keyProgs.backupAt", System.currentTimeMillis())
+            .apply()
+    }
+
     private fun persist(list: List<Program>) {
+        // 用空表覆盖非空存档前先留底（正常"删光程序"也留，真出问题时这是救命绳）
+        if (list.isEmpty()) prefs.getString(keyProgs, null)?.let { stashRawBackup(it) }
         val arr = JSONArray()
         for (p in list) {
             val po = JSONObject()

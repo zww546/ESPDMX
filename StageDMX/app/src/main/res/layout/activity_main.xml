@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -58,6 +59,22 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical" />
         </HorizontalScrollView>
+
+        <!-- 编组：打开「选择控制灯具」树形多选弹窗（按分组勾选，支持单台/分组/混合）。
+             文字在 Kotlin 里设，不新增字符串资源。 -->
+        <TextView
+            android:id="@+id/btnSelectFixtures"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="6dp"
+            android:paddingHorizontal="10dp"
+            android:gravity="center"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:background="@drawable/bg_pill"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone" />
 
         <!-- 灯具管理入口（有灯具时显示） -->
         <TextView

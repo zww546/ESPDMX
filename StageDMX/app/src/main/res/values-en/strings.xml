@@ -90,6 +90,7 @@
     <string name="s_settings">Settings</string>
     <string name="s_speed_128">Speed: 128</string>
     <string name="s_spread_0">Spread: 0°</string>
+    <string name="s_start">From</string>
     <string name="s_start_addr">Start addr</string>
     <string name="s_start_address_1_512">Start address (1-512)</string>
     <string name="s_step_time_s">Step time (s)</string>

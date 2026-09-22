@@ -72,6 +72,23 @@ data class FixtureDef(
         /** 归一化：小写 + 去掉空格/下划线/连字符，便于 BLADE1A == blade1a == "Blade 1A"。 */
         fun normalizeKey(s: String): String =
             s.lowercase().replace(" ", "").replace("_", "").replace("-", "")
+
+        /**
+         * **型号名**归一化：在 [normalizeKey] 基础上再去掉括号。
+         *
+         * ⚠ 型号匹配必须用这个，不能用 [normalizeKey]：
+         *   RDM 的 DEVICE_MODEL_DESCRIPTION 常写成 `ARES (S4)` / `Wash 20CH (Std)`，
+         *   而灯库里的 name 往往没有括号。之前工程里有**两套**归一化 ——
+         *   `fixtureForModel()`（灯库查找，用 normalizeKey，不去括号）和
+         *   `matchRdmFixture()`（RDM 型号匹配，内联的那套，去括号）对同一个型号
+         *   会给出**不同**答案，导致"分组里能自动匹配到灯库、加实例却匹配不到"
+         *   这种自相矛盾的现象。
+         *
+         * 注意**通道属性匹配**（[findChFine]）仍然只用 [normalizeKey]：
+         *   那边比的是 attribute（BLADE1A / SHAPER ROT），去括号没有意义。
+         */
+        fun modelKey(s: String): String =
+            normalizeKey(s).replace("(", "").replace(")", "")
     }
 }
 
@@ -94,7 +111,18 @@ data class FixtureInstance(
     val name: String,        // 实例名，如 "EOS-1"
     val addr: Int,           // **本宇宙内**起始地址 1..512
     val slot: Int = 0,       // 板载槽位 0..7（效果/程序），创建时分配，删除不重排
-    val universe: Int = 1    // 1 = A 通道，2 = B 通道
+    val universe: Int = 1,   // 1 = A 通道，2 = B 通道
+    /**
+     * 所属**灯具分组**（[FixtureGroup.id]）；null = 未分组。
+     *
+     * ⚠ 一台灯**至多属于一个分组**（承重设计，别改成多归属）：
+     *   推子页的"整组选中"、RDM 的"组内地址递增"、"自由调整分组"
+     *   这三件事都建立在"归属唯一"上；一旦允许一台灯挂多个组，
+     *   "整组选中"该选谁、递增的组内顺序按哪套、拖动该往哪边挪 —— 全会变歧义。
+     *   需要"一次控制若干台不同组的灯"时，用推子页的多选（selectedInstanceIds）
+     *   去组合，而不是让灯本身多归属。
+     */
+    val groupId: String? = null
 ) {
     /** 全局通道号（1..1024）。 */
     fun globalAddr(): Int =
@@ -102,11 +130,26 @@ data class FixtureInstance(
             addr.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
 
     /** 通道字母：A / B */
-    val band: String get() = if (universe <= 1) "A" else "B"
+    val band: String get() = DmxProtocol.bandLabel(universe)
 
     /** 显示用："A@128" */
     fun label(): String = "$band@$addr"
 }
+
+/**
+ * 灯具**分组**（编组）—— 与 [ChannelGroups]（通道功能分组：亮度/位置/颜色…）无关。
+ *
+ * 用途：把若干台已配接灯具归成一组，推子页可以"整组选中"一起控制。
+ * 归属关系记在 [FixtureInstance.groupId] 上（一台灯至多一个组）。
+ *
+ * 分组本身**不影响 DMX 输出** —— 控台只认通道，推子页在下发前把一次推子动作
+ * 按各灯的 attribute 分发到各自的真实通道，分组只是"选择"层面的便利。
+ * 所以这个功能是纯 App 的，不需要动固件协议。
+ */
+data class FixtureGroup(
+    val id: String,
+    val name: String
+)
 
 /**
  * 板载**程序槽**总数（固件 PROG_MAX_COUNT = 8）。
@@ -133,42 +176,102 @@ class FixtureStore(context: Context) {
     // ---------- 灯具实例（Patch）----------
     private val keyInstances = "instances"
 
+    /**
+     * 实例 id 的自增序号（进程内）。
+     *
+     * ⚠ 实例 id 不能只用 `currentTimeMillis`：批量 patch 是**一台一次**调
+     *   [addInstances] 的（count=1），同一毫秒内的第二次调用会算出完全一样的
+     *   `inst_<ms>_0`。结果列表里出现两个同 id 的实例 —— 按 id 查找/删除/选中/
+     *   分组（`autoGroupInstances` 传的就是 id）全部只作用到其中一个，
+     *   表现成"删了一台另一台也跟着变/变不掉"这类诡异现象。
+     */
+    private val idSeq = java.util.concurrent.atomic.AtomicLong()
+
+    /** 生成一个不与 [existing] 冲突的实例 id。 */
+    private fun newInstanceId(existing: Collection<FixtureInstance>): String {
+        var id: String
+        do {
+            id = "inst_${System.currentTimeMillis()}_${idSeq.incrementAndGet()}"
+        } while (existing.any { it.id == id })
+        return id
+    }
+
     /** 全部灯具实例，按全局起始地址排序。 */
     fun instances(): List<FixtureInstance> {
         val raw = prefs.getString(keyInstances, null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                // 兼容两种旧格式：
-                //   v24「universe + startAddr(1..512)」→ 直接就是 A/B + 地址
-                //   v25「startAddr = 全局通道 1..1024」→ 拆回 A/B + 地址
-                val uniRaw = if (o.has("universe")) o.getInt("universe").coerceIn(1, DmxProtocol.UNIVERSES) else 0
-                val stored = o.getInt("startAddr")
-                val uni: Int
-                val addr: Int
-                if (uniRaw > 0) {
-                    uni = uniRaw
-                    addr = stored.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
-                } else {
-                    uni = if (stored > DmxProtocol.UNIVERSE_SIZE) 2 else 1
-                    addr = (if (uni > 1) stored - DmxProtocol.UNIVERSE_SIZE else stored)
-                        .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
-                }
-                FixtureInstance(
-                    id = o.getString("id"),
-                    fixtureId = o.getString("fixtureId"),
-                    name = o.getString("name"),
-                    addr = addr,
-                    universe = uni,
-                    // 程序槽：只用于上传板载程序，超出 8 个时取值 0（不影响实例本身）
-                    slot = (if (o.has("slot")) o.getInt("slot") else i) % PROG_SLOT_COUNT
-                )
-            }.sortedBy { it.globalAddr() }
-        } catch (_: Exception) { emptyList() }
+        val arr = try {
+            JSONArray(raw)
+        } catch (_: Exception) {
+            stashRawBackup(raw)
+            return emptyList()
+        }
+        val out = ArrayList<FixtureInstance>(arr.length())
+        var bad = 0
+        for (i in 0 until arr.length()) {
+            // ⚠ **逐条隔离**：一条坏记录只丢它自己。
+            //   以前整个 `(0 until len).map { ... }` 包在一个 try 里 —— 任意一条
+            //   记录缺字段/类型不对，就让**整张实例表读成空**；而紧接着任何一次写入
+            //   （哪怕只是加一台灯）都会调用 persistInstances 用空表覆盖磁盘，
+            //   用户的全部配接就永久没了，且没有任何提示。
+            try {
+                out.add(parseInstance(arr.getJSONObject(i), i))
+            } catch (_: Exception) {
+                bad++
+            }
+        }
+        if (bad > 0) {
+            stashRawBackup(raw)
+            android.util.Log.w("FixtureStore", "跳过 $bad 条损坏的实例记录（原始存档已备份到 ${keyInstances}.backup）")
+        }
+        return out.sortedBy { it.globalAddr() }
+    }
+
+    /** 解析单条实例记录（v24 的 universe+startAddr 与 v25 的全局 startAddr 都兼容）。 */
+    private fun parseInstance(o: JSONObject, i: Int): FixtureInstance {
+        val uniRaw = if (o.has("universe")) o.getInt("universe").coerceIn(1, DmxProtocol.UNIVERSES) else 0
+        val stored = o.getInt("startAddr")
+        val uni: Int
+        val addr: Int
+        if (uniRaw > 0) {
+            uni = uniRaw
+            addr = stored.coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+        } else {
+            uni = if (stored > DmxProtocol.UNIVERSE_SIZE) 2 else 1
+            addr = (if (uni > 1) stored - DmxProtocol.UNIVERSE_SIZE else stored)
+                .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
+        }
+        return FixtureInstance(
+            id = o.getString("id"),
+            fixtureId = o.getString("fixtureId"),
+            name = o.getString("name"),
+            addr = addr,
+            universe = uni,
+            // 程序槽：只用于上传板载程序，超出 8 个时取值 0（不影响实例本身）
+            slot = (if (o.has("slot")) o.getInt("slot") else i) % PROG_SLOT_COUNT,
+            // v26 起：灯具分组。旧存档没有这个字段（或为 null）= 未分组，属正常
+            groupId = if (o.has("groupId") && !o.isNull("groupId"))
+                o.getString("groupId").takeIf { it.isNotEmpty() } else null
+        )
+    }
+
+    /**
+     * 存档读坏/被清空时把原始 JSON 另存一份。
+     *
+     * 目的是让"数据没了"变成"数据在 backup 键里还能捞" —— 这类覆盖式存储
+     * （一个 key 存整张表）一旦写错就是不可逆的，留一份原文成本几乎为零。
+     */
+    private fun stashRawBackup(raw: String) {
+        if (raw.isEmpty()) return
+        prefs.edit()
+            .putString("$keyInstances.backup", raw)
+            .putLong("$keyInstances.backupAt", System.currentTimeMillis())
+            .apply()
     }
 
     private fun persistInstances(list: List<FixtureInstance>) {
+        // ⚠ 用空表覆盖非空存档之前先留底：正常"清空全部"也会留，但真出问题
+        //   （解析失败导致的空表）这就是唯一的救命绳。
+        if (list.isEmpty()) prefs.getString(keyInstances, null)?.let { stashRawBackup(it) }
         val arr = JSONArray()
         list.forEach { i ->
             arr.put(JSONObject().apply {
@@ -178,6 +281,7 @@ class FixtureStore(context: Context) {
                 put("startAddr", i.addr)        // 本宇宙内地址 1..512
                 put("universe", i.universe)     // 1=A, 2=B
                 put("slot", i.slot)
+                put("groupId", i.groupId ?: JSONObject.NULL)   // null = 未分组
             })
         }
         prefs.edit().putString(keyInstances, arr.toString()).apply()
@@ -213,7 +317,7 @@ class FixtureStore(context: Context) {
     fun addInstances(fixtureId: String, namePrefix: String,
                      startAddr: Int, count: Int, universe: Int = 1): String? {
         val uni = universe.coerceIn(1, DmxProtocol.UNIVERSES)
-        val band = if (uni == 1) "A" else "B"
+        val band = DmxProtocol.bandLabel(uni)
         val def = fixtures.find { it.id == fixtureId } ?: return "灯型不存在"
         // 单次最多建 64 台（受本宇宙地址空间自然限制，20ch 灯上限 25 台）
         val n = count.coerceIn(1, MAX_BATCH_ADD)
@@ -242,12 +346,25 @@ class FixtureStore(context: Context) {
         }
 
         for (k in 0 until n) {
-            list.add(FixtureInstance("inst_${System.currentTimeMillis()}_$k", fixtureId,
+            list.add(FixtureInstance(newInstanceId(list), fixtureId,
                                      "$namePrefix-${k + 1}", addr0 + k * pitch,
                                      nextFreeSlot(list), uni))
         }
         persistInstances(list)
         return null
+    }
+
+    /**
+     * 原样放回一批实例（**回滚用**）。
+     *
+     * 用途：RDM 建实例时"覆盖已占用地址"是**先删旧再建新**，万一新实例建不起来
+     * （地址越界/重叠），用户就白丢一台灯且无法撤销。这里把删掉的旧实例按原
+     * id/名字/地址放回去。故意不做重叠校验 —— 它们本来就是占着这些地址的。
+     */
+    fun restoreInstances(insts: Collection<FixtureInstance>) {
+        if (insts.isEmpty()) return
+        val have = instances().map { it.id }.toSet()
+        persistInstances(instances() + insts.filterNot { it.id in have })
     }
 
     /** 删除多个实例（批量删除）。 */
@@ -290,13 +407,129 @@ class FixtureStore(context: Context) {
     fun fixtureOf(inst: FixtureInstance): FixtureDef? =
         fixtures.find { it.id == inst.fixtureId }
 
+    // ---------- 灯具分组（编组）----------
+    //
+    // 归属唯一：一台灯至多属于一个分组（理由见 FixtureInstance.groupId 的注释）。
+    // 分组只影响"选择"，不影响 DMX 输出，所以是纯 App 功能、不动固件协议。
+
+    private val keyGroups = "groups"
+
+    /** 全部分组，按创建顺序。 */
+    fun groups(): List<FixtureGroup> {
+        val raw = prefs.getString(keyGroups, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                FixtureGroup(o.getString("id"), o.getString("name"))
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun persistGroups(list: List<FixtureGroup>) {
+        val arr = JSONArray()
+        list.forEach { g -> arr.put(JSONObject().apply { put("id", g.id); put("name", g.name) }) }
+        prefs.edit().putString(keyGroups, arr.toString()).apply()
+    }
+
+    /** 新建分组，返回新组 id。名字留空时自动叫"分组 N"。 */
+    fun addGroup(name: String): String {
+        val list = groups().toMutableList()
+        val id = "grp_${System.currentTimeMillis()}_${list.size}"
+        list.add(FixtureGroup(id, name.trim().ifEmpty { "分组 ${list.size + 1}" }))
+        persistGroups(list)
+        return id
+    }
+
+    fun renameGroup(id: String, name: String) {
+        val nm = name.trim()
+        if (nm.isEmpty()) return
+        persistGroups(groups().map { if (it.id == id) it.copy(name = nm) else it })
+    }
+
+    /**
+     * 删除分组。**只删组、不删灯** —— 组内灯具回到"未分组"。
+     *
+     * 归属靠 [FixtureInstance.groupId]，指向一个已不存在的组本就等于未分组；
+     * 但这里仍显式清空一下，免得存档里留下悬空 id，以后排查时让人误以为
+     * 那些灯还在某个组里。
+     */
+    fun removeGroup(id: String) {
+        persistGroups(groups().filterNot { it.id == id })
+        persistInstances(instances().map { if (it.groupId == id) it.copy(groupId = null) else it })
+    }
+
+    /** 把一批实例移到指定分组；[groupId] 传 null = 移到"未分组"。 */
+    fun setInstancesGroup(ids: Collection<String>, groupId: String?) {
+        if (ids.isEmpty()) return
+        val set = ids.toSet()
+        persistInstances(instances().map { if (it.id in set) it.copy(groupId = groupId) else it })
+    }
+
+    /** 某分组下的实例；[groupId] 传 null = 取"未分组"的那些。 */
+    fun instancesOfGroup(groupId: String?): List<FixtureInstance> =
+        instances().filter { it.groupId == groupId }
+
+    /**
+     * 把一批**刚建好的**实例自动归到一个「按名字复用」的分组里。
+     *
+     * 同名组已存在就复用，否则新建 —— 复用而不是每次新建，是为了避免
+     * 反复加实例时堆出一串同名组（例如连加三批 EOS 就出现三个"EOS"组）。
+     * 用户确实想分开时，在「已配接」页对组改名即可。
+     *
+     * 两条加实例路径都要走这里，否则新建的灯会在已配接页散落在「未分组」里，
+     * 还得手动归组：
+     *   · 灯库页的「加实例」    → 组名 = 灯型名（def.name）
+     *   · RDM 页的「加实例」    → 组名 = 型号名（RdmDevice.modelDesc）
+     *
+     * @return 实际使用的分组 id；[ids] 为空时返回 null。
+     */
+    fun autoGroupInstances(ids: Collection<String>, groupName: String): String? {
+        if (ids.isEmpty()) return null
+        val title = groupName.trim().ifEmpty { "分组" }
+        val gid = groups().firstOrNull { it.name == title }?.id ?: addGroup(title)
+        setInstancesGroup(ids, gid)
+        return gid
+    }
+
+    // ---- 灯型列表缓存 ----
+    @Volatile private var fixtureCache: List<FixtureDef>? = null
+    @Volatile private var fixtureCacheKey: Long = 0
+
+    /**
+     * 所有灯型。**带缓存**。
+     *
+     * 为什么需要：以前每次访问都是 `listFiles()` + 逐个 `readText()` + JSON 解析，
+     * 而访问点有 10 处 —— 其中 `createInstancesFromRdm` → `matchRdmFixture` 是
+     * **按设备**调的，一次"加实例"就是 O(台数 × 灯库文件数 × 解析)，而且全在 UI 线程。
+     * 灯库有几百个灯型时进页面、加实例都会明显卡。
+     *
+     * 缓存键是"文件名 + 大小 + 修改时间"的指纹。`listFiles()` 本身几乎不花钱，
+     * 贵的 `readText`/JSON 解析只在文件真的变了时才做。这样**不需要在每个写入点
+     * 手动失效** —— 漏掉一处就会读到旧表，比多几次 stat 危险得多。
+     */
     val fixtures: List<FixtureDef>
         get() {
+            // 排序是为了让指纹稳定（listFiles 的顺序不保证）
+            val files = dir.listFiles()
+                ?.filter { it.extension == "json" }
+                ?.sortedBy { it.name }
+                ?: emptyList()
+            var key = files.size.toLong()
+            for (f in files) {
+                key = key * 31 + f.name.hashCode()
+                key = key * 31 + f.length()
+                key = key * 31 + f.lastModified()
+            }
+            fixtureCache?.let { if (key == fixtureCacheKey) return it }
             val list = mutableListOf<FixtureDef>()
-            dir.listFiles()?.filter { it.extension == "json" }?.forEach { f ->
+            for (f in files) {
                 try { list.add(parseFixtureJson(f.readText())) } catch (_: Exception) {}
             }
-            return list.sortedBy { it.name }
+            val sorted = list.sortedBy { it.name }
+            fixtureCache = sorted
+            fixtureCacheKey = key
+            return sorted
         }
 
     /**

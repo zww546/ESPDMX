@@ -134,8 +134,65 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private var rdmPendingAssign: List<Pair<RdmDevice, Int>>? = null
     /** RDM 排序（编辑顺序）模式：拖动调整灯具顺序，地址按顺序自动分配。 */
     private var rdmReorderMode = false
-    private var rdmOrder: List<RdmDevice> = emptyList()
+    private var rdmOrder: MutableList<RdmDevice> = mutableListOf()
+    /**
+     * RDM 列表「按型号分组」开关（默认开）。
+     *
+     * ⚠ 分组键是 [RdmDevice.modelDesc]（型号描述），**不是** [RdmDevice.model]：
+     *   model 实际取的是 deviceLabel（设备标签，每台各不相同），按它分组
+     *   会变成"一台灯一个组"，看起来像没分组。
+     */
+    private var rdmGroupMode = true
+    /**
+     * RDM 列表当前的行模型（元素是 [RdmGroupRow] 组头或 [RdmDevice] 设备行）。
+     *
+     * ⚠ adapter 的 position 是**行模型下标**，不是 [rdmOrder] 的下标。分组模式
+     *   下两者相差若干个组头，所以"预期地址"必须靠 uid 反查 rdmOrder 的序号，
+     *   不能直接拿 position 当 rdmOrder 下标（否则地址预览整排错位）。
+     */
+    private var rdmRows: List<Any> = emptyList()
+    /**
+     * 排序模式下整表的"预期地址"：uid → 新地址（null = 本宇宙放不下）。
+     *
+     * 在 [refreshRdmList] 铺完行模型后算一次，[updateRdmPreviews] 拖动时再算一次；
+     * 后者负责拖动过程中的就地更新，前者供 onBindViewHolder 使用。
+     */
+    private var rdmPlanMap: Map<String, Int>? = null
+    /** 已折叠的型号组（键 = modelDesc）。只影响显示，不影响数据。 */
+    private val rdmGroupCollapsed = linkedSetOf<String>()
+    /** 用户手动改过的组名：modelDesc → 自定义名（默认组名就是 modelDesc）。 */
+    private val rdmGroupNames = linkedMapOf<String, String>()
+    /**
+     * 每个分组的**起始地址**（键 = modelDesc，分组头那行的「起始」框）。
+     *
+     * 没设过的组**不在这里** —— 它的起始地址自动接上一组的末尾，第一组自然就是 1。
+     * 所以「默认第一个为 1」不需要特殊分支，见 [rdmGroupStarts]。
+     */
+    private val rdmGroupStart = linkedMapOf<String, Int>()
+    /**
+     * 每台灯**硬件上当前**的地址（扫描到时记下，写入成功后更新）。
+     *
+     * 和 [RdmDevice.address] 分开记：那边是"**App 的预设地址**" —— 换灯库、改起始、
+     * 选配址方式、拖动排序、单台改址都只动预设，不下发硬件。两者不一致就说明
+     * "还没写"，界面上用「原 A@xx」标出来。
+     */
+    private val rdmHwAddr = HashMap<String, Int>()
+    /**
+     * 每组最近一次选的**配址方式**：true = 全部相同，缺省/没选过 = 按起始递增。
+     *
+     * 「配址」按钮只是选方式 + 在 App 里排好；「写入」按这里记住的方式重排后下发，
+     * 所以"改了起始地址直接点写入"也能得到正确结果。
+     */
+    private val rdmGroupSame = linkedMapOf<String, Boolean>()
+    /** 手动为某个型号指定的灯库：modelDesc → FixtureDef.id（该型号下所有设备共用）。 */
+    private val rdmModelFixture = linkedMapOf<String, String>()
+    /** 演示数据模式标记：让界面能提示"这是虚拟设备，不是真扫到的"。 */
+    private var rdmDemoMode = false
+    /** 「已配接」列表里折叠掉的分组（组 id）。只影响显示。 */
+    private val instGroupCollapsed = linkedSetOf<String>()
     private var rdmTouchHelper: androidx.recyclerview.widget.ItemTouchHelper? = null
+    /** RDM 扫描超时兜底（单独持引用，取消时只撤它，不牵连同 Handler 上的别人）。 */
+    private var rdmScanTimeout: Runnable? = null
     private lateinit var rdmStore: RdmStore
 
     /**
@@ -489,8 +546,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     /** 渲染顶部实例标签条；无实例时隐藏。 */
     private fun renderInstanceBar() {
         val insts = fixtureStore.instances()
-        b.instScroll.visibility = if (insts.isEmpty()) View.GONE else View.VISIBLE
         b.btnInstanceMgr.visibility = if (insts.isEmpty()) View.GONE else View.VISIBLE
+        // 选择入口统一收到「灯具管理 → 已配接」页，推子页顶部只做状态显示
+        b.btnSelectFixtures.visibility = View.GONE
         b.instBar.removeAllViews()
         instanceButtons.clear()
         if (insts.isEmpty()) {
@@ -498,6 +556,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             // 否则切回推子页/实例页时仍指向已删除的实例（表现为删光了还显示旧状态）
             selectedInstanceIds.clear()
             currentInstanceId = null
+            // ⚠ 顶部芯片条也要收起来。它的可视性现在是在下面按"有没有选中"设的，
+            //   走这个提前 return 的分支时不设，就会留下一条空条。
+            b.instScroll.visibility = View.GONE
             refreshMasterScope()
             return
         }
@@ -508,7 +569,13 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             currentInstanceId = null
         }
         val pad = (8 * resources.displayMetrics.density).toInt()
-        for (inst in insts) {
+        // ⚠ 顶部只显示**已选中的**灯具。
+        //   选择动作在「灯具管理 → 已配接」页（那里支持点行勾选 + 按分组整组选）。
+        //   以前这里列的是**全部**实例：实例一多就变成一条挤满的芯片条，
+        //   反而看不出"现在到底在控制哪几台"。点芯片仍可取消该台。
+        val shown = insts.filter { it.id in selectedInstanceIds }.sortedBy { it.globalAddr() }
+        b.instScroll.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
+        for (inst in shown) {
             val tv = TextView(this)
             tv.text = inst.name
             tv.tag = inst.id
@@ -533,6 +600,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             b.instBar.addView(tv)
             instanceButtons.add(tv)
         }
+        // 兜底再统一样式一次：芯片是在上面按 isSelected 建的，这里保证"只有一处
+        // 决定选中外观"（refreshInstanceBarStyles），以后加芯片来源时不会各写一套。
+        refreshInstanceBarStyles()
         // 有实例时隐藏自定义通道选择（通道数由实例决定）
         b.presetBar.visibility = View.GONE
         b.etChannels.visibility = View.GONE
@@ -553,9 +623,25 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     /** 切换实例：点击切换选中状态（支持多选），全取消回到裸通道。 */
     private fun toggleInstance(id: String) {
         if (!selectedInstanceIds.remove(id)) selectedInstanceIds.add(id)
+        applySelection()
+    }
+
+    /**
+     * 「选择集合变了」的统一收尾。
+     *
+     * ⚠ 抽出来是为了**只有一处**：以前这些步骤散在 toggleInstance 里，
+     *   新增"树形多选弹窗"后如果各写一遍，很容易漏掉 refreshFxPage 这类
+     *   收尾动作 —— 现象是"弹窗选完灯，效果页还是旧的那几台"。
+     */
+    private fun applySelection() {
         // 主灯 = 组内地址最小的一台（用于回读/效果/程序）
         currentInstanceId = groupInstances().firstOrNull()?.id
-        refreshInstanceBarStyles()
+        // ⚠ 必须**整条重建**芯片条，不能只 restyle。
+        //   顶部现在只显示"已选中的"灯具，而 refreshInstanceBarStyles() 只会给
+        //   **已经存在**的芯片换描边 —— 新选中的那台压根还没有芯片，根本不会出现。
+        //   （现象：在已配接页点了灯具行，控制其实已生效，但推子页顶部看不到它，
+        //     看起来就像"必须先点编组选择才行"。）
+        renderInstanceBar()
         if (selectedInstanceIds.isEmpty()) {
             clearFixtureMode()
         } else {
@@ -563,6 +649,145 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         refreshProgramPage()
         refreshFxPage()
+    }
+
+    /**
+     * 「选择控制灯具」—— 按**灯具分组**的树形多选弹窗（推子页顶部「编组」入口）。
+     *
+     * 为什么不把分组塞进顶部芯片条：芯片条还要兼顾"点一下快速切一台"，
+     * 再插组芯片会很挤；分层（组 → 单台）在弹窗里表达更清楚。
+     *
+     * 勾选语义（三种控制方式由此自然得到）：
+     *   · 组行 = 整组进/出；部分选中时标题显示 `组名 (已选/总数)`
+     *   · 单台行 = 只切那一台
+     *   · 混勾 → 「分组 + 单台」混合控制
+     *
+     * 弹窗里先改一份 draft 副本，点「确定」才落回 selectedInstanceIds ——
+     * 这样点「取消」不会留下半途状态。
+     *
+     * 分组的**增删改 / 把灯挪组**不在这里，在「已配接灯具」页（那是它的主场）。
+     */
+    private fun showSelectFixturesDialog() {
+        val insts = fixtureStore.instances()
+        if (insts.isEmpty()) { toast("还没有已配接灯具"); return }
+
+        val draft = LinkedHashSet(selectedInstanceIds)
+        val groups = fixtureStore.groups()
+        val density = resources.displayMetrics.density
+        fun px(v: Int) = (v * density).toInt()
+
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(px(16), px(8), px(16), px(8))
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(box) }
+
+        // 组行 CheckBox 的引用：单台勾选时只更新对应组行，
+        // 不整表重建（重建会让滚动位置跳回顶部，灯多时很难用）
+        val groupCbs = HashMap<String, android.widget.CheckBox>()
+
+        fun groupLabel(g: FixtureGroup, members: List<FixtureInstance>): String =
+            "${g.name}   (${members.count { it.id in draft }}/${members.size})"
+
+        fun syncGroupRow(g: FixtureGroup) {
+            val members = insts.filter { it.groupId == g.id }
+            groupCbs[g.id]?.let {
+                it.text = groupLabel(g, members)
+                it.isChecked = members.isNotEmpty() && members.all { m -> m.id in draft }
+            }
+        }
+
+        fun addFixtureRow(m: FixtureInstance) {
+            box.addView(android.widget.CheckBox(this).apply {
+                text = "    ${m.name}   ${m.label()}"
+                textSize = 13f
+                isChecked = m.id in draft
+                setPadding(px(20), px(2), 0, px(2))
+                setOnCheckedChangeListener { _, on ->
+                    if (on) draft.add(m.id) else draft.remove(m.id)
+                    groups.firstOrNull { it.id == m.groupId }?.let { syncGroupRow(it) }
+                }
+            })
+        }
+
+        lateinit var rebuild: () -> Unit
+
+        fun addGroupSection(g: FixtureGroup) {
+            val members = insts.filter { it.groupId == g.id }
+            if (members.isEmpty()) return
+            val gc = android.widget.CheckBox(this).apply {
+                text = groupLabel(g, members)
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                isChecked = members.all { it.id in draft }
+                setPadding(0, px(8), 0, px(2))
+                setOnClickListener { v ->
+                    val on = (v as android.widget.CheckBox).isChecked
+                    members.forEach { if (on) draft.add(it.id) else draft.remove(it.id) }
+                    // 组操作影响多行，直接重建最省心（组数量少，滚动跳位不明显）
+                    rebuild()
+                }
+            }
+            groupCbs[g.id] = gc
+            box.addView(gc)
+            members.forEach { addFixtureRow(it) }
+        }
+
+        rebuild = {
+            box.removeAllViews()
+            groupCbs.clear()
+
+            val top = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, px(6))
+            }
+            fun pill(label: String, onClick: () -> Unit) {
+                top.addView(TextView(this).apply {
+                    text = label
+                    textSize = 12f
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(px(10), px(6), px(10), px(6))
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.accent))
+                    background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill)
+                    setOnClickListener { onClick() }
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { rightMargin = px(6) }
+                })
+            }
+            pill("全选") { insts.forEach { draft.add(it.id) }; rebuild() }
+            pill("全不选") { draft.clear(); rebuild() }
+            box.addView(top)
+
+            groups.forEach { addGroupSection(it) }
+
+            // 未分组段（如果有）
+            val un = insts.filter { it.groupId == null }
+            if (un.isNotEmpty()) {
+                box.addView(TextView(this).apply {
+                    text = "未分组   (${un.count { it.id in draft }}/${un.size})"
+                    textSize = 14f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setPadding(0, px(8), 0, px(2))
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                })
+                un.forEach { addFixtureRow(it) }
+            }
+        }
+        rebuild()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("选择控制灯具")
+            .setMessage("勾组名 = 整组一起控制；勾单台 = 只控制那一台；两者可混选。")
+            .setView(scroll)
+            .setPositiveButton("确定") { _, _ ->
+                selectedInstanceIds.clear()
+                insts.filter { it.id in draft }.forEach { selectedInstanceIds.add(it.id) }
+                applySelection()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 长按实例确认删除。 */
@@ -1672,6 +1897,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private val devFiles = mutableListOf<DevFile>()
     private var downloadingFile: String? = null
     private var downloadBuf = ByteArray(0)
+    // 下载组包状态：0x93 帧里明明带着 seq 和 totalChunks，以前直接 downloadBuf += data，
+    // 丢一块就拼出个残缺文件 —— 多数情况 importFile 会解析失败，但若丢的正好在
+    // 注释/空行附近，可能导入一份内容不全却不报错的灯库。
+    private var downloadExpectSeq = 0
+    private var downloadTotalChunks = -1
+    private var downloadCorrupt = false
     private var deletingFile: String? = null
     private var dirOpName: String? = null    // 正在创建/删除的文件夹名
     private var moveOp: String? = null       // 正在移动/复制的条目（"操作: name → dir"）
@@ -1689,42 +1920,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      * 现在解析器对每个分支都做完整长度校验，非法帧直接丢弃。
      */
     override fun onNotify(data: ByteArray) {
-        // ---- RDM 应答（0x89/0x8A/0x8B）----
-        // 这三帧结构简单、与其它帧不冲突，直接在分发前处理掉。
-        if (data.isNotEmpty()) {
-            when (data[0].toInt() and 0xFF) {
-                DmxProtocol.RESP_RDM_SCAN -> {
-                    // 0x89 count uni ok errLen err…
-                    if (data.size >= 5) {
-                        val count = data[1].toInt() and 0xFF
-                        val uni = data[2].toInt() and 0xFF
-                        val ok = (data[3].toInt() and 0xFF) == 0
-                        val n = (data[4].toInt() and 0xFF).coerceAtMost(data.size - 5)
-                        val err = String(data, 5, n, Charsets.UTF_8)
-                        runOnUiThread { onRdmScanDone(count, uni, ok, err) }
-                    }
-                    return
-                }
-                DmxProtocol.RESP_RDM_DEVICE -> {
-                    runOnUiThread { onRdmDevice(data) }
-                    return
-                }
-                DmxProtocol.RESP_RDM_RESULT -> {
-                    if (data.size >= 3) {
-                        val ok = (data[1].toInt() and 0xFF) == 0
-                        val n = (data[2].toInt() and 0xFF).coerceAtMost(data.size - 3)
-                        val err = String(data, 3, n, Charsets.UTF_8)
-                        runOnUiThread {
-                            toast(if (ok) "RDM 命令执行成功" else "RDM 失败：$err")
-                            refreshRdmList()
-                            // 地址写完 → 问是否把这些灯具也建成 App 里的实例
-                            if (ok) offerCreateInstances()
-                        }
-                    }
-                    return
-                }
-            }
-        }
         when (val m = DeviceMessages.parse(data)) {
             // ---- 状态同步应答（0x05 之后固件上报）----
             is Msg.StateHead -> {
@@ -1795,29 +1990,89 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 runOnUiThread { cb?.invoke() }
             }
 
-            is Msg.FileChunk -> downloadBuf += m.data
+            is Msg.FileChunk -> {
+                // ⚠ 按 seq 组装并在收齐后校验块数。seq/totalChunks 解析器早就读出来了，
+                //   只是以前没人用 —— BLE 丢一块就会拼出一个残缺文件。
+                if (m.seq != downloadExpectSeq) {
+                    downloadCorrupt = true
+                    android.util.Log.w("DL", "文件分块乱序/丢失：期望 seq=$downloadExpectSeq 收到 ${m.seq}")
+                } else {
+                    downloadBuf += m.data
+                    downloadExpectSeq++
+                    if (m.totalChunks > 0) downloadTotalChunks = m.totalChunks
+                }
+            }
 
             is Msg.FileEnd -> {
                 val name = downloadingFile ?: "device_fixture.xml"
-                if (m.ok && downloadBuf.isNotEmpty()) {
-                    val imported = fixtureStore.importFile(downloadBuf.inputStream(), name)
-                    runOnUiThread {
-                        if (imported.isNotEmpty()) {
-                            toast(Lang.t(R.string.k_imported_1_s_fixtures_from_device, imported.size))
-                            refreshFixturePage()
-                        } else {
-                            toast(Lang.t(R.string.k_could_not_parse_the_fixture_file))
+                // 收齐校验：块数不够 = 文件残缺，宁可报错也不要导入半份灯库
+                if (!downloadCorrupt && downloadTotalChunks > 0 &&
+                    downloadExpectSeq != downloadTotalChunks) {
+                    downloadCorrupt = true
+                    android.util.Log.w("DL",
+                        "文件块数不足：应有 $downloadTotalChunks 块，实收 $downloadExpectSeq 块")
+                }
+                if (m.ok && downloadBuf.isNotEmpty() && !downloadCorrupt) {
+                    // ⚠ 解析+落盘挪到后台线程：灯库文件可能几百 KB，在主线程 importFile
+                    //   会卡住 UI（而这里正是 onNotify 回调里）。
+                    val bytes = downloadBuf
+                    Thread {
+                        val imported = try {
+                            fixtureStore.importFile(bytes.inputStream(), name)
+                        } catch (e: Exception) {
+                            android.util.Log.w("DL", "导入失败: ${e.message}")
+                            emptyList()
                         }
+                        runOnUiThread {
+                            if (imported.isNotEmpty()) {
+                                toast(Lang.t(R.string.k_imported_1_s_fixtures_from_device, imported.size))
+                                refreshFixturePage()
+                            } else {
+                                toast(Lang.t(R.string.k_could_not_parse_the_fixture_file))
+                            }
+                        }
+                    }.start()
+                } else if (downloadCorrupt) {
+                    runOnUiThread {
+                        toast("文件传输不完整（丢失分块），已丢弃。请重试下载")
                     }
                 } else {
                     runOnUiThread { toast(if (m.ok) "下载完成(nodata)" else "设备无此文件") }
                 }
                 downloadingFile = null
                 downloadBuf = ByteArray(0)
+                downloadExpectSeq = 0
+                downloadTotalChunks = -1
+                downloadCorrupt = false
             }
+
+            // ---- RDM（0x89/0x8A/0x8B）：解析在 DeviceMessages 里，和别的帧同一套校验 ----
+            is Msg.RdmScanHead ->
+                runOnUiThread { onRdmScanDone(m.count, m.universe, m.ok, m.err) }
+
+            is Msg.RdmDeviceMsg ->
+                runOnUiThread { onRdmDevice(m.device) }
+
+            is Msg.RdmResult ->
+                runOnUiThread {
+                    toast(if (m.ok) "RDM 命令执行成功" else "RDM 失败：${m.err}")
+                    refreshRdmList()
+                    // 地址写完 → 问是否把这些灯具也建成 App 里的实例
+                    if (m.ok) offerCreateInstances()
+                }
 
             null -> {}   // 未知 / 非法帧
         }
+    }
+
+    /**
+     * BLE 帧没发出去（未连接 / 连续写失败导致传输中止）。
+     *
+     * 以前这两种情况都是静默的：用户点了"写入地址""上传"看不出任何异常。
+     * 现在至少给一句话，别让人靠"怎么没反应"去猜。
+     */
+    override fun onSendStalled(reason: String) {
+        runOnUiThread { toast("⚠ $reason") }
     }
 
     // ---- 状态同步：单片机 / APP 重启后保持一致 ----
@@ -1993,9 +2248,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 // 找该灯型已有实例；没有则自动添加一个（默认起始通道 1）
                 var inst = fixtureStore.instances().find { it.fixtureId == def.id }
                 if (inst == null) {
+                    // 自动补的这一台也一并归组，否则它会孤零零留在「未分组」里
+                    val beforeIds = fixtureStore.instances().map { it.id }.toSet()
                     val err = fixtureStore.addInstance(def.id, def.name, 1)
                     if (err == null) {
                         inst = fixtureStore.instances().find { it.fixtureId == def.id }
+                        autoGroupNewInstances(beforeIds, def.name)
                     } else {
                         toast(err)
                     }
@@ -2358,13 +2616,18 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     etCount.text.toString().toIntOrNull() ?: 1,
                     band
                 )
+                val beforeIds = fixtureStore.instances().map { it.id }.toSet()
                 val err = fixtureStore.addInstances(def.id, def.name, form.addr, form.numInstances, band)
                 if (err != null) {
                     toast(err)
                 } else {
+                    // 新实例自动归到「以灯型名命名的分组」（同名组复用）——
+                    // 否则它们会在已配接页散落在「未分组」里，用户还得手动归组
+                    autoGroupNewInstances(beforeIds, def.name)
                     form.addedToast(def.name)?.let { toast(it) }
                     refreshFixturePage()
                     renderInstanceBar()
+                    refreshInstanceMgrList()
                 }
             }
             .setNegativeButton(Lang.t(R.string.k_cancel), null)
@@ -2745,6 +3008,181 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      *
      * RDM 打开时顶部出现页签，可切到 RDM 设备列表。
      */
+    // ---------- 已配接灯具：分组列表与分组管理 ----------
+
+    /** 「已配接」列表的一行：分组头（[key] = null 表示"未分组"）。 */
+    private data class InstGroupRow(
+        val key: String?,
+        val name: String,
+        val list: List<FixtureInstance>
+    )
+
+    /** 「＋ 新建分组」行（复用 item_inst_group，把台数与三个按钮改造掉）。 */
+    private object InstAddGroupRow
+
+    /**
+     * 分组增删改后的统一收尾。
+     *
+     * 只刷列表：分组**只影响展示与"整组选中"的入口**，不改动 selectedInstanceIds，
+     * 所以推子页/效果页/程序页都不需要重建。
+     */
+    private fun afterGroupsChanged() {
+        refreshInstanceMgrList()
+    }
+
+    /**
+     * 绑定「已配接」的分组头。
+     *
+     * 样式与推子页的"功能分组"标题**完全一致**（直接复用 item_channel_group）：
+     * 左侧竖色条 + 组名 + 「N 台」+ ▸/▾。
+     * 点整行折叠/展开；**动作全部收进长按菜单** —— 这样分组头本身不带按钮，
+     * 两处看起来就是同一套东西（以及跟推子页一致）。
+     */
+    private fun bindInstGroupHeader(root: View, row: InstGroupRow) {
+        val gid = row.key
+        val collapsed = gid != null && gid in instGroupCollapsed
+        root.findViewById<TextView>(R.id.tvGroupName).text = row.name
+        root.findViewById<TextView>(R.id.tvGroupCount).text =
+            "${row.list.size} 台" + if (collapsed) "  ▸" else "  ▾"
+
+        // 整组快捷勾选：全选中显示 ☑，否则 ☐。点一下 = 整组进/出"同时控制"。
+        // 这个控件只有「已配接」页会显示（布局里默认 gone，推子页/RDM 不碰它）。
+        val allSel = row.list.isNotEmpty() && row.list.all { it.id in selectedInstanceIds }
+        root.findViewById<TextView>(R.id.tvGroupCheck).apply {
+            visibility = View.VISIBLE
+            text = if (allSel) "☑" else "☐"
+            setTextColor(ContextCompat.getColor(this@MainActivity,
+                if (allSel) R.color.ok else R.color.textDim))
+            setOnClickListener {
+                if (allSel) row.list.forEach { selectedInstanceIds.remove(it.id) }
+                else row.list.forEach { selectedInstanceIds.add(it.id) }
+                applySelection()
+                refreshInstanceMgrList()
+            }
+        }
+
+        if (gid == null) {
+            // 「未分组」不是真分组：不可折叠，也没有可改名/删除的对象。
+            // 但上面的整组勾选仍然有意义（一次选中所有未分组的灯），所以保留。
+            root.setOnClickListener(null)
+            root.setOnLongClickListener(null)
+            root.findViewById<TextView>(R.id.tvGroupCount).text = "${row.list.size} 台"
+            return
+        }
+        root.setOnClickListener {
+            if (!instGroupCollapsed.remove(gid)) instGroupCollapsed.add(gid)
+            refreshInstanceMgrList()
+        }
+        root.setOnLongClickListener {
+            showInstGroupMenu(gid, row.name, row.list.size)
+            true
+        }
+    }
+
+    /** 分组的长按菜单（所有分组动作都在这里）。 */
+    private fun showInstGroupMenu(gid: String, name: String, count: Int) {
+        val items = arrayOf("移入灯具…", "重命名分组…", "删除分组（只删组，不删灯）")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("$name（$count 台）")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showMoveIntoGroupDialog(gid)
+                    1 -> renameInstGroup(gid, name)
+                    2 -> confirmDeleteInstGroup(gid, name, count)
+                }
+            }
+            .show()
+    }
+
+    /** 绑定末尾的「＋ 新建分组」行（复用同一样式，整行可点）。 */
+    private fun bindInstAddGroupRow(root: View) {
+        root.findViewById<TextView>(R.id.tvGroupName).text = "＋ 新建分组"
+        root.findViewById<TextView>(R.id.tvGroupCount).text = ""
+        root.setOnClickListener { promptAddInstGroup() }
+        root.setOnLongClickListener(null)
+    }
+
+    /** 新建分组；建完直接问"要把哪些灯移进去"，省掉一次来回。 */
+    private fun promptAddInstGroup() {
+        val input = EditText(this).apply { hint = "分组名（留空自动命名）" }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("新建分组")
+            .setView(input)
+            .setPositiveButton("创建") { _, _ ->
+                val gid = fixtureStore.addGroup(input.text.toString())
+                afterGroupsChanged()
+                showMoveIntoGroupDialog(gid)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 把灯具移入某个分组。
+     *
+     * 做成"组为中心、一次勾多台"，而不是每台灯各挂一个"移动到分组"按钮 ——
+     * 现场调整多是"这几台一起挪过去"，逐台点太累。
+     */
+    private fun showMoveIntoGroupDialog(groupId: String) {
+        val g = fixtureStore.groups().find { it.id == groupId } ?: return
+        val candidates = fixtureStore.instances().filter { it.groupId != groupId }
+        if (candidates.isEmpty()) { toast("没有可移入的灯具"); return }
+        val checked = BooleanArray(candidates.size)
+        val names = candidates.map { "${it.name}   ${it.label()}" }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("移入「${g.name}」")
+            .setMultiChoiceItems(names, checked) { _, which, on -> checked[which] = on }
+            .setPositiveButton("移入") { _, _ ->
+                val ids = candidates.filterIndexed { i, _ -> checked[i] }.map { it.id }
+                if (ids.isEmpty()) { toast("没有勾选任何灯具"); return@setPositiveButton }
+                fixtureStore.setInstancesGroup(ids, groupId)
+                toast("已移入 ${ids.size} 台")
+                afterGroupsChanged()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun renameInstGroup(gid: String, current: String) {
+        val input = EditText(this).apply { setText(current) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("重命名分组")
+            .setView(input)
+            .setPositiveButton("确定") { _, _ ->
+                fixtureStore.renameGroup(gid, input.text.toString())
+                afterGroupsChanged()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 删组：**只删组、不删灯**（组内灯回到「未分组」）。 */
+    private fun confirmDeleteInstGroup(gid: String, name: String, count: Int) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("删除分组「$name」")
+            .setMessage("只删分组本身；组内 $count 台灯会回到「未分组」，不会被删掉。")
+            .setPositiveButton("删除") { _, _ ->
+                fixtureStore.removeGroup(gid)
+                toast("已删除分组「$name」")
+                afterGroupsChanged()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 给"刚建好的实例"自动归组（按灯型名找同名组，没有就新建）。
+     *
+     * `addInstances()` 不返回新建实例的 id，所以用"建之前的 id 集合"做差集认出来。
+     * 灯库页的「加实例」和应用灯库时的自动补台都要走这一步，否则新建的灯
+     * 会在已配接页散落在「未分组」里，用户还得手动归组。
+     */
+    private fun autoGroupNewInstances(beforeIds: Set<String>, groupName: String) {
+        val newInsts = fixtureStore.instances().filterNot { it.id in beforeIds }
+        if (newInsts.isEmpty()) return
+        fixtureStore.autoGroupInstances(newInsts.map { it.id }, groupName)
+    }
+
     private fun refreshInstanceMgrList() {
         val insts = fixtureStore.instances().sortedBy { it.globalAddr() }
         imfb.btnInstSelectAll.setOnClickListener {
@@ -2764,6 +3202,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             instEditSel.clear()
             refreshInstanceMgrList()
         }
+
+        // 按分组整组选择（树形多选弹窗）—— 选择动作的主场就在这一页
+        imfb.btnInstGroupPick.text = "编组选择"
+        imfb.btnInstGroupPick.isEnabled = !instEditMode
+        imfb.btnInstGroupPick.alpha = if (instEditMode) 0.4f else 1f
+        imfb.btnInstGroupPick.setOnClickListener { showSelectFixturesDialog() }
 
         // ---- 页签：RDM 关闭时隐藏整条 ----
         imfb.instTabBar.visibility = if (rdmEnabled) View.VISIBLE else View.GONE
@@ -2788,19 +3232,47 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
         imfb.instBatchBar.visibility = if (instEditMode) View.VISIBLE else View.GONE
         imfb.tvInstEditHint.visibility = if (instEditMode) View.VISIBLE else View.GONE
+        // 标题必须短：这一行还要并排放「编组选择」和「共 N 台」，
+        // 长句会把它们挤到重叠（详细的"勾选后怎么生效"在页面底部那句提示里）。
         imfb.tvInstListTitle.text = if (instEditMode) "多选删除模式"
-                                   else "参与同时控制的灯具（点行勾选，按地址顺序）"
+                                   else "勾选要一起控制的灯"
         imfb.tvInstCount.text = Lang.t("共 %d 台", insts.size)
         imfb.tvInstSelCount.text = Lang.t(R.string.k_1_s_selected_2, instEditSel.size)
 
+        // ---- 行模型：各分组头 + 组内灯具 …… 末尾一行「＋ 新建分组」----
+        // 样式与推子页的"功能分组"完全一致（复用 item_channel_group）：
+        // 扁平分段标题 + 左竖色条，点整行折叠/展开，**动作放长按菜单**里
+        // —— 这样分组头本身不带按钮，和推子页看起来是一套东西。
+        val rows = ArrayList<Any>()
+        for (g in fixtureStore.groups()) {
+            val members = insts.filter { it.groupId == g.id }
+            rows.add(InstGroupRow(g.id, g.name, members))
+            if (g.id !in instGroupCollapsed) rows.addAll(members)
+        }
+        val ungrouped = insts.filter { it.groupId == null }
+        if (ungrouped.isNotEmpty() || fixtureStore.groups().isEmpty()) {
+            rows.add(InstGroupRow(null, "未分组", ungrouped))
+            rows.addAll(ungrouped)            // 「未分组」不折叠
+        }
+        rows.add(InstAddGroupRow)
+
         imfb.rvInstanceMgr.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun getItemCount() = insts.size
+            override fun getItemCount() = rows.size
+            override fun getItemViewType(pos: Int) = when (rows.getOrNull(pos)) {
+                is InstGroupRow -> 1
+                InstAddGroupRow -> 2
+                else -> 0
+            }
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_instance_mgr, parent, false)
+                val id = if (viewType == 0) R.layout.item_instance_mgr else R.layout.item_channel_group
+                val v = LayoutInflater.from(parent.context).inflate(id, parent, false)
                 return object : RecyclerView.ViewHolder(v) {}
             }
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, pos: Int) {
-                val inst = insts[pos]
+                val row = rows.getOrNull(pos) ?: return
+                if (row is InstGroupRow) { bindInstGroupHeader(holder.itemView, row); return }
+                if (row === InstAddGroupRow) { bindInstAddGroupRow(holder.itemView); return }
+                val inst = row as FixtureInstance
                 val def = fixtureStore.fixtureOf(inst)
                 val root = holder.itemView
                 val tvName = root.findViewById<TextView>(R.id.tvInstName)
@@ -2819,13 +3291,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 val checked = if (instEditMode) inst.id in instEditSel
                               else inst.id in selectedInstanceIds
                 root.setBackgroundResource(if (checked) R.drawable.bg_card_active else R.drawable.bg_card)
+                // 勾选框：明确显示"这台是否参与"，且**可以单独点**（不必点整行）。
+                // 整行点击仍然有效，两条路等价。
                 tvCheck.text = when {
-                    instEditMode && checked -> "✓ 待删"
-                    checked -> "✓ 参与控制"
-                    else -> ""
+                    instEditMode && checked -> "☑ 待删"
+                    instEditMode -> "☐"
+                    checked -> "☑"
+                    else -> "☐"
                 }
                 tvCheck.setTextColor(ContextCompat.getColor(this@MainActivity,
                     if (instEditMode) R.color.err else R.color.ok))
+                tvCheck.setOnClickListener {
+                    if (instEditMode) toggleEditSel(inst.id) else toggleControlSel(inst.id)
+                }
 
                 root.setOnClickListener {
                     if (instEditMode) toggleEditSel(inst.id) else toggleControlSel(inst.id)
@@ -2848,6 +3326,446 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
     }
 
+    // ---------- RDM 按型号分组 ----------
+
+    /** 列表里的一行：分组头（分组模式才有）或一台设备。 */
+    private data class RdmGroupRow(val key: String, val devices: List<RdmDevice>)
+
+    /** 分组键：优先型号描述；为空时退回设备标签，再空就"未知型号"。 */
+    private fun rdmModelKey(d: RdmDevice): String =
+        d.modelDesc.ifEmpty { d.model.ifEmpty { "未知型号" } }
+
+    /** 组的显示名：用户改过就用改的，否则默认 = 型号名。 */
+    private fun rdmGroupTitle(key: String): String = rdmGroupNames[key] ?: key
+
+    /** 把扫描结果按型号分组（保持首次出现顺序）。 */
+    private fun rdmGrouped(): List<Pair<String, List<RdmDevice>>> =
+        rdmDevices.groupBy { rdmModelKey(it) }.toList()
+
+    /**
+     * 注入几台**虚拟** RDM 设备 —— 不连硬件、不碰总线，纯 App 端演示数据，
+     * 用来预览"按型号分组 / 组内配地址 / 加实例"这套流程（现场没有 RDM 灯也能看效果）。
+     *
+     * 刻意造了 3 种型号共 6 台：
+     *   · 两种型号名与灯库里对得上，一种**对不上** —— 用来演示"手动指定灯库"
+     *   · 组内通道数不同（12CH / 20CH），便于看"递增 / 相同"两种铺地址方式的差别
+     *
+     * ⚠ 与固件无关：固件那边的 RDM 模拟模式已整体移除（见 "移除 RDM 模拟模式" 提交），
+     *   这里不会发出任何 BLE 帧，纯本地造数据。
+     */
+    private fun injectDemoRdmDevices() {
+        fun mk(modelDesc: String, label: String, addr: Int, ch: Int, tail: Int): RdmDevice {
+            val b = byteArrayOf(0x05, 0xE0.toByte(), 0x0D, 0xE0.toByte(),
+                                (tail ushr 8).toByte(), tail.toByte())
+            return RdmDevice(
+                uid = "%02X%02X:%02X%02X%02X%02X".format(
+                    b[0], b[1], b[2], b[3], b[4], b[5]),
+                uidBytes = b,
+                manufacturer = "DEMO",
+                model = label,                 // = deviceLabel（每台不同）
+                address = addr,
+                channelCount = ch,
+                universe = 1,
+                personality = "Standard",
+                personalityNum = 1,
+                personalityCount = 1,
+                modelDesc = modelDesc,         // ← 分组键就是它
+                deviceLabel = label,
+                softwareLabel = "DEMO 1.0",
+            )
+        }
+        rdmDevices = listOf(
+            mk("Demo Beam 12CH", "演示-光束1", 1, 12, 0x0001),
+            mk("Demo Beam 12CH", "演示-光束2", 13, 12, 0x0002),
+            mk("Demo Beam 12CH", "演示-光束3", 25, 12, 0x0003),
+            mk("Demo Wash 20CH", "演示-染色1", 40, 20, 0x0011),
+            mk("Demo Wash 20CH", "演示-染色2", 60, 20, 0x0012),
+            // 这台型号名刻意不在灯库里，用来演示"手动指定灯库"
+            mk("Unknown XYZ 8CH", "演示-未知型号", 90, 8, 0x0021),
+        )
+        rdmDemoMode = true
+        rdmGroupCollapsed.clear()
+        rdmLastError = ""
+        saveRdmOrder()
+        refreshRdmList()
+        toast("已注入 6 台演示设备（虚拟数据，未连接硬件）")
+    }
+
+    /** 型号名 ↔ 灯库名 的匹配：先去空格/下划线/连字符/括号、忽略大小写做精确比对，再退化到包含。 */
+    private fun matchFixture(def: FixtureDef, modelKey: String): Boolean {
+        // ⚠ 必须和 matchRdmFixture 用**同一个**归一化函数，否则同一个型号在
+        //   "分组里自动匹配灯库"和"加实例时匹配灯型"两条路径上会得到不同结果。
+        val a = FixtureDef.modelKey(def.name)
+        val b = FixtureDef.modelKey(modelKey)
+        if (a.isEmpty() || b.isEmpty()) return false
+        return a == b || a.contains(b) || b.contains(a)
+    }
+
+    /** 该型号最终用哪个灯库：手动指定的优先，否则按型号名自动匹配。 */
+    private fun fixtureForModel(modelKey: String): FixtureDef? {
+        rdmModelFixture[modelKey]?.let { id -> fixtureStore.fixtures.find { it.id == id } }?.let { return it }
+        return fixtureStore.fixtures.firstOrNull { matchFixture(it, modelKey) }
+    }
+
+    /** 手动为某个型号指定灯库（组内所有设备共用同一个灯型）。 */
+    private fun pickFixtureForModel(modelKey: String) {
+        val defs = fixtureStore.fixtures
+        if (defs.isEmpty()) {
+            toast("App 灯库里还没有灯型，请先去「设置 → 灯库编辑」创建一个")
+            return
+        }
+        val names = defs.map { "${it.name}（${it.channelCount}CH）" }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("为「$modelKey」指定灯库")
+            .setItems(names) { _, which ->
+                rdmModelFixture[modelKey] = defs[which].id
+                // ⚠ 换灯库 = 换占用通道数，所以**地址要立刻跟着重排**（本地）。
+                //   但硬件不动 —— 下发必须等用户确认后点「写入」/「写入地址」，
+                //   否则在灯库里翻着看一遍就把现场的地址全改了。
+                val plan = relayoutLocalAddresses()
+                if (plan == null) {
+                    refreshRdmList()   // 至少把"占通道 / 灯库"那行刷出来
+                    toast("已指定灯库：${defs[which].name}；但按新通道数排不下本宇宙，请调整起始地址")
+                } else {
+                    toast("已指定灯库：${defs[which].name}（地址已按新通道数重排，点「写入地址」下发）")
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 绑定 RDM 分组头。
+     *
+     * 与推子页的"功能分组"标题**同一样式**（复用 item_channel_group）：
+     * 左竖色条 + 组名 + 右侧数量 + ▸/▾，点整行折叠。
+     *
+     * 分组头不带按钮，所以"灯库匹配状态"只能挤进右侧数量位：
+     *   `3 台 · ⚠无灯库  ▾` —— 找不到灯库时整段染成警示色。
+     * 所有动作（递增/相同/加实例/指定灯库/改名）收进**长按菜单**。
+     */
+    private fun bindRdmGroupHeader(root: View, row: RdmGroupRow) {
+        val key = row.key
+        val collapsed = key in rdmGroupCollapsed
+        val lib = fixtureForModel(key)
+
+        root.findViewById<TextView>(R.id.tvGroupName).text = rdmGroupTitle(key)
+        // 这一行要塞「起始 + 加实例 + 配址 + 写入 + 灯库」5 个控件，名字必须省着用：
+        // 字号降 1sp、状态只留一个折叠箭头（灯库缺失靠按钮变黄提示），
+        // 否则型号名会被省略号吃掉 —— 名字是这一行最有用的信息。
+        val tvName = root.findViewById<TextView>(R.id.tvGroupName)
+        tvName.textSize = 12f
+        val tvCount = root.findViewById<TextView>(R.id.tvGroupCount)
+        // 用实心三角（▼/▶）：空心 ▾ 在这个字号下细得像一个逗号
+        tvCount.text = if (collapsed) "▶" else "▼"
+        tvCount.textSize = 9f
+        tvCount.setTextColor(ContextCompat.getColor(this,
+            if (lib == null) R.color.warn else R.color.accent))
+
+        root.setOnClickListener {
+            if (collapsed) rdmGroupCollapsed.remove(key) else rdmGroupCollapsed.add(key)
+            refreshRdmList()
+        }
+        // 排序模式下长按组头 = **整组拖动**（ItemTouchHelper 用的是同一个长按手势），
+        // 这时候不能再挂长按监听，否则一按就弹菜单、根本拖不动。
+        // 非排序模式没挂 ItemTouchHelper，长按照旧弹组菜单。
+        if (rdmReorderMode) root.setOnLongClickListener(null)
+        else root.setOnLongClickListener { showRdmGroupMenu(key, row.devices); true }
+
+        // ---- 组级动作全挤在同一行里（不再另起第二行）----
+        // 按钮/输入框会自己消费点击，不会误触到整行的"折叠"。
+        root.findViewById<LinearLayout>(R.id.groupActions).visibility = View.VISIBLE
+
+        // 起始地址：显示**当前生效**的值（设过就是设的值，没设过就是自动接上一组的值）。
+        // 编辑中的框不回写，否则会把用户刚敲的半截数字冲掉。
+        val etStart = root.findViewById<EditText>(R.id.etGroupStart)
+        if (!etStart.isFocused) etStart.setText((rdmGroupStarts()[key] ?: 1).toString())
+        etStart.setOnEditorActionListener { _, _, _ -> commitGroupStart(key, etStart); true }
+        etStart.setOnFocusChangeListener { _, has -> if (!has) commitGroupStart(key, etStart) }
+
+        root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGroupMake)
+            .apply {
+                text = "加实例"
+                setOnClickListener { makeInstancesForGroup(key, row.devices) }
+            }
+        // 「配址」= 递增 / 全部相同 二选一，收在一个按钮里（一行放不下两个）。
+        // 按钮上只写两个字：当前选的方式在菜单里，地址列上看得见结果。
+        root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGroupAddr)
+            .apply {
+                text = "配址"
+                setOnClickListener { showGroupAddrMenu(this, key, row.devices) }
+            }
+        // 「写入」= 把本组地址真正下发到硬件
+        root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGroupWrite)
+            .apply {
+                text = "写入"
+                setOnClickListener { writeGroupAddresses(row.devices) }
+            }
+        root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGroupLib)
+            .apply {
+                // 只写"灯库"两个字（"指定灯库"会把组名挤掉）；没配套灯库时变黄提示
+                text = "灯库"
+                setTextColor(ContextCompat.getColor(this@MainActivity,
+                    if (lib == null) R.color.warn else R.color.accent))
+                setOnClickListener { pickFixtureForModel(key) }
+            }
+    }
+
+    /** 「配址」按钮的弹出菜单：递增 / 全部相同。 */
+    private fun showGroupAddrMenu(anchor: View, key: String, devs: List<RdmDevice>) {
+        val titles = arrayOf("按起始递增排开", "全部设为同一起始地址")
+        androidx.appcompat.widget.PopupMenu(this, anchor).apply {
+            for (i in titles.indices) menu.add(0, i, i, titles[i])
+            setOnMenuItemClickListener { item ->
+                layoutGroupAddresses(key, devs, same = item.itemId == 1)
+                true
+            }
+            show()
+        }
+    }
+
+    /**
+     * 提交分组头「起始」框里的值。
+     *
+     * 非法/留空 = 退回"自动接上一组末尾"（从 [rdmGroupStart] 里删掉）。
+     * 值真的变了才重刷列表 —— 否则失焦时重建 adapter 会把键盘和焦点状态搅乱。
+     *
+     * ⚠ 起始地址一变，**这一组和它后面各组**的地址都要跟着重排（后面各组的
+     *   "自动接续"起始地址是由前面组的占用跨度推出来的）。前面各组**不动**。
+     *   只刷新列表是不够的 —— 那样界面上显示的地址不会变，用户改了起始却看不出
+     *   任何效果。
+     */
+    private fun commitGroupStart(key: String, et: EditText) {
+        val raw = et.text.toString().trim()
+        val v = raw.toIntOrNull()
+        val before = rdmGroupStarts()[key] ?: 1
+        if (v == null || v < 1) {
+            rdmGroupStart.remove(key)                 // 留空 = 恢复自动
+        } else {
+            rdmGroupStart[key] = v.coerceAtMost(DmxProtocol.UNIVERSE_SIZE)
+        }
+        val after = rdmGroupStarts()[key] ?: 1
+        if (after == before) return
+        if (v == null || v < 1) et.setText(after.toString())
+        val plan = relayoutLocalAddresses(fromGroup = key)
+        if (plan == null) {
+            // 排不下：把刚填的值撤回去，别让界面停在一个无效状态
+            rdmGroupStart.remove(key)
+            et.setText(before.toString())
+            toast("本宇宙放不下这组地址，起始地址已恢复")
+            refreshRdmList()
+        }
+    }
+
+    /** RDM 分组的长按菜单（所有组级动作都在这里）。 */
+    private fun showRdmGroupMenu(key: String, devs: List<RdmDevice>) {
+        val items = arrayOf("按起始递增排开", "全部设为同一起始地址", "写入本组地址",
+                            "整组加实例", "指定灯库…", "重命名分组…")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("${rdmGroupTitle(key)}（${devs.size} 台）")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> layoutGroupAddresses(key, devs, same = false)
+                    1 -> layoutGroupAddresses(key, devs, same = true)
+                    2 -> writeGroupAddresses(devs)
+                    3 -> makeInstancesForGroup(key, devs)
+                    4 -> pickFixtureForModel(key)
+                    5 -> renameRdmGroup(key)
+                }
+            }
+            .show()
+    }
+
+    /** 重命名分组；留空则恢复成型号名。 */
+    private fun renameRdmGroup(key: String) {
+        val input = EditText(this).apply { setText(rdmGroupTitle(key)) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("重命名分组")
+            .setMessage("留空可恢复成型号名「$key」")
+            .setView(input)
+            .setPositiveButton("确定") { _, _ ->
+                val nm = input.text.toString().trim()
+                if (nm.isEmpty() || nm == key) rdmGroupNames.remove(key) else rdmGroupNames[key] = nm
+                refreshRdmList()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 按当前分组 / 每组起始 / 每组配址方式 / **灯库通道数**算出全表地址，
+     * 落到本地列表（**不下发硬件** —— 要等用户点「写入」/「写入地址」）。
+     *
+     * 用在「配址」和「指定/更换灯库」之后：灯库一换，占用通道数就变了，
+     * 这一组的地址和后面各组的起始地址都得跟着动。
+     *
+     * @return 排好的 uid → 地址；null = 本宇宙放不下（界面保持原样）
+     * @param refresh false = 调用方自己刷新（拖动中不能重建 adapter，会断手势）
+     * @param fromGroup 只重排**这个组以及排在它后面的组**，前面的组保持原样。
+     *        改某一组的起始地址时用它：这一组的地址变了，后面各组的"自动接续"
+     *        起始地址也跟着变，但**前面各组跟这个改动毫无关系**，不该被顺手改掉
+     *        （用户手动调过的地址尤其不能被抹掉）。
+     *        null = 全表重排（换灯库、选配址方式、拖动排序时用）。
+     */
+    private fun relayoutLocalAddresses(
+        refresh: Boolean = true, fromGroup: String? = null
+    ): Map<String, Int>? {
+        val list = rdmOrderedDevices()
+        if (list.isEmpty()) return emptyMap()
+        val plan = rdmAddressPlan() ?: return null
+        val pairs = if (fromGroup == null) {
+            list.mapNotNull { d -> plan[d.uid]?.let { d to it } }
+        } else {
+            // 组顺序 = 在 list 里首次出现的次序；取 fromGroup 及其后的所有组
+            val order = list.map { rdmGroupKeyOf(it) }.distinct()
+            val from = order.indexOf(fromGroup)
+            if (from < 0) emptyList()
+            else {
+                val tail = order.drop(from).toSet()
+                list.filter { rdmGroupKeyOf(it) in tail }
+                    .mapNotNull { d -> plan[d.uid]?.let { d to it } }
+            }
+        }
+        applyLocalAddresses(pairs, refresh)
+        return plan
+    }
+
+    /**
+     * 选这一组的配址方式（递增 / 全部相同）并**在本地**排好，不动硬件。
+     *
+     * 和「写入」拆成两步是故意的：排 = 反复试起始/换配址方式看合不合意，
+     * 写 = 真下发。以前一个按钮又排又写，每试一次就改一次灯上的地址。
+     */
+    private fun layoutGroupAddresses(key: String, devs: List<RdmDevice>, same: Boolean) {
+        if (devs.isEmpty()) return
+        rdmGroupSame[key] = same
+        val plan = relayoutLocalAddresses()
+        if (plan == null) {
+            refreshRdmList()      // 方式已经改了，让分组头的"起始/跨度"跟着重算
+            toast("超出本宇宙 ${DmxProtocol.UNIVERSE_SIZE} 通道，请把该组的起始地址提前")
+            return
+        }
+        val lo = devs.mapNotNull { plan[it.uid] }.minOrNull() ?: 1
+        toast("本组已排好：" + if (same) "全部 @$lo" else "@$lo 起递增" +
+            "（未写硬件，点「写入」下发）")
+    }
+
+    /**
+     * 把这一组的地址写进硬件。
+     *
+     * 地址直接取**全表同一个** [rdmAddressPlan] —— 这样"只写这一组"和
+     * "写整表"的结果完全一致，不会出现两套算法排出不同地址。
+     */
+    private fun writeGroupAddresses(devs: List<RdmDevice>) {
+        if (devs.isEmpty()) return
+        // 下发的是列表里显示的预设地址（WYSIWYG），不再重排一遍。
+        // ⚠ 参数未知的灯跳过：它的地址是 0，写下去只会污染总线。
+        val known = devs.filterNot { rdmIsUnknown(it) }
+        val skipped = devs.size - known.size
+        if (known.isEmpty()) {
+            toast("本组 ${devs.size} 台参数都未知（DEVICE_INFO 无应答），没有可写入的地址；请重扫")
+            return
+        }
+        if (rdmAddressPlan() == null) {
+            toast("超出本宇宙 ${DmxProtocol.UNIVERSE_SIZE} 通道，请把该组的起始地址提前")
+            return
+        }
+        pushAddresses(known.map { it to it.address },
+            "已下发本组 ${known.size} 台的地址" +
+                if (skipped > 0) "（跳过 $skipped 台参数未知的）" else "")
+    }
+
+    /**
+     * 只把地址落到本地列表（不动硬件、不动顺序）。
+     *
+     * ⚠ 必须只改地址：直接 `rdmOrder = rdmDevices` 会把用户拖出来的顺序冲掉。
+     *
+     * ⚠ 必须**就地**替换元素，不能 `rdmOrder = rdmOrder.map{...}` 造新表 ——
+     *   拖动时 ItemTouchHelper 的 onMove 闭包持有的是旧表引用，换了实例之后
+     *   它继续改旧表，拖出来的顺序就乱了。所以 rdmOrder 声明成 MutableList。
+     *
+     * @param refresh false = 调用方自己负责刷新（拖动中不能重建 adapter，会断手势）
+     */
+    private fun applyLocalAddresses(
+        plan: List<Pair<RdmDevice, Int>>, refresh: Boolean = true
+    ) {
+        val byUid = plan.associate { (d, a) -> d.uid to a }
+        fun RdmDevice.moved() = if (byUid.containsKey(uid)) copy(address = byUid[uid]!!) else this
+        rdmDevices = rdmDevices.map { it.moved() }
+        if (rdmReorderMode) {
+            for (i in rdmOrder.indices) rdmOrder[i] = rdmOrder[i].moved()
+        }
+        if (refresh) refreshRdmList()
+    }
+
+    /**
+     * RDM 设备行第二行的小字：占通道范围 + 型号模式 +（和硬件不一致时）原地址。
+     *
+     * ⚠ onBindViewHolder 与 updateRdmPreviews 必须共用这一个函数 ——
+     *   以前两处各写一遍，改了一处另一处就对不上（拖完小字和右边地址不一致）。
+     *
+     * @param lo       这一行显示的**预设**地址
+     * @param hwAddr   这台灯**硬件上**的地址（[rdmHwAddr]，不知道就传 null）
+     */
+    private fun rdmInfoText(d: RdmDevice, lo: Int, hwAddr: Int?): String = buildString {
+        if (rdmIsUnknown(d)) {
+            // DEVICE_INFO 没读到：地址和通道数都不可信，别装作知道
+            append("⚠ 参数未知：DEVICE_INFO 无应答 · 地址/通道数不可信 · 请重扫或手动改址")
+            return@buildString
+        }
+        val ch = rdmFootprint(d)
+        append("占通道 $lo ~ ${lo + ch - 1}（${ch}CH")
+        // 通道数取的是灯库时，把 RDM 报的值也写出来 —— 否则用户以为"指定灯库没生效"
+        if (ch != d.channelCount.coerceAtLeast(1)) append("·灯库 · RDM报${d.channelCount}CH")
+        if (d.personality.isNotEmpty()) append(" · ${d.personality}")
+        if (d.personalityCount > 1) append(" · 模式${d.personalityNum}/${d.personalityCount}")
+        append("）")
+        // 预设和灯里现在的不一样 = 这台还没写入
+        if (hwAddr != null && hwAddr != lo) append(" · 原 ${DmxProtocol.bandLabel(d.universe)}@$hwAddr")
+    }
+
+    /**
+     * 真正把地址下发到硬件（本地列表已经排好了，这里不再重排）。
+     *
+     * ⚠ 地址是**照着列表显示的下发**（WYSIWYG），不是重新按分组算一遍 ——
+     *   否则单台「改址」设的预设会被覆盖掉。
+     */
+    private fun pushAddresses(plan: List<Pair<RdmDevice, Int>>, okMsg: String) {
+        if (plan.isEmpty()) return
+        applyLocalAddresses(plan)
+
+        // 写进硬件（演示数据 / 未连接时只保留本地结果，如实告知）
+        if (rdmDemoMode) { toast("演示数据：已更新本地地址（未写硬件）"); return }
+        if (ble.state != BleManager.State.CONNECTED) {
+            toast("已更新本地地址；未连接设备，未写入硬件"); return
+        }
+        for ((uni, list) in plan.groupBy { it.first.universe }) {
+            engine.sendRaw(encodeRdmSetAddresses(
+                uni - 1, list.map { it.first.uidBytes to it.second }))
+        }
+        // 记下"灯里现在是什么地址"，界面上就不再显示「原 A@xx」了
+        plan.forEach { (d, a) -> rdmHwAddr[d.uid] = a }
+        rdmPendingAssign = plan
+        refreshRdmList()      // 让「原 A@xx / 待写入」的提示跟着更新
+        toast(okMsg)
+    }
+
+    /** 整组加实例。型号在灯库里找不到时先引导"手动指定"，而不是直接失败。 */
+    private fun makeInstancesForGroup(key: String, devs: List<RdmDevice>) {
+        if (devs.isEmpty()) return
+        if (fixtureForModel(key) == null) {
+            toast("灯库中找不到「$key」，请先指定灯库")
+            pickFixtureForModel(key)
+            return
+        }
+        // 用**排好的**地址加实例，不是列表里那个旧地址 —— 换过灯库/改过起始
+        // 之后两者会不一样，按旧地址建实例会导致 App 和灯对不上。
+        val plan = rdmAddressPlan()
+        val pairs = if (plan != null) devs.mapNotNull { d -> plan[d.uid]?.let { d to it } }
+                    else devs.map { it to it.address }
+        createInstancesFromRdm(pairs)
+    }
+
     /** RDM 设备列表（扫描结果，由固件 0x8A 帧填充）。 */
     private fun refreshRdmList() {
         // 每次刷新都按用户保存的顺序重排一遍（幂等）。
@@ -2858,45 +3776,65 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         imfb.btnRdmScan.setOnClickListener { doRdmScan() }
         imfb.btnRdmScan.isEnabled = !rdmScanning && !rdmReorderMode
         imfb.btnRdmScan.text = if (rdmScanning) "扫描中…" else "扫描设备"
+
+        // 演示数据：不接任何硬件，直接注入几台虚拟设备，用来预览
+        // "按型号分组 / 组内配地址 / 加实例"这套流程
+        imfb.btnRdmDemo.text = if (rdmDemoMode) "清演示" else "演示"
+        imfb.btnRdmDemo.setOnClickListener {
+            if (rdmDemoMode) {
+                rdmDemoMode = false
+                rdmDevices = emptyList()
+                rdmGroupCollapsed.clear()
+                rdmLastError = ""
+                refreshRdmList()
+                toast("已清除演示数据")
+            } else {
+                injectDemoRdmDevices()
+            }
+        }
+
+        // 列表视图切换：按型号分组 / 平铺（排序模式强制平铺，见 groupedRows 的说明）
+        imfb.btnRdmGroup.text = if (rdmGroupMode) "平铺" else "按型号分组"
+        // 分组与排序可以同时用，所以排序模式下也允许切"按型号分组"
+        imfb.btnRdmGroup.isEnabled = true
+        imfb.btnRdmGroup.setOnClickListener {
+            rdmGroupMode = !rdmGroupMode
+            refreshRdmList()
+        }
+        // 「编辑顺序」和「完成排序」是**同一个按钮**：点一下进排序模式，再点一下出来。
+        // （原来排序模式里另有一个「完成排序」按钮，跟它语义完全重复，已合并掉。）
         imfb.btnRdmReorder.isEnabled = rdmDevices.isNotEmpty() && !rdmScanning
-        imfb.btnRdmReorder.text = if (rdmReorderMode) "取消排序" else "编辑顺序"
+        imfb.btnRdmReorder.text = if (rdmReorderMode) "完成排序" else "编辑顺序"
         imfb.btnRdmReorder.setOnClickListener {
             rdmReorderMode = !rdmReorderMode
-            if (rdmReorderMode && rdmDevices.isNotEmpty()) rdmOrder = rdmDevices
+            if (rdmReorderMode && rdmDevices.isNotEmpty()) {
+                rdmOrder = rdmDevices.toMutableList()
+                // 进排序模式就按分组/起始/灯库**排一遍预设地址**：排序模式下
+                // 界面上显示的是"预期地址"，而「写入」下发的是预设地址，
+                // 两者必须一致，否则用户看到的和写下去的不是一回事。
+                relayoutLocalAddresses()
+            }
             refreshRdmList()
         }
         // 4 个操作按钮常驻，只按可用性禁用（与推子页那行一致：一直看得见，不闪）
         imfb.btnRdmApplyOrder.isEnabled = rdmDevices.isNotEmpty()
         imfb.btnRdmMakeInstances.isEnabled = rdmDevices.isNotEmpty()
-        // 只有"起始地址 + 完成排序"这一行随排序模式出现
-        imfb.rdmReorderBar.visibility = if (rdmReorderMode) View.VISIBLE else View.GONE
+        // ⚠ 这里**没有**全局"起始地址"行 —— 起始地址已经下放到每个分组头
+        //   那一行的「起始」框（见 bindRdmGroupHeader）。全局框和分组框同时存在
+        //   会互相打架（改了一个忘了另一个），所以直接去掉全局的。
         if (rdmReorderMode) {
-            val start = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
-                .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
-            val plan = assignAddresses(rdmOrder, start)
-            imfb.tvRdmStatus.text = if (plan == null)
-                "⚠ 通道不够：共 ${rdmOrder.size} 台超出 ${DmxProtocol.UNIVERSE_SIZE} 通道，请减少灯具或把起始地址提前"
-            else "按住 ☰ 拖到任意位置调整顺序 · 共 ${rdmOrder.size} 台 · 占 ${plan.last().second + rdmOrder.last().channelCount - 1} 通道"
-            imfb.etRdmStart.setOnEditorActionListener { _, _, _ -> refreshRdmList(); true }
-            imfb.etRdmStart.setOnFocusChangeListener { _, has -> if (!has) refreshRdmList() }
-            imfb.btnRdmApplyOrder.setOnClickListener {
-                val p = assignAddresses(rdmOrder, start)
-                if (p == null) { toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return@setOnClickListener }
-                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
-                // 记住这批指派：写入成功后要问"是否同时在 App 里创建为灯具实例"
-                rdmPendingAssign = rdmOrder.zip(p) { d, pair -> d to pair.second }
-                engine.sendRaw(encodeRdmSetAddresses(rdmOrder.first().universe - 1, p))
-                toast(Lang.t(R.string.k_writing_new_addresses_for_1_s_fixtures_in_order, p.size))
-            }
-            // 常驻按钮：不必等"写入地址"的结果弹窗，随时可把当前顺序加成实例
-            imfb.btnRdmMakeInstances.setOnClickListener {
-                val p = assignAddresses(rdmOrder, start)
-                if (p == null) { toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return@setOnClickListener }
-                createInstancesFromRdm(rdmOrder.zip(p) { d, pair -> d to pair.second })
-            }
-            imfb.btnRdmReorderDone.setOnClickListener {
-                rdmReorderMode = false
-                refreshRdmList()
+            val plan = rdmAddressPlan()
+            val devs = rdmOrderedDevices()
+            val endCh = plan?.let { m -> devs.maxOfOrNull { (m[it.uid] ?: 0) + rdmFootprint(it) - 1 } }
+            imfb.tvRdmStatus.text = when {
+                devs.isEmpty() ->
+                    "还没有设备可排序 · 先点「扫描设备」"
+                plan == null ->
+                    "⚠ 通道不够：共 ${devs.size} 台超出 ${DmxProtocol.UNIVERSE_SIZE} 通道，请把某组的起始地址提前"
+                rdmGroupMode ->
+                    "拖 ☰ = 组内换位 · 长按组头拖动 = 整组挪位置 · 共 ${devs.size} 台 · 占 $endCh 通道"
+                else ->
+                    "按住 ☰ 拖到任意位置调整顺序 · 共 ${devs.size} 台 · 占 $endCh 通道"
             }
         } else {
             imfb.tvRdmStatus.text = when {
@@ -2905,22 +3843,62 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 else -> "${rdmDevices.size} 台设备 · 点行看全部参数 · 「编辑顺序」可拖动排序并自动分配地址"
             }
         }
+        // 「写入地址」「加实例」在两种模式下都能用：平铺 = 从 1 起整表顺延，
+        // 分组 = 每组从自己的起始地址起 —— 都走同一个 rdmAddressPlan()。
+        imfb.btnRdmApplyOrder.setOnClickListener { writeOrderAddresses() }
+        // 常驻按钮：不必等"写入地址"的结果弹窗，随时可把当前顺序加成实例
+        imfb.btnRdmMakeInstances.setOnClickListener {
+            val p = rdmAddressPlan()
+            if (p == null) {
+                toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return@setOnClickListener
+            }
+            createInstancesFromRdm(rdmOrderedDevices().mapNotNull { d -> p[d.uid]?.let { d to it } })
+        }
         val empty = !rdmReorderMode && rdmDevices.isEmpty() && !rdmScanning
         imfb.tvRdmEmpty.visibility = if (empty) View.VISIBLE else View.GONE
         imfb.tvRdmEmpty.text = if (rdmLastError.isNotEmpty())
             "${rdmLastError}\n\n点上面的「扫描设备」重试"
         else "还没有扫描到 RDM 设备\n\n点上面的「扫描设备」开始\n（扫描期间该通道的 DMX 输出会短暂暂停）"
 
+        // ---- 行模型 ----
+        // 分组与排序**可以同时开**：分组模式下也能拖动，但只允许**同组内换位**
+        // （见下面 ItemTouchHelper 的 onMove）——跨组换位会让"组内递增配地址"
+        // 的顺序失去意义，所以直接拒绝。
+        val groupedRows = ArrayList<Any>()
+        fun rebuildGroupedRows() {
+            groupedRows.clear()
+            // 排序模式下按 rdmOrder 的顺序铺，这样"组内顺序"就是配地址要用的顺序
+            val base = if (rdmReorderMode) rdmOrder else rdmDevices
+            if (!rdmGroupMode) {
+                groupedRows.addAll(base)
+                return
+            }
+            for ((key, devs) in base.groupBy { rdmModelKey(it) }) {
+                groupedRows.add(RdmGroupRow(key, devs))
+                if (key !in rdmGroupCollapsed) groupedRows.addAll(devs)
+            }
+        }
+        rebuildGroupedRows()
+        rdmRows = groupedRows     // 与 groupedRows 同一个实例，之后就地在变
+        // 预期地址整表算一次（onBind 每行都要用，别在 onBind 里重算成 O(n²)）
+        rdmPlanMap = if (rdmReorderMode) rdmAddressPlan() else null
+
         imfb.rvRdm.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun getItemCount() = (if (rdmReorderMode) rdmOrder else rdmDevices).size
+            override fun getItemCount() = groupedRows.size
+            override fun getItemViewType(pos: Int) =
+                if (groupedRows.getOrNull(pos) is RdmGroupRow) 1 else 0
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_rdm_device, parent, false)
+                val id = if (viewType == 1) R.layout.item_channel_group else R.layout.item_rdm_device
+                val v = LayoutInflater.from(parent.context).inflate(id, parent, false)
                 return object : RecyclerView.ViewHolder(v) {}
             }
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, pos: Int) {
-                val list = if (rdmReorderMode) rdmOrder else rdmDevices
-                if (pos >= list.size) return
-                val d = list[pos]
+                val row = groupedRows.getOrNull(pos) ?: return
+                if (row is RdmGroupRow) {
+                    bindRdmGroupHeader(holder.itemView, row)
+                    return
+                }
+                val d = row as RdmDevice
                 val root = holder.itemView
                 root.findViewById<TextView>(R.id.tvRdmUid).text = d.uid
                 root.findViewById<TextView>(R.id.tvRdmModel).text = "${d.manufacturer} ${d.model}"
@@ -2929,37 +3907,28 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
                 val dead = !dualUniverse && d.universe == 2
                 val tvAddr = root.findViewById<TextView>(R.id.tvRdmAddr)
-                val startAddr = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
-                    .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
-                val target = if (rdmReorderMode)
-                    assignAddresses(rdmOrder, startAddr)?.getOrNull(pos)?.second else null
+                // 预期地址整表算过一次（rdmPlanMap），这里只按 uid 取 —— 分组模式下
+                // pos 是行模型下标（含组头），绝不能拿来当顺序号用。
+                val target = if (rdmReorderMode) rdmPlanMap?.get(d.uid) else null
                 if (rdmReorderMode) {
                     // 排序模式：右边**直接显示预期地址**（拖完它就在这个位置），
                     // 不再显示"旧 → 新"的对照 —— 顺序变了以后旧地址已无意义。
                     // 原地址确实不同时，挪到下面信息行里以小字注明。
-                    tvAddr.text = if (target == null) "✗ 放不下"
-                                  else "${if (d.universe == 1) "A" else "B"}@$target"
-                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
-                        if (target == null) R.color.err else R.color.ok))
-                } else {
-                    tvAddr.text = d.addrLabel()
-                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
-                        if (dead) R.color.err else R.color.warn))
-                }
-                root.findViewById<TextView>(R.id.tvRdmInfo).text = buildString {
-                    // 排序模式下通道范围要按**预期地址**算，否则会出现
-                    // "右边 A@1、左边却写占通道 80~99"（那是旧地址的范围）
-                    val lo = if (rdmReorderMode && target != null) target else d.address
-                    append("占通道 $lo ~ ${lo + d.channelCount - 1}（${d.channelCount}CH")
-                    if (d.personality.isNotEmpty()) append(" · ${d.personality}")
-                    if (d.personalityCount > 1) append(" · 模式${d.personalityNum}/${d.personalityCount}")
-                    append("）")
-                    // 排序模式下地址会被改写：原来的地址用小字保留，便于核对
-                    if (rdmReorderMode && target != null && target != d.address) {
-                        append(" · 原 ${d.addrLabel()}")
+                    tvAddr.text = when {
+                        rdmIsUnknown(d) -> "?"
+                        target == null -> "✗ 放不下"
+                        else -> "${DmxProtocol.bandLabel(d.universe)}@$target"
                     }
-                    if (dead) append(" ⚠ 双宇宙已关闭")
+                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
+                        if (target == null || rdmIsUnknown(d)) R.color.err else R.color.ok))
+                } else {
+                    tvAddr.text = if (rdmIsUnknown(d)) "?" else d.addrLabel()
+                    tvAddr.setTextColor(ContextCompat.getColor(this@MainActivity,
+                        if (dead || rdmIsUnknown(d)) R.color.err else R.color.warn))
                 }
+                root.findViewById<TextView>(R.id.tvRdmInfo).text =
+                    rdmInfoText(d, target ?: d.address, rdmHwAddr[d.uid])
+                    .let { if (dead) "$it ⚠ 双宇宙已关闭" else it }
                 // 排序模式下：**识别按钮保留**（现场对位时正是要边拖边闪灯找位置），
                 // 只隐藏"改址"（顺序才是指派方式，避免两套逻辑冲突）
                 root.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRdmIdentify)
@@ -2991,10 +3960,85 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                                     tgt: RecyclerView.ViewHolder): Boolean {
                     val a = vh.bindingAdapterPosition
                     val b = tgt.bindingAdapterPosition
-                    if (a < 0 || b < 0 || a >= list.size || b >= list.size) return false
+                    if (a < 0 || b < 0) return false
+
+                    // ---- 拖组头 = 整组挪位置 ----
+                    // 只认"组头拖到另一个组头"：拖到别组的灯具行上不动（组头是明确的
+                    // 落点，用户知道往哪拖）。组顺序会决定各组"自动接续"的起始地址，
+                    // 所以换完顺序必须重排一遍地址。
+                    if (rdmGroupMode) {
+                        val ha = groupedRows.getOrNull(a)
+                        val hb = groupedRows.getOrNull(b)
+                        if (ha is RdmGroupRow && hb is RdmGroupRow && ha.key != hb.key) {
+                            val devsA = list.filter { rdmGroupKeyOf(it) == ha.key }
+                            if (devsA.isEmpty()) return false
+                            // 折叠的组只占 1 行（组头），没折叠的是 1 + 台数
+                            val rowsA = if (ha.key in rdmGroupCollapsed) 0 else devsA.size
+                            val rowsB = if (hb.key in rdmGroupCollapsed) 0
+                                        else list.count { rdmGroupKeyOf(it) == hb.key }
+                            list.removeAll { rdmGroupKeyOf(it) == ha.key }
+                            if (a < b) {
+                                val lastB = list.indexOfLast { rdmGroupKeyOf(it) == hb.key }
+                                list.addAll(if (lastB < 0) list.size else lastB + 1, devsA)
+                            } else {
+                                val firstB = list.indexOfFirst { rdmGroupKeyOf(it) == hb.key }
+                                list.addAll(if (firstB < 0) 0 else firstB, devsA)
+                            }
+                            relayoutLocalAddresses(refresh = false)   // 组顺序变了 → 起始地址跟着变
+                            rebuildGroupedRows()
+                            val ad = imfb.rvRdm.adapter ?: return false
+                            // ⚠ 整块搬 = 反复把块首（或块尾）那一行移到目标位置。
+                            //   不能图省事用 notifyDataSetChanged()：拖动中的 ViewHolder
+                            //   会被回收，ItemTouchHelper 的手势当场断掉。
+                            //   两种方向的移动序列都用小例子验算过：
+                            //     A 在 B 前 → [HA,x,HB,y] --move(0→3) 两次--> [HB,y,HA,x]
+                            //     A 在 B 后 → [HB,y,HA,x] --move(3→0) 两次--> [HA,x,HB,y]
+                            val blockRows = rowsA + 1
+                            if (a < b) repeat(blockRows) { ad.notifyItemMoved(a, a + rowsA + rowsB + 1) }
+                            else       repeat(blockRows) { ad.notifyItemMoved(a + rowsA, b) }
+                            updateRdmPreviews()
+                            return true
+                        }
+                        // 组头 ↔ 灯具行：不处理，交给下面的同组换位逻辑判断
+                    }
+
+                    // ---- 分组模式：只允许**同组内**换位 ----
+                    // 跨组换位直接拒绝 —— 否则"组内递增配地址"的顺序就失去意义了
+                    // （要换整组位置请拖组头，见上面）。
+                    if (rdmGroupMode) {
+                        val ra = groupedRows.getOrNull(a)
+                        val rb = groupedRows.getOrNull(b)
+                        if (ra !is RdmDevice || rb !is RdmDevice) return false
+                        if (rdmModelKey(ra) != rdmModelKey(rb)) return false
+                        val ia = list.indexOfFirst { it.uid == ra.uid }
+                        val ib = list.indexOfFirst { it.uid == rb.uid }
+                        if (ia < 0 || ib < 0 || ia == ib) return false
+                        // ⚠ 这里必须是**真移动**（摘出来再插进去），不能像平铺模式那样
+                        //   逐格交换：rdmOrder 里同组的成员之间可能夹着别组的设备，
+                        //   而分组列表只把同组成员排在一起 —— 交换会让"夹在中间的同组
+                        //   成员"静止不动，与 notifyItemMoved 的语义对不上（拖过头就乱）。
+                        val moved = list.removeAt(ia)
+                        list.add(ib, moved)
+                        // 顺序变了 → 预期地址跟着变。这里必须把**预设地址**一起更新，
+                        // 否则「写入」下发的是 d.address（旧的），和界面上显示的预期地址
+                        // 对不上。refresh=false：拖动中不能重建 adapter。
+                        relayoutLocalAddresses(refresh = false)
+                        // 组内相对顺序变了，重铺行模型（长度不变，只是顺序变了）
+                        rebuildGroupedRows()
+                        imfb.rvRdm.adapter?.notifyItemMoved(a, b)
+                        // ⚠ 这里**不能**调 refreshRdmList()：它会整个替换 adapter，
+                        //   手势会被打断，表现成"只能相邻换位"。
+                        updateRdmPreviews()
+                        return true
+                    }
+
+                    // ---- 平铺模式：就地逐格交换 ----
+                    if (a >= list.size || b >= list.size) return false
                     // 就地逐格交换：中间任何一次回调被丢弃都不会累积错位
                     if (a < b) for (i in a until b) java.util.Collections.swap(list, i, i + 1)
                     else       for (i in a downTo b + 1) java.util.Collections.swap(list, i, i - 1)
+                    relayoutLocalAddresses(refresh = false)
+                    rebuildGroupedRows()      // 平铺时 groupedRows 是元素**引用**的拷贝，得重铺
                     imfb.rvRdm.adapter?.notifyItemMoved(a, b)
                     // ⚠ 这里**不能**调 refreshRdmList()：它会整个替换 adapter，
                     //   手势会被打断，表现成"只能相邻换位"。只就地更新地址预览。
@@ -3002,6 +4046,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     return true
                 }
                 override fun onSwiped(vh: RecyclerView.ViewHolder, dir: Int) {}
+                /**
+                 * 组头也允许拖动 —— 拖它 = **整组一起挪**（组顺序决定各组的自动
+                 * 起始地址，所以这是个真需求）。平铺模式下压根没有组头行。
+                 * 长按组头在排序模式下的菜单冲突已在 bindRdmGroupHeader 里让开。
+                 */
                 override fun isLongPressDragEnabled() = true
                 override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
                     super.clearView(rv, vh)
@@ -3015,6 +4064,117 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     /**
+     * 该设备**实际占用**的通道数 —— 配地址和界面显示都用它。
+     *
+     * ⚠ 型号已经配上灯库时**以灯库为准**（[FixtureDef.channelCount]），不是 RDM 报的
+     *   DMX_PERSONALITY 占用通道数。原因：
+     *     - App 之后是按**灯库**的属性映射往通道里写数据的；
+     *     - 「加实例」建出来的也是灯库通道数的实例。
+     *   如果配地址还用 RDM 报的值，灯库和实际地址就会错位 ——
+     *   比如灯库 16CH、RDM 报 12CH，下一台灯会被排在 +12 的位置上，
+     *   压住上一台的后 4 个通道。
+     *
+     * ⚠ **返回 0 表示"参数未知"**（固件那边 DEVICE_INFO 两次都没应答），这时地址
+     *   同样不可信。以前这里无条件 `.coerceAtLeast(1)`，把 0 悄悄当成 1 通道 ——
+     *   于是这台"幽灵灯"占掉一个地址，把它后面所有灯整体顶偏一格，用户完全看不出来。
+     *   现在 0 会一路传出去：[rdmIsUnknown] 为真 → 不参与自动排址/写入/加实例。
+     */
+    private fun rdmFootprint(d: RdmDevice): Int =
+        fixtureForModel(rdmModelKey(d))?.channelCount?.coerceAtLeast(1)
+            ?: d.channelCount
+
+    /**
+     * 这台灯的参数是否**不可信**（DEVICE_INFO 没读到 → 地址和通道数都是 0）。
+     *
+     * 这种灯仍然要显示出来（UID 是真的，它确实在总线上），但必须：
+     * 排除在自动排址之外、不参与「写入」、加实例时报出来而不是硬建。
+     */
+    private fun rdmIsUnknown(d: RdmDevice): Boolean = rdmFootprint(d) <= 0
+
+    /** 当前生效的整表顺序：排序模式看 rdmOrder，否则看列表本身的顺序。 */
+    private fun rdmOrderedDevices(): List<RdmDevice> =
+        if (rdmReorderMode) rdmOrder else rdmDevices
+
+    /** 设备 → 分组键。平铺模式当成"只有一个组"。 */
+    private fun rdmGroupKeyOf(d: RdmDevice): String = if (rdmGroupMode) rdmModelKey(d) else ""
+
+    /**
+     * 每个分组**当前生效**的起始地址：组键 → 起始地址。
+     *
+     * - 用户在该组「起始」框里填过的，就是填的值；
+     * - 没填过的接上一组的末尾（第一组因此是 1）。
+     *
+     * 组的先后 = 在 [rdmOrderedDevices] 里首次出现的次序，跟
+     * [assignAddressesByGroup] 内部的组顺序一致，两处必须同源。
+     */
+    private fun rdmGroupStarts(): LinkedHashMap<String, Int> {
+        val totals = LinkedHashMap<String, Int>()          // 组键 → 该组占用的通道跨度
+        val widest = HashMap<String, Int>()                // 组键 → 组内最宽的一台
+        for (d in rdmOrderedDevices()) {
+            // 参数未知的灯不占地址空间 —— 否则它会把后面每组顶偏
+            if (rdmIsUnknown(d)) continue
+            val k = rdmGroupKeyOf(d)
+            val fp = rdmFootprint(d)
+            totals[k] = (totals[k] ?: 0) + fp
+            widest[k] = maxOf(widest[k] ?: 0, fp)
+        }
+        // "相同"模式的组整组指向同一个地址，只占一台的宽度 —— 必须和
+        // assignAddressesByGroup 里的跨度算法一致，否则界面上显示的起始地址
+        // 和实际排出来的地址会差一截。
+        for (k in totals.keys) if (rdmGroupSame[k] == true) totals[k] = widest[k] ?: 1
+        val out = LinkedHashMap<String, Int>()
+        var auto = 1
+        for ((k, ch) in totals) {
+            val s = rdmGroupStart[k]?.coerceIn(1, DmxProtocol.UNIVERSE_SIZE) ?: auto
+            out[k] = s
+            auto = maxOf(auto, s + ch)
+        }
+        return out
+    }
+
+    /**
+     * 整表的"预期地址"：uid → 新地址。返回 null = 本宇宙放不下。
+     *
+     * 平铺模式 = 从 1 开始整表顺延；分组模式 = 每组从自己的起始地址开始。
+     */
+    private fun rdmAddressPlan(): Map<String, Int>? {
+        val list = rdmOrderedDevices()
+        if (list.isEmpty()) return emptyMap()
+        // 参数未知的灯不参与排址（见 assignAddressesByGroup 里的说明）
+        return assignAddressesByGroup(list, { rdmGroupKeyOf(it) }, rdmGroupStarts(),
+            { rdmFootprint(it) }, { rdmGroupSame[it] == true })
+            ?.associate { (d, a) -> d.uid to a }
+    }
+
+    /**
+     * 把当前顺序/分组算出来的地址一次性写进硬件（「写入地址」按钮）。
+     *
+     * ⚠ 顺序和分组都能定义地址，所以统一走 [rdmAddressPlan]，不再有"全局起始地址"
+     *   这个输入 —— 它是每组自己那一格。
+     */
+    private fun writeOrderAddresses() {
+        if (ble.state != BleManager.State.CONNECTED) {
+            toast(Lang.t(R.string.k_connect_to_a_device_first)); return
+        }
+        // 只做"排得下吗"的检查；真正下发的地址取**列表里显示的预设**，
+        // 不是重新算一遍 —— 单台「改址」设的手动地址得保住。
+        if (rdmAddressPlan() == null) {
+            toast(Lang.t(R.string.k_does_not_fit_in_this_universe_adjust_the_start_a)); return
+        }
+        // ⚠ 参数未知的灯跳过：地址是 0，写下去只会污染总线
+        val all = rdmOrderedDevices()
+        val known = all.filterNot { rdmIsUnknown(it) }
+        val pairs = known.map { it to it.address }
+        if (pairs.isEmpty()) {
+            toast("没有可写入的地址：${all.size} 台设备参数都未知，请点「扫描设备」重扫")
+            return
+        }
+        pushAddresses(pairs,
+            Lang.t(R.string.k_writing_new_addresses_for_1_s_fixtures_in_order, pairs.size) +
+                if (known.size < all.size) "（跳过 ${all.size - known.size} 台参数未知的）" else "")
+    }
+
+    /**
      * 只就地更新每行的"新地址"预览，**不重建 adapter**。
      *
      * 拖动过程中若调用 refreshRdmList()（内部会 `rvRdm.adapter = ...`），
@@ -3023,33 +4183,24 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      */
     private fun updateRdmPreviews() {
         if (!rdmReorderMode) return
-        val start = (imfb.etRdmStart.text.toString().toIntOrNull() ?: 1)
-            .coerceIn(1, DmxProtocol.UNIVERSE_SIZE)
-        val plan = assignAddresses(rdmOrder, start)
+        val plan = rdmAddressPlan()
+        rdmPlanMap = plan
         val rv = imfb.rvRdm
         for (i in 0 until rv.childCount) {
             val child = rv.getChildAt(i)
             val pos = rv.getChildAdapterPosition(child)
-            if (pos < 0 || pos >= rdmOrder.size) continue
-            val d = rdmOrder[pos]
+            if (pos < 0) continue
+            // 分组模式下 pos 是行模型下标，可能是组头 —— 组头没有地址可预览
+            val d = rdmRows.getOrNull(pos) as? RdmDevice ?: continue
             val tv = child.findViewById<TextView>(R.id.tvRdmAddr) ?: continue
-            val na = plan?.getOrNull(pos)?.second
+            val na = plan?.get(d.uid)
             // 与 onBindViewHolder 保持同一规则：右边只显示预期地址
-            tv.text = if (na == null) "✗ 放不下" else "${if (d.universe == 1) "A" else "B"}@$na"
+            tv.text = if (na == null) "✗ 放不下" else "${DmxProtocol.bandLabel(d.universe)}@$na"
             tv.setTextColor(ContextCompat.getColor(this,
                 if (na == null) R.color.err else R.color.ok))
-            // 信息行里的小字"原地址"也跟着更新
-            val info = child.findViewById<TextView>(R.id.tvRdmInfo)
-            if (info != null) {
-                info.text = buildString {
-                    val lo2 = if (na != null) na else d.address
-                    append("占通道 $lo2 ~ ${lo2 + d.channelCount - 1}（${d.channelCount}CH")
-                    if (d.personality.isNotEmpty()) append(" · ${d.personality}")
-                    if (d.personalityCount > 1) append(" · 模式${d.personalityNum}/${d.personalityCount}")
-                    append("）")
-                    if (na != null && na != d.address) append(" · 原 ${d.addrLabel()}")
-                }
-            }
+            // 信息行里的小字跟着更新 —— 走和 onBind 同一个函数
+            child.findViewById<TextView>(R.id.tvRdmInfo)?.text =
+                rdmInfoText(d, na ?: d.address, rdmHwAddr[d.uid])
         }
     }
 
@@ -3088,8 +4239,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      *   现场表现为推子能推、灯乱动，比没建更难查。
      */
     private fun matchRdmFixture(d: RdmDevice): FixtureDef? {
-        fun norm(s: String) = s.uppercase().replace(" ", "").replace("-", "")
-            .replace("_", "").replace("(", "").replace(")", "")
+        // 0) 用户在分组上手動指定的灯库**最优先** —— 那是人眼核对过的，
+        //    比下面的自动匹配可靠得多（自动匹配再保守也只是猜）。
+        rdmModelFixture[rdmModelKey(d)]?.let { id ->
+            fixtureStore.fixtures.find { it.id == id }?.let { return it }
+        }
+        fun norm(s: String) = FixtureDef.modelKey(s)   // 统一到 FixtureDef.modelKey，见那里的说明
         val key = norm(d.modelDesc.ifEmpty { d.model })
         if (key.isEmpty()) return null
         val all = fixtureStore.fixtures
@@ -3125,14 +4280,31 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      *   · 关闭（默认）→ 弹窗问一次，二选一【覆盖】【跳过】，把决定权交回用户
      */
     private fun createInstancesFromRdm(batch: List<Pair<RdmDevice, Int>>) {
+        // ⚠ 先按「型号（=灯库）+ 宇宙 + 地址」去重。
+        //   分组配成"相同地址"时，一组里几台灯指向**同一个地址**（现场是并联/
+        //   广播一起动作）。在 App 里建 N 台同地址的实例毫无意义 —— 推子页会
+        //   多出一堆完全重叠的灯，推哪个都一样，还看不出是重复的。
+        val seen = HashSet<String>()
+        val unique = batch.filter { seen.add("${rdmModelKey(it.first)}|${it.first.universe}|${it.second}") }
+        val merged = batch.size - unique.size
+        if (merged > 0) {
+            toast("同灯库同地址的 $merged 台合并成 1 台，共创建 ${unique.size} 台实例")
+        }
+
         // 实例是按这个顺序建的，把顺序记下来，下次扫描仍按它排
-        if (batch.isNotEmpty()) rdmStore.saveOrder(batch.map { it.first.uid })
+        if (unique.isNotEmpty()) rdmStore.saveOrder(unique.map { it.first.uid })
 
         // 三分类：可直接建 / 灯库里没这个灯型 / 地址已被占用
         val ready = ArrayList<Triple<FixtureDef, RdmDevice, Int>>()
         val noMatch = ArrayList<String>()
         val clash = ArrayList<Triple<FixtureDef, RdmDevice, Int>>()
-        for ((d, addr) in batch) {
+        for ((d, addr) in unique) {
+            // 参数未知（DEVICE_INFO 无应答）：地址/通道数都不可信，硬建会得到一台
+            // "地址 0、通道数 0"的坏实例。报出来让用户重扫，而不是静默建错。
+            if (rdmIsUnknown(d)) {
+                noMatch.add("${d.modelDesc.ifEmpty { d.model.ifEmpty { "未知设备" } }}（参数未知，请重扫）")
+                continue
+            }
             val def = matchRdmFixture(d)
             if (def == null) {
                 // 匹配不到就明确报告型号，让人知道该往灯库里加什么
@@ -3175,23 +4347,51 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         noMatch: List<String>
     ) {
         var replaced = 0
+        val removed = ArrayList<FixtureInstance>()
         for ((_, d, addr) in overwrite) {
             val olds = fixtureStore.instances().filter { it.universe == d.universe && it.addr == addr }
             if (olds.isNotEmpty()) {
+                removed += olds
                 fixtureStore.removeInstances(olds.map { it.id })
                 replaced++
             }
         }
+        // 记下建实例前的 id 集合，事后靠差集认出新实例（addInstances 不返回 id）
+        val beforeIds = fixtureStore.instances().map { it.id }.toSet()
         var created = 0
         var failed = 0
         for ((def, d, addr) in ready + overwrite) {
             val err = fixtureStore.addInstances(def.id, d.model.ifEmpty { def.name }, addr, 1, d.universe)
             if (err == null) created++ else failed++
         }
+
+        // ⚠ 先删后建：新建失败就白丢一台灯，所以要把删掉的旧实例放回去。
+        //   只还原"地址现在没被新实例占住"的那些，避免又造出重叠。
+        var rolledBack = 0
+        if (failed > 0 && removed.isNotEmpty()) {
+            val taken = fixtureStore.instances().map { it.universe to it.addr }.toSet()
+            val back = removed.filterNot { (it.universe to it.addr) in taken }
+            fixtureStore.restoreInstances(back)
+            rolledBack = back.size
+        }
+
+        // ---- 顺便把"型号分组"一并落到已配接灯具 ----
+        // 需求原话："加实例时可以直接把分组和灯具应用到已配接灯具"。
+        // 分组名默认取型号名（用户在 RDM 页改过组名的话，就用他改的）。
+        // 与灯库页的「加实例」共用 FixtureStore.autoGroupInstances —— 同名组复用。
+        if (created > 0) {
+            val keyOf = (ready + overwrite).associate { (_, d, a) -> (d.universe to a) to rdmModelKey(d) }
+            val newInsts = fixtureStore.instances().filterNot { it.id in beforeIds }
+            for ((key, list) in newInsts.groupBy { keyOf[it.universe to it.addr] }) {
+                if (key == null) continue
+                fixtureStore.autoGroupInstances(list.map { it.id }, rdmGroupTitle(key))
+            }
+        }
         val msg = buildString {
             append(Lang.t(R.string.s_created_n, created))
             if (replaced > 0) append(Lang.t(R.string.s_replaced_n, replaced))
             if (failed > 0) append(Lang.t(R.string.s_failed_n, failed))
+            if (rolledBack > 0) append("\n已把被覆盖掉的 $rolledBack 台旧实例还原回去（新建没成功，不能白丢）")
             if (noMatch.isNotEmpty()) {
                 append("\n\n" + Lang.t(R.string.s_n_no_match_p, noMatch.size) + "\n")
                 append(noMatch.joinToString("、"))
@@ -3244,7 +4444,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val msg = buildString {
             append("已新建灯型「${def.name}」（${def.channelCount}CH）")
             if (err == null) {
-                append("\n并已在 ${if (uni == 1) "A" else "B"}@$addr 建好实例。")
+                append("\n并已在 ${DmxProtocol.bandLabel(uni)}@$addr 建好实例。")
             } else {
                 append("\n但建实例失败：$err")
             }
@@ -3282,14 +4482,17 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         rdmLastError = ""
         refreshRdmList()
         // 一次扫描最多可能几秒（设备多、响应慢），超时兜底避免一直转圈
-        syncHandler.postDelayed({
+        val timeout = Runnable {
             if (rdmScanning) {
                 rdmScanning = false
                 if (rdmLastError.isEmpty()) rdmLastError = "扫描超时（设备无响应）"
                 refreshRdmList()
                 toast(Lang.t(R.string.k_rdm_scan_timed_out))
             }
-        }, 15000)
+        }
+        rdmScanTimeout?.let { syncHandler.removeCallbacks(it) }
+        rdmScanTimeout = timeout
+        syncHandler.postDelayed(timeout, 15000)
         // A 通道（宇宙 0）。B 通道（宇宙 1）在双宇宙打开且需要时可再加一个按钮。
         engine.sendRaw(encodeRdmScan(0))
         android.util.Log.d("RDM", "已发送 0x40 扫描帧（A 通道）")
@@ -3297,25 +4500,41 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     /** 收到固件 0x89 扫描头：结束"扫描中"状态。 */
     private fun onRdmScanDone(count: Int, universe: Int, ok: Boolean, err: String) {
-        syncHandler.removeCallbacksAndMessages(null)
+        // ⚠ 只撤掉**扫描超时**那一个回调。
+        //   以前是 syncHandler.removeCallbacksAndMessages(null) —— 把同一个 Handler 上
+        //   别人排的队也一起清了，包括"状态同步 2.5s 兜底"（stateSyncPending 时整帧下发）。
+        //   后果：刚连上紧接着扫一次 RDM，兜底被取消；若设备没回 0x05，App 的状态
+        //   就永远不下发 —— 推子能动、灯不动，而且查不出原因。
+        rdmScanTimeout?.let { syncHandler.removeCallbacks(it) }
+        rdmScanTimeout = null
         rdmScanning = false
         rdmLastError = if (ok) "" else err.ifEmpty { "未发现 RDM 设备" }
         // 扫描结果是固件侧的 UID 顺序，这里套用用户保存过的顺序
         rdmDevices = applySavedRdmOrder(rdmDevices)
-        if (rdmReorderMode) rdmOrder = rdmDevices
+        if (rdmReorderMode) rdmOrder = rdmDevices.toMutableList()
         refreshRdmList()
-        toast(if (ok) "发现 $count 台 RDM 设备" else rdmLastError)
+        // ⚠ err 现在**不管成功失败都要看**：固件在"扫描成功但 DMX 驱动没重装回来"
+        //   或者"部分设备参数没读到"时，found 仍然是正的，但 s_err 里有话要说。
+        //   以前这种警告只存在于串口日志里，App 这边一句"扫描结束"，用户完全不知道
+        //   那个宇宙已经停发 DMX 了。
+        when {
+            !ok -> toast(rdmLastError)
+            err.isNotEmpty() -> {
+                rdmLastError = err
+                toast("⚠ $err")
+            }
+            else -> toast("发现 $count 台 RDM 设备")
+        }
     }
 
-    /** 收到固件 0x8A 设备帧：解析出全部参数并加入列表。 */
-    private fun onRdmDevice(d: ByteArray) {
-        val dev = parseRdmDevice(d) ?: return
+    /** 收到固件 0x8A 设备帧：加入列表（解析已由 [DeviceMessages] 完成）。 */
+    private fun onRdmDevice(dev: RdmDevice) {
         // ⚠ 顺序必须在这里套用，不能只放在 onRdmScanDone：
         //   固件是"先发 0x89 头、再逐条发 0x8A 设备"，头到达时列表还是空的，
         //   在那一刻排序等于没排。每来一台就按保存的顺序插入，才是对的。
         rdmDevices = applySavedRdmOrder(
             rdmDevices.filterNot { it.uid == dev.uid } + dev)
-        if (rdmReorderMode) rdmOrder = rdmDevices
+        if (rdmReorderMode) rdmOrder = rdmDevices.toMutableList()
         refreshRdmList()
     }
 
@@ -3343,9 +4562,21 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         else if (rdmDevices.isNotEmpty()) rdmStore.saveOrder(rdmDevices.map { it.uid })
     }
 
-    /** 识别：让灯具闪烁，便于现场对位。 */
+    /**
+     * 识别：发 **RDM IDENTIFY_DEVICE（PID 0x1000）** 让灯具自己闪烁，便于现场对位。
+     *
+     * ⚠ 这是 RDM 标准命令，由灯具自己实现（固件侧 rdm_identify →
+     *   rdm_send_set_identify_device），App 只负责开/关。
+     *   比"往它的 DMX 通道写定位值"靠谱得多：不占用通道、不影响正在跑的效果，
+     *   也不需要灯库认得这个型号。
+     *
+     * 1.5 秒后自动关掉 —— 不能让它一直闪（现场会误以为灯坏了）。
+     * 有些灯不实现这个 PID，点了没反应；那种情况只能靠「定位」或手动找。
+     */
     private fun identifyRdmDevice(d: RdmDevice) {
-        if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return }
+        if (ble.state != BleManager.State.CONNECTED) {
+            toast(Lang.t(R.string.k_connect_to_a_device_first)); return
+        }
         engine.sendRaw(encodeRdmIdentify(d.universe - 1, d.uidBytes, true))
         syncHandler.postDelayed({
             engine.sendRaw(encodeRdmIdentify(d.universe - 1, d.uidBytes, false))
@@ -3353,29 +4584,55 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         toast(Lang.t(R.string.k_1_s_will_flash_for_1_5_s, d.model))
     }
 
-    /** 远程改地址（RDM SET DMX_START_ADDRESS）。 */
+    /**
+     * 改一台灯的**预设地址** —— 只改 App，不下发硬件。
+     *
+     * ⚠ 这里以前是直接发 RDM SET DMX_START_ADDRESS：点一下灯上的地址就变了。
+     *   现场误点一下地址就飞了，而且和「配址 / 写入」那套两步走的手感也不一致。
+     *   现在「改址」和「配址」一样只是**排**，真正下发要点「写入地址」/「写入」。
+     *
+     * ⚠ 手动改的预设会被**下一次重排**冲掉（换灯库、改起始、选配址方式、拖动排序
+     *   都会按分组规则重排全表）—— 这是分组顺序配地址的固有行为，和调音台
+     *   上"自动编址会覆盖手工 patch"是一回事。
+     */
     private fun showRdmSetAddressDialog(d: RdmDevice) {
+        // 占用通道数按灯库算（配了灯库就以灯库为准），和配地址用的是同一个值
+        val ch = rdmFootprint(d)
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(d.address.toString())
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(Lang.t(R.string.k_set_address_1_s, d.model))
-            .setMessage(Lang.t(R.string.k_uid_1_s_nnow_2_s_3_s_channels, d.uid, d.addrLabel(), d.channelCount))
+            .setMessage(Lang.t(R.string.k_uid_1_s_nnow_2_s_3_s_channels, d.uid, d.addrLabel(), ch) +
+                "\n\n只改 App 里的预设地址，点「写入地址」才真正下发到灯。")
             .setView(input)
-            .setPositiveButton(Lang.t(R.string.k_write)) { _, _ ->
-                if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setPositiveButton }
+            .setPositiveButton(Lang.t(R.string.k_ok)) { _, _ ->
                 val a = input.text.toString().toIntOrNull() ?: return@setPositiveButton
-                if (a < 1 || a + d.channelCount - 1 > DmxProtocol.UNIVERSE_SIZE) {
-                    toast(Lang.t(R.string.k_out_of_range_needs_1_s_2_s_universe_limit_3_s, a, a + d.channelCount - 1, DmxProtocol.UNIVERSE_SIZE))
+                if (a < 1 || a + ch - 1 > DmxProtocol.UNIVERSE_SIZE) {
+                    toast(Lang.t(R.string.k_out_of_range_needs_1_s_2_s_universe_limit_3_s, a, a + ch - 1, DmxProtocol.UNIVERSE_SIZE))
                     return@setPositiveButton
                 }
-                engine.sendRaw(encodeRdmSetAddress(d.universe - 1, d.uidBytes, a))
-                rdmStore.setCachedAddress(d.uid, d.universe, a)
-                toast(Lang.t(R.string.k_address_command_sent_waiting_for_the_device))
+                setPresetAddress(d.uid, a)
+                toast("已在 App 里改为 ${DmxProtocol.bandLabel(d.universe)}@$a（未写硬件，点「写入地址」下发）")
             }
             .setNegativeButton(Lang.t(R.string.k_cancel), null)
             .show()
+    }
+
+    /**
+     * 改一台灯在 App 里的预设地址（本地，不动硬件）。
+     *
+     * ⚠ 只改地址、不动顺序 —— 直接 `rdmOrder = rdmDevices` 会冲掉拖出来的顺序。
+     *   而且必须**就地**替换元素（rdmOrder 是拖动时 onMove 持有的那个实例）。
+     */
+    private fun setPresetAddress(uid: String, addr: Int) {
+        fun RdmDevice.moved() = if (this.uid == uid) copy(address = addr) else this
+        rdmDevices = rdmDevices.map { it.moved() }
+        if (rdmReorderMode) {
+            for (i in rdmOrder.indices) rdmOrder[i] = rdmOrder[i].moved()
+        }
+        refreshRdmList()
     }
 
     /** 多选模式下切换某行的待删除状态。 */
@@ -3384,16 +4641,15 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         refreshInstanceMgrList()
     }
 
-    /** 平时切换某实例是否参与同时控制。 */
+    /**
+     * 平时切换某实例是否参与同时控制（在「已配接」列表点行）。
+     *
+     * 走 [applySelection] 统一收尾：这样"点行选灯"和"弹窗整组选灯"两条路
+     * 行为完全一致（以前各写一遍，容易漏掉刷新步骤）。
+     */
     private fun toggleControlSel(id: String) {
         if (!selectedInstanceIds.remove(id)) selectedInstanceIds.add(id)
-        currentInstanceId = groupInstances().firstOrNull()?.id
-        if (selectedInstanceIds.isNotEmpty()) {
-            applySelectedInstance()
-            refreshInstanceBarStyles()
-        }
-        refreshProgramPage()
-        refreshFxPage()
+        applySelection()
         refreshInstanceMgrList()
     }
 
@@ -3471,7 +4727,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fun refresh() {
             val ch = def.channelCount.coerceAtLeast(1)
             val a = etAddr.text.toString().toIntOrNull() ?: 1
-            val bn = if (band == 1) "A" else "B"
+            val bn = DmxProtocol.bandLabel(band)
             tvChCount.text = Lang.t(R.string.k_1_s_uses_2_s_channels, inst.name, ch)
             tvPreview.text = if (a + ch - 1 > DmxProtocol.UNIVERSE_SIZE)
                 "⚠ $bn 通道放不下：需要 $a~${a + ch - 1}，本宇宙上限 ${DmxProtocol.UNIVERSE_SIZE}"
@@ -3497,7 +4753,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 fixtureStore.updateInstance(inst.copy(addr = a, universe = band))
                 val after = fixtureStore.instances().find { it.id == inst.id }
                 if (after == null || after.addr != a || after.universe != band) {
-                    toast("保存失败：${if (band == 1) "A" else "B"} 通道 $a 越界或与已有灯具重叠")
+                    toast("保存失败：${DmxProtocol.bandLabel(band)} 通道 $a 越界或与已有灯具重叠")
                 } else {
                     toast(Lang.t(R.string.k_changed_to_1_s, after.label()))
                 }
@@ -3734,6 +4990,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                             if (ble.state != BleManager.State.CONNECTED) { toast(Lang.t(R.string.k_connect_to_a_device_first)); return@setOnClickListener }
                             downloadingFile = f.name
                             downloadBuf = ByteArray(0)
+                            downloadExpectSeq = 0
+                            downloadTotalChunks = -1
+                            downloadCorrupt = false
                             engine.sendDownloadFile(curPath, f.name)
                             toast(Lang.t(R.string.k_downloading_1_s, f.name))
                         }

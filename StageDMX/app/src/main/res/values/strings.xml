@@ -90,6 +90,7 @@
     <string name="s_settings">设置</string>
     <string name="s_speed_128">速度: 128</string>
     <string name="s_spread_0">扩散: 0°</string>
+    <string name="s_start">起始</string>
     <string name="s_start_addr">起始地址</string>
     <string name="s_start_address_1_512">起始地址（1-512）</string>
     <string name="s_step_time_s">步时间(秒)</string>

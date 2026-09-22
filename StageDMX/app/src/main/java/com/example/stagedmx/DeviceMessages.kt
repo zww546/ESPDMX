@@ -7,6 +7,9 @@ import com.example.stagedmx.Msg.DirsList
 import com.example.stagedmx.Msg.FileChunk
 import com.example.stagedmx.Msg.FileEnd
 import com.example.stagedmx.Msg.FileList
+import com.example.stagedmx.Msg.RdmDeviceMsg
+import com.example.stagedmx.Msg.RdmResult
+import com.example.stagedmx.Msg.RdmScanHead
 import com.example.stagedmx.Msg.StateChunk
 import com.example.stagedmx.Msg.StateEnd
 import com.example.stagedmx.Msg.StateFx
@@ -60,6 +63,18 @@ sealed interface Msg {
     data class DirsList(val dirs: List<String>) : Msg
     /** 0x98 目录收集完成。 */
     data object DirsEnd : Msg
+
+    // ---- RDM（0x89/0x8A/0x8B）----
+    // 以前这三帧在 MainActivity.onNotify 里**内联手写解析**（0x8A 又转手给
+    // RdmStore.parseRdmDevice），是全工程唯一没进这个纯函数解析器、也没有单测的一组帧。
+    // 搬进来之后它们和别的帧走同一套长度校验与测试。
+
+    /** 0x89 扫描头：count uni ok errLen err…（扫描成功时 err 也可能非空，见固件 ble_dmx.c）。 */
+    data class RdmScanHead(val count: Int, val universe: Int, val ok: Boolean, val err: String) : Msg
+    /** 0x8A 一台设备的全部参数。 */
+    data class RdmDeviceMsg(val device: RdmDevice) : Msg
+    /** 0x8B 单次操作（识别/改址）结果。 */
+    data class RdmResult(val ok: Boolean, val err: String) : Msg
 }
 
 /**
@@ -167,6 +182,27 @@ object DeviceMessages {
             }
 
             DmxProtocol.RESP_DIRS_END -> DirsEnd
+
+            // ---- RDM（0x89/0x8A/0x8B）----
+            // 0x89 count(1) universe(1) ok(1) errLen(1) err…
+            DmxProtocol.RESP_RDM_SCAN -> {
+                if (data.size < 5) return null
+                val n = u8(data[4]).coerceAtMost(data.size - 5)
+                RdmScanHead(u8(data[1]), u8(data[2]), u8(data[3]) == 0,
+                            if (n == 0) "" else String(data, 5, n, Charsets.UTF_8))
+            }
+
+            // 0x8A 一台设备的全部参数（布局见 RdmStore.parseRdmDevice）
+            DmxProtocol.RESP_RDM_DEVICE ->
+                parseRdmDevice(data)?.let { RdmDeviceMsg(it) }
+
+            // 0x8B ok(1) errLen(1) err…
+            DmxProtocol.RESP_RDM_RESULT -> {
+                if (data.size < 3) return null
+                val n = u8(data[2]).coerceAtMost(data.size - 3)
+                RdmResult(u8(data[1]) == 0,
+                          if (n == 0) "" else String(data, 3, n, Charsets.UTF_8))
+            }
 
             else -> null
         }
