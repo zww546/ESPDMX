@@ -105,10 +105,20 @@ static void get_label(dmx_port_t port, const rdm_uid_t *uid, rdm_pid_t pid, char
 }
 
 /** 逐台读参数（DEVICE_INFO 必读，文本参数缺了也不影响设备可用）。 */
-static void read_device_params(uint8_t universe, dmx_port_t port, int idx)
+/**
+ * 读一台设备的全部参数。
+ *
+ * @return true = DEVICE_INFO 读到了（地址/通道数/型号都可信）
+ *         false = DEVICE_INFO 没应答，结构体里除 UID 外全是 0 —— 调用方据此把
+ *                 footprint 标成 0（"参数未知"），**不能**当成一台正常灯用。
+ *
+ * ⚠ 发现刚结束时不少灯具需要缓一下才肯答第一条 GET，而 DEVICE_INFO 是唯一
+ *   能拿到地址和占用通道数的来源。所以无应答时**先重试一次**再放弃。
+ */
+static bool read_device_params(uint8_t universe, dmx_port_t port, int idx)
 {
     rdm_device_t *d = dev_slot(universe, idx);
-    if (!d) return;
+    if (!d) return false;
     rdm_uid_t uid;
     uid.man_id = (uint16_t)((d->uid[0] << 8) | d->uid[1]);
     uid.dev_id = ((uint32_t)d->uid[2] << 24) | ((uint32_t)d->uid[3] << 16) |
@@ -116,10 +126,16 @@ static void read_device_params(uint8_t universe, dmx_port_t port, int idx)
 
     // 1) DEVICE_INFO —— 最核心的一项，包含地址/占用通道/模式/型号/版本
     rdm_device_info_t info;
-    memset(&info, 0, sizeof(info));
     rdm_ack_t ack;
-    const size_t n = rdm_send_get_device_info(port, &uid, RDM_SUB_DEVICE_ROOT, &info, &ack);
-    if (n > 0) {
+    size_t n = 0;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        memset(&info, 0, sizeof(info));
+        n = rdm_send_get_device_info(port, &uid, RDM_SUB_DEVICE_ROOT, &info, &ack);
+        if (n > 0) break;
+        vTaskDelay(pdMS_TO_TICKS(30));   // 给灯具缓一下再问
+    }
+    const bool info_ok = (n > 0);
+    if (info_ok) {
         d->model_id            = info.model_id;
         d->product_category    = info.product_category;
         d->software_version_id = info.software_version_id;
@@ -130,7 +146,12 @@ static void read_device_params(uint8_t universe, dmx_port_t port, int idx)
         d->sub_device_count    = info.sub_device_count;
         d->sensor_count        = info.sensor_count;
     } else {
-        ESP_LOGW(TAG, "U%d #%d DEVICE_INFO 无应答", universe + 1, idx);
+        // ⚠ footprint 明确置 0 = "参数未知"。App 侧必须据此把它**排除在自动排址
+        //   之外** —— 以前 0 会被 App 的 coerceAtLeast(1) 悄悄当成 1 通道，
+        //   于是这台幽灵占掉一个地址、把它后面所有灯顶偏一格，用户完全看不出来。
+        d->footprint = 0;
+        ESP_LOGW(TAG, "U%d #%d DEVICE_INFO 两次都无应答 → 标记为参数未知（地址/通道数不可信）",
+                 universe + 1, idx);
     }
 
     // 2) 文本参数（设备不支持时返回空串）
@@ -171,10 +192,35 @@ static void read_device_params(uint8_t universe, dmx_port_t port, int idx)
         }
     }
 
-    ESP_LOGI(TAG, "U%d #%d UID %02X%02X:%02X%02X%02X%02X addr=%u footprint=%u v%u.%u %s %s",
+    ESP_LOGI(TAG, "U%d #%d UID %02X%02X:%02X%02X%02X%02X addr=%u footprint=%u v%u.%u %s %s%s",
              universe + 1, idx, d->uid[0], d->uid[1], d->uid[2], d->uid[3], d->uid[4], d->uid[5],
              d->start_addr, d->footprint, d->personality, d->personality_count,
-             d->manufacturer, d->model_desc);
+             d->manufacturer, d->model_desc,
+             info_ok ? "" : "  ⚠参数未知");
+    return info_ok;
+}
+
+/**
+ * 退出 RDM、把总线交回 DMX。
+ *
+ * ⚠ 返回值**必须**检查。重装失败时驱动还停在 RDM 状态下（RX 绑成 RTS、EN 由驱动
+ *   接管），这时候调用 dmx_output_resume() 等于让 dmx_task 往一个坏掉的驱动里
+ *   刷帧：表现就是"这个宇宙的灯永远不动"，而且除了一条串口日志什么都看不到。
+ *
+ *   所以失败时**故意不恢复输出** —— 让 dmx_task 继续停在 s_paused 的安全点空转，
+ *   同时把错误写进 s_err 报给 App。副作用是好的：之后任何一次 RDM 操作都会
+ *   重新尝试重装，装成功了就自动恢复，不用重启。
+ *
+ * @return true = 驱动已回到 DMX 模式；false = 没回来，本宇宙 DMX 输出已停
+ */
+static bool rdm_exit(uint8_t universe)
+{
+    if (dmx_rdm_mode(universe, false)) {
+        dmx_output_resume(universe);
+        return true;
+    }
+    set_err("RDM 结束但 DMX 驱动重装失败：本宇宙输出已停，重启控台可恢复");
+    return false;
 }
 
 int rdm_scan(uint8_t universe)
@@ -217,6 +263,7 @@ int rdm_scan(uint8_t universe)
     }
 
     // ---- 3) 逐台读参数 ----
+    int unknown = 0;   // DEVICE_INFO 两次都没应答的台数（参数不可信）
     for (int i = 0; i < found; i++) {
         rdm_device_t *d = dev_slot(universe, i);
         if (!d) break;
@@ -226,19 +273,36 @@ int rdm_scan(uint8_t universe)
         d->uid[3] = (uint8_t)((uids[i].dev_id >> 16) & 0xFF);
         d->uid[4] = (uint8_t)((uids[i].dev_id >> 8) & 0xFF);
         d->uid[5] = (uint8_t)(uids[i].dev_id & 0xFF);
+        // ⚠ 顺序很重要：先读参数，**读完了才算数**。
+        //   以前是 d->valid = true; s_count = i + 1; 然后才 read_device_params()
+        //   —— 于是"发现到了 UID"被当成"这台灯参数读全了"，DEVICE_INFO 无应答时
+        //   照样上报一台 addr=0/footprint=0/型号空白的"幽灵设备"：
+        //     · 它在 App 里会单独占一个没有名字的分组；
+        //     · 排址时又会被当成 1 个通道，把后面所有灯整体顶偏一格。
+        //   现在 valid 仍然置 true（UID 是真的，能答发现就说明在线，用户应该看得到），
+        //   但 footprint 明确置 0 表示"参数未知"，App 侧据此把它排除在自动排址之外。
         d->valid = true;
+        if (!read_device_params(universe, port, i)) unknown++;
         s_count[universe] = i + 1;
-        read_device_params(universe, port, i);
         vTaskDelay(pdMS_TO_TICKS(2));   // 设备之间留一点间隙
     }
 
     // ---- 4) 恢复 DMX 输出 ----
-    dmx_rdm_mode(universe, false);
-    dmx_output_resume(universe);
+    // ⚠ 检查返回值。失败时 rdm_exit 已经把错误写进 s_err，这里**不要**再用
+    //   "未发现 RDM 设备" 把它盖掉 —— 驱动停发比"没扫到灯"严重得多。
+    const bool back = rdm_exit(universe);
 
-    ESP_LOGI(TAG, "U%d RDM 扫描结束：发现 %d 台", universe + 1, found);
-    if (found == 0) set_err("未发现 RDM 设备（检查灯具是否支持 RDM、A/B 是否接反）");
-    return found;
+    ESP_LOGI(TAG, "U%d RDM 扫描结束：发现 %d 台（其中 %d 台参数未知，DMX 恢复 %s）",
+             universe + 1, found, unknown, back ? "OK" : "失败");
+    if (found == 0 && s_err[0] == '\0') {
+        set_err("未发现 RDM 设备（检查灯具是否支持 RDM、A/B 是否接反）");
+    } else if (unknown > 0 && s_err[0] == '\0') {
+        // 不是致命错误（设备是真实存在的），但必须让用户知道——否则他会奇怪
+        // 为什么列表里有灯的地址是 0、而且自动排址的号段跟预期对不上。
+        set_err("有 %d 台设备参数读取失败（列表中地址显示为 A@0），已排除在自动排址之外；可重扫或手动改址",
+                unknown);
+    }
+    return found;      // 扫描本身的结果照常返回，驱动故障由 s_err 带出去
 }
 
 /** 把 6 字节 UID 转成驱动要的结构。 */
@@ -268,8 +332,7 @@ bool rdm_set_address(uint8_t universe, const uint8_t uid[6], uint16_t addr)
     rdm_ack_t ack;
     const bool ok = rdm_send_set_dmx_start_address(port, &u, RDM_SUB_DEVICE_ROOT, addr, &ack);
 
-    dmx_rdm_mode(universe, false);
-    dmx_output_resume(universe);
+    const bool back = rdm_exit(universe);
 
     if (!ok) {
         set_err("改址失败：设备无应答或拒绝（%s）",
@@ -281,9 +344,10 @@ bool rdm_set_address(uint8_t universe, const uint8_t uid[6], uint16_t addr)
         rdm_device_t *d = dev_slot(universe, i);
         if (d && memcmp(d->uid, uid, 6) == 0) { d->start_addr = addr; break; }
     }
-    ESP_LOGI(TAG, "U%d 改址成功：%02X%02X:%02X%02X%02X%02X → %u",
-             universe + 1, uid[0], uid[1], uid[2], uid[3], uid[4], uid[5], addr);
-    return true;
+    ESP_LOGI(TAG, "U%d 改址成功：%02X%02X:%02X%02X%02X%02X → %u（DMX 恢复 %s）",
+             universe + 1, uid[0], uid[1], uid[2], uid[3], uid[4], uid[5], addr,
+             back ? "OK" : "失败");
+    return back;      // 改址本身成功了，但驱动没回来的话要如实报失败
 }
 
 /**
@@ -325,11 +389,11 @@ int rdm_set_addresses(uint8_t universe, const rdm_addr_set_t *list, int count)
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 
-    dmx_rdm_mode(universe, false);
-    dmx_output_resume(universe);
-    if (ok == 0) set_err("全部无应答（灯具可能不支持 RDM）");
-    ESP_LOGI(TAG, "U%d 批量改址：%d/%d 台成功", universe + 1, ok, count);
-    return ok;
+    const bool back = rdm_exit(universe);
+    if (ok == 0 && s_err[0] == '\0') set_err("全部无应答（灯具可能不支持 RDM）");
+    ESP_LOGI(TAG, "U%d 批量改址：%d/%d 台成功（DMX 恢复 %s）",
+             universe + 1, ok, count, back ? "OK" : "失败");
+    return back ? ok : -1;
 }
 
 bool rdm_identify(uint8_t universe, const uint8_t uid[6], bool on){
@@ -351,9 +415,8 @@ bool rdm_identify(uint8_t universe, const uint8_t uid[6], bool on){
     const bool ok = rdm_send_set_identify_device(port, &u, RDM_SUB_DEVICE_ROOT,
                                                  on ? 1 : 0, &ack);
 
-    dmx_rdm_mode(universe, false);
-    dmx_output_resume(universe);
+    const bool back = rdm_exit(universe);
 
     if (!ok) set_err("识别命令失败：设备无应答");
-    return ok;
+    return ok && back;
 }

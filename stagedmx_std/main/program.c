@@ -73,7 +73,9 @@ void program_append(uint8_t prog_id, uint16_t time_ms,
     prog_lock();
     program_t *p = &s_progs[prog_id];
     if (p->count >= PROG_MAX_STEPS) { prog_unlock(); return; }
-    if (count > PROG_MAX_ITEMS_STEP) count = PROG_MAX_ITEMS_STEP;
+    // 不用再钳 count：它的类型是 uint8_t（≤255），而 PROG_MAX_ITEMS_STEP 正好是 255。
+    // 原来那句 `if (count > PROG_MAX_ITEMS_STEP) count = ...` 编译器直接报
+    // "comparison is always false" —— 留着反而让人以为上限是别的值。
     if (count == 0) { prog_unlock(); return; }
     prog_step_t *s = &p->steps[p->count];
     s->count = count;

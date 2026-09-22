@@ -285,6 +285,18 @@ void file_xfer_list_dirs(file_xfer_notify_t notify_cb)
 }
 
 // ---- 上传(写) ----
+
+// 0x31 声明了文件总字节数，这里记着并累计实收字节。
+//
+// ⚠ 以前 begin 里是 `(void)size;` —— 声明值完全没用上，于是
+//   · App 少发了几块（BleManager 在连续写失败时会 writeQueue.clear()，见那边的说明），
+//     upload_end() 照样返回 true，工位上存下一个**静默截断**的灯库文件；
+//   · 多发也一样"成功"。
+//   表现是"上传成功但灯库导入报解析错/灯型少几个通道"，极难查。
+static uint32_t s_upload_expect = 0;
+static uint32_t s_upload_written = 0;
+static char     s_upload_path[512] = {0};
+
 bool file_xfer_upload_begin(const char *dir, const char *name, uint32_t size)
 {
     if (!file_xfer_mount()) return false;
@@ -298,15 +310,23 @@ bool file_xfer_upload_begin(const char *dir, const char *name, uint32_t size)
         ESP_LOGE(TAG, "upload: fopen %s failed (errno=%d: %s)", path, errno, strerror(errno));
         return false;
     }
-    ESP_LOGI(TAG, "upload begin: %s (%lu bytes)", path, size);
-    (void)size;
+    snprintf(s_upload_path, sizeof(s_upload_path), "%s", path);
+    s_upload_expect  = size;
+    s_upload_written = 0;
+    ESP_LOGI(TAG, "upload begin: %s (声明 %lu 字节)", path, (unsigned long)size);
     return true;
 }
 
 int file_xfer_upload_chunk(const uint8_t *data, uint16_t len)
 {
     if (!s_upload_fp) return -1;
-    return (int)fwrite(data, 1, len, s_upload_fp);
+    const size_t w = fwrite(data, 1, len, s_upload_fp);
+    s_upload_written += (uint32_t)w;      // 只累计真正落盘的字节
+    if (w != len) {
+        ESP_LOGE(TAG, "upload: 写入短少 %u/%u 字节（可用空间不足？）",
+                 (unsigned)w, (unsigned)len);
+    }
+    return (int)w;
 }
 
 bool file_xfer_upload_end(void)
@@ -314,7 +334,17 @@ bool file_xfer_upload_end(void)
     if (!s_upload_fp) return false;
     fclose(s_upload_fp);
     s_upload_fp = NULL;
-    ESP_LOGI(TAG, "upload complete");
+
+    // 收到的字节必须和 0x31 声明的完全一致，否则这份文件是残缺的。
+    // ⚠ 要**删掉**它：截断的灯库留在盘上会被列表列出来，导入时报解析错，
+    //   比"上传失败"更难查。
+    if (s_upload_written != s_upload_expect) {
+        ESP_LOGE(TAG, "upload: 字节数不符 —— 声明 %lu / 实收 %lu，删除这份残缺文件",
+                 (unsigned long)s_upload_expect, (unsigned long)s_upload_written);
+        if (s_upload_path[0]) remove(s_upload_path);
+        return false;
+    }
+    ESP_LOGI(TAG, "upload complete: %lu 字节", (unsigned long)s_upload_written);
     return true;
 }
 

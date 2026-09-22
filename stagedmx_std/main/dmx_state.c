@@ -6,7 +6,6 @@
 // 纯通道数据：s_ch[0] = 全局通道 1，s_ch[1023] = 全局通道 1024
 static uint8_t s_ch[DMX_CHANNELS];
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
-static volatile bool s_dirty = false;
 static volatile uint32_t s_wr_ver = 0;   // 外部写入版本号（渲染管线乐观并发用）
 
 void dmx_state_init(void)
@@ -14,7 +13,6 @@ void dmx_state_init(void)
     portENTER_CRITICAL(&s_mux);
     memset(s_ch, 0, sizeof(s_ch));
     portEXIT_CRITICAL(&s_mux);
-    s_dirty = true;
 }
 
 bool dmx_state_set_range(uint16_t start, const uint8_t *values, uint16_t count)
@@ -37,7 +35,7 @@ bool dmx_state_set_range(uint16_t start, const uint8_t *values, uint16_t count)
     //   放到 portEXIT_CRITICAL 之后会留下一个窗口：数据已写入、版本号还没加，
     //   此时渲染任务的 snapshot→commit_expect 会看到"版本未变"而提交，
     //   把刚到的推子值覆盖掉（现场表现为"松手后值不对"）——正是乐观并发要防的事。
-    if (changed) { s_dirty = true; s_wr_ver++; }
+    if (changed) { s_wr_ver++; }
     portEXIT_CRITICAL(&s_mux);
     return changed;
 }
@@ -46,7 +44,6 @@ void dmx_state_set_all(uint8_t v)
 {
     portENTER_CRITICAL(&s_mux);
     memset(s_ch, v, DMX_CHANNELS);
-    s_dirty = true;
     s_wr_ver++;          // 同上：与数据同临界区
     portEXIT_CRITICAL(&s_mux);
 }
@@ -63,7 +60,6 @@ void dmx_state_set(uint16_t ch, uint8_t v)
     portENTER_CRITICAL(&s_mux);
     if (s_ch[ch - 1] != v) {
         s_ch[ch - 1] = v;
-        s_dirty = true;
         s_wr_ver++;              // 与数据同临界区（见 set_range 的说明）
     }
     portEXIT_CRITICAL(&s_mux);
@@ -82,7 +78,6 @@ void dmx_state_commit(const uint8_t *in)
 {
     portENTER_CRITICAL(&s_mux);
     memcpy(s_ch, in, DMX_CHANNELS);
-    s_dirty = true;
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -100,7 +95,6 @@ bool dmx_state_commit_expect(const uint8_t *in, uint32_t expect)
     }
     memcpy(s_ch, in, DMX_CHANNELS);
     portEXIT_CRITICAL(&s_mux);
-    s_dirty = true;
     return true;
 }
 

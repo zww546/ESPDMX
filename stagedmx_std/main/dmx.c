@@ -133,7 +133,15 @@ bool dmx_output_pause(uint8_t universe)
     xSemaphoreTake(s_pause_ack[universe], 0);      // 清掉旧信号
     s_paused[universe] = true;
     // 输出任务一帧最长 ~23ms（+60ms 等待），给 200ms 足够它停到安全点
-    return xSemaphoreTake(s_pause_ack[universe], pdMS_TO_TICKS(200)) == pdTRUE;
+    if (xSemaphoreTake(s_pause_ack[universe], pdMS_TO_TICKS(200)) != pdTRUE) {
+        // ⚠ 超时必须**回滚** s_paused。否则这个宇宙从此一帧 DMX 都不发，
+        //   只能重启固件；而调用方（rdm.c）只看到 dmx_output_pause 返回 false、
+        //   记一句"无法暂停 DMX 输出"，App 那边看到的是"扫描结束" ——
+        //   现场表现就是"扫过一次 RDM 之后这个宇宙的灯全不动了"，极难查。
+        s_paused[universe] = false;
+        return false;
+    }
+    return true;
 }
 
 void dmx_output_resume(uint8_t universe)
@@ -144,9 +152,10 @@ void dmx_output_resume(uint8_t universe)
 
 bool dmx_rdm_mode(uint8_t universe, bool on)
 {
-    if (universe >= DMX_UNIVERSES || !s_out[universe].ok) return false;
+    if (universe >= DMX_UNIVERSES) return false;
     dmx_out_t *o = &s_out[universe];
     if (on) {
+        if (!o->ok) return false;
         // 绑定 RX 引脚；EN 作为 RTS 交给驱动，收发之间由硬件自动换向
         if (!dmx_set_pin(o->port, o->tx_pin, o->rx_pin, o->en_pin)) {
             ESP_LOGE(TAG, "U%d RDM: dmx_set_pin(EN→RTS) 失败", universe + 1);
@@ -156,6 +165,10 @@ bool dmx_rdm_mode(uint8_t universe, bool on)
         gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
         uart_flush_input(o->port);
     } else {
+        // ⚠ 退出 RDM 这一支**不能**因为 !o->ok 就早退（上面的 on 分支才需要）：
+        //   重装失败恰恰会把 o->ok 置 false，而恢复它的唯一手段就是**再重装一次**。
+        //   早退等于把"一次失败的安装"变成永久 brick，只能重启固件。
+        //
         // ⚠ 重装**不能在这里做**。本函数由 rdm_scan() → rdm_task 调进来，
         //   而 rdm_task 钉在 core 0（ble_dmx.c）。dmx_driver_install() 内部
         //   的 esp_intr_alloc() 会把中断路由到「调用它的那个核」，于是在 core 0
@@ -170,15 +183,31 @@ bool dmx_rdm_mode(uint8_t universe, bool on)
                      universe + 1);
             return false;
         }
-        xSemaphoreTake(s_reinstall_ack[universe], 0);   // 清掉旧信号
-        s_reinstall_req[universe] = true;
-        if (xSemaphoreTake(s_reinstall_ack[universe], pdMS_TO_TICKS(500)) != pdTRUE) {
-            s_reinstall_req[universe] = false;
-            ESP_LOGE(TAG, "U%d RDM: 驱动重装超时（core1 的 dmx_task 没响应）",
+        // 最多试两次：core 1 的 dmx_task 偶尔会晚一拍（正好在做长操作），
+        // 一次超时不代表它真的不响应。
+        for (int attempt = 0; attempt < 2; attempt++) {
+            xSemaphoreTake(s_reinstall_ack[universe], 0);   // 清掉旧信号
+            s_reinstall_req[universe] = true;
+            if (xSemaphoreTake(s_reinstall_ack[universe], pdMS_TO_TICKS(500)) != pdTRUE) {
+                s_reinstall_req[universe] = false;
+                ESP_LOGW(TAG, "U%d RDM: 驱动重装超时（第 %d 次）", universe + 1, attempt + 1);
+                continue;
+            }
+            // ⚠ 收到应答还不够，要看**安装到底成没成**：dmx_task 把
+            //   dmx_install_driver() 的结果写在 s_out[].ok 上。
+            //   以前这里无条件 return true —— 于是"重装成功"和"重装失败"在调用方
+            //   看来一模一样，调用方（rdm.c）又忽略了返回值，最终表现成
+            //   "扫过一次 RDM 之后这个宇宙的灯永远不动"，而且一条错误都看不到。
+            if (s_out[universe].ok) {
+                ESP_LOGI(TAG, "U%d RDM: 驱动重装完成，DMX 输出恢复正常", universe + 1);
+                return true;
+            }
+            ESP_LOGE(TAG, "U%d RDM: 驱动重装失败（dmx_install_driver 返回错误）",
                      universe + 1);
-            return false;
+            vTaskDelay(pdMS_TO_TICKS(50));
         }
-        ESP_LOGI(TAG, "U%d RDM: 驱动重装完成，DMX 输出恢复正常", universe + 1);
+        ESP_LOGE(TAG, "U%d RDM: 驱动重装最终失败，本宇宙 DMX 输出已停", universe + 1);
+        return false;
     }
     return true;
 }

@@ -276,7 +276,11 @@ static void rdm_task(void *arg)
             int found = rdm_scan(uni);
             // 0x89 扫描头：0x89 count(1) universe(1) ok(1) errLen(1) err…
             uint8_t buf[128];
-            const char *err = (found <= 0) ? rdm_last_error() : "";
+            // ⚠ 错误文本不再只在 found<=0 时带出去。扫描成功但**DMX 驱动没重装回来**
+            //   （或部分设备参数没读到）时 rdm_scan 照样返回 found>0，而 s_err 里有话要说 ——
+            //   以前这里会把它丢掉，App 就只看到一句"扫描结束"，完全不知道那个宇宙已经停发了。
+            //   rdm_scan 开始时清过 s_err，所以成功且一切正常时它就是空串。
+            const char *err = rdm_last_error();
             size_t n = strlen(err);
             if (n > 100) n = 100;
             int i = 0;
@@ -287,8 +291,8 @@ static void rdm_task(void *arg)
             buf[i++] = (uint8_t)n;
             memcpy(&buf[i], err, n);
             i += n;
-            ESP_LOGI(TAG, "RDM 回 0x89: found=%d 帧长=%d connected=%d",
-                     found, i, (int)s_connected);
+            ESP_LOGI(TAG, "RDM 回 0x89: found=%d err=\"%s\" 帧长=%d connected=%d",
+                     found, err, i, (int)s_connected);
             ble_dmx_notify(buf, (uint16_t)i);
             for (int k = 0; k < (found > 0 ? found : 0); k++) {
                 rdm_send_device(uni, k);
@@ -347,7 +351,11 @@ static void handle_frame(const uint8_t *d, uint16_t len)
         uint8_t pid = d[1];
         uint16_t t = ((uint16_t)d[2] << 8) | d[3];
         uint8_t count = d[4];
-        if (count > PROG_MAX_ITEMS_STEP) count = PROG_MAX_ITEMS_STEP;
+        // ⚠ 这里**不需要**再钳到 PROG_MAX_ITEMS_STEP：count 是 uint8_t（≤255），
+        //   而 PROG_MAX_ITEMS_STEP 正好是 255（协议上限，0x12 帧的 count 占 1 字节）。
+        //   原来那句 `if (count > PROG_MAX_ITEMS_STEP) count = ...` 编译器直接报
+        //   "comparison is always false" —— 留着它反而让人以为上限是别的值。
+        //   真正的边界是下面这句：按实际帧长反推能装几项。
         if (len < 5 + (size_t)count * 3) count = (len - 5) / 3;
         prog_item_t items[PROG_MAX_ITEMS_STEP];
         for (uint8_t i = 0; i < count; i++) {
