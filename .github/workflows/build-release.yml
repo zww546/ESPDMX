@@ -90,6 +90,15 @@ jobs:
           StageDMX firmware flashing (ESP32-S3, 16MB flash; adjust COM port)
             esptool.py --chip esp32s3 -p COM13 -b 460800 write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 stagedmx.bin
 
+          WIRING -- CHANGED in this release (two SP3485EN, both RO wired back, one DE each)
+            Universe 1:  DI=GPIO17   RO=GPIO18   DE=GPIO4
+            Universe 2:  DI=GPIO16   RO=GPIO15   DE=GPIO5
+            * tie /RE to DE on the bare SP3485EN -- a permanently enabled receiver
+              hears its own transmission (echo) and produces false breaks
+            * never swap DI and RO: both are outputs, they will fight and overheat
+            * GPIO2 is no longer used
+            Full notes: see this release's description (repo file RELEASE_NOTES.md)
+
           Reset fixture filesystem if needed:
             esptool.py --chip esp32s3 -p COM13 erase_region 0x310000 0x200000
 
@@ -134,5 +143,8 @@ jobs:
         with:
           tag_name: ${{ steps.t.outputs.tag }}
           name: StageDMX ${{ steps.t.outputs.tag }}
-          generate_release_notes: true
+          # ⚠ 发布说明用仓库根目录的 RELEASE_NOTES.md（**人工维护、写详细**）：
+          #   打 tag 之前先把这一版的新增/修复/破坏性变更/升级注意写进去。
+          #   不用 generate_release_notes —— 自动生成的只有提交标题，看不出影响面。
+          body_path: RELEASE_NOTES.md
           files: dist/*

@@ -19,7 +19,7 @@
 
 | 目录 | 是什么 | 技术栈 |
 |---|---|---|
-| `StageDMX/` | 手机控台 App：推子 / 效果 / 程序 / 场景 / 灯库 / **切割** / **RDM** | Kotlin · AGP 8.11.1 · Kotlin 2.1.0 · Gradle 8.13 · compileSdk 36 / minSdk 26 · v1.25 (code 26) |
+| `StageDMX/` | 手机控台 App：推子 / 效果 / 程序 / 场景 / 灯库 / **切割** / **RDM** | Kotlin · AGP 8.11.1 · Kotlin 2.1.0 · Gradle 8.13 · compileSdk 36 / minSdk 26 · v1.26 (code 27) |
 | `stagedmx_std/` | 控台固件：双宇宙 DMX512 输出 + BLE 协议 + 效果引擎 + USB 盘 + RDM 主站 | ESP-IDF **v5.5.2** · C · 内置 `components/esp_dmx` |
 | `stagedmx_sniff/` | 灯库模拟器：把自己当一台真灯接在控台后面，**收帧 + RDM 应答 + 统计** | ESP-IDF · C |
 | `release_assets/` | 预编译产物：`stagedmx.bin` / `bootloader.bin` / `partition-table.bin` / `StageDMX-debug.apk` + 一键发布脚本 | — |
@@ -164,14 +164,14 @@ cd ..\StageDMX
 - **控台**：ESP32-S3（如 DevKitC-1 **N16R8**）+ SP3485（RS-485 半双工）×2
 - **模拟器**：第二块 ESP32-S3（不需要收发器，TTL 直连）
 
-控台接线（`stagedmx_std/main/pins.h`）：
+控台接线（`stagedmx_std/main/pins.h`，**v1.26 起两片 SP3485EN 均接回程**）：
 
-| SP3485 | 接 ESP32-S3 | 说明 |
+| SP3485EN | 接 ESP32-S3 | 说明 |
 |---|---|---|
 | VCC / GND | 3.3V / GND | 供电共地 |
-| TXD (DI) | GPIO17（宇宙1）/ GPIO18（宇宙2） | DMX 数据 |
-| EN | GPIO2（两片共用） | 高 = 发送 |
-| RXD (RO) | 悬空 | 纯发送不接 |
+| DI | GPIO17（宇宙1）/ GPIO16（宇宙2） | ESP 输出 → 芯片 DI |
+| RO | GPIO18（宇宙1）/ GPIO15（宇宙2） | 芯片 RO → ESP 输入（RDM 依赖它） |
+| DE | GPIO4（宇宙1）/ GPIO5（宇宙2） | 方向脚；**建议把 `/RE` 与 `DE` 短接** |
 | A / B / G | DMX 总线 | XLR 母头 pin3 / pin2 / 地 |
 
 - 末端设备 A/B 之间并联 **120Ω** 终端电阻
@@ -293,6 +293,8 @@ App 侧刻意把**容易错的纯逻辑**从 Android 类型里拆出来（`Chann
 - **看日志要插原生 USB 口**：CH343 那个口只用于烧录。
 - **U 盘模式会占串口**：插 USB 后设备枚举为 MSC（PID `4002`），退出（BLE 发 `0xA0 0x30 0`）或断电后串口才回来。
 - **通道号全局 1..1024**：跨宇宙统一寻址，`512` 与 `513` 是两个口，不要按 0..511 写。
+- **两片 SP3485 的 DI / RO 不能接反**：两个都是输出，接反会互相对打（芯片发烫、无输出）；DE 每片一根（4 / 5），
+  裸片的 `/RE` 建议与 `DE` 短接，否则接收常开 → 自己的回波 + 伪 break。引脚只改 `pins.h`，固件里没有硬编码 GPIO。
 - **切割 A/B 的那两个常数是实测来的**：`ONE_END_INSET` / `BOTH_END_CROSS` 有专门的回归测试锁着，
   改之前先跑 `ShaperGeometryTest`（"双端拉满才刚好切满"）。
 - **改固件协议时同步改 App**：帧格式两边的注释都指向 `StageDMX/PROTOCOL.md`，改一边等于制造幽灵 bug。
@@ -340,6 +342,7 @@ BLE GATT：服务 `0xFF00` · 写 `0xFF01`（WRITE / WRITE_NO_RSP）· 通知 `0
 
 | 文档 | 内容 |
 |---|---|
+| `RELEASE_NOTES.md` | **当前版本的更新说明**（新增 / 修复 / 破坏性变更 / 升级注意 / 验收清单 —— 发布时作为 Release 正文） |
 | `StageDMX/PROTOCOL.md` | BLE 帧格式 / 命令 / 响应（App 与固件共同约定） |
 | `StageDMX/FIXTURE_CHANNELS.md` | 灯库解析清单（各格式实际读出来的通道，排查灯库问题的第一站） |
 | `StageDMX/UI_REVIEW.md` | App UI 评审与改进状态 |
