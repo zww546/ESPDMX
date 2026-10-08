@@ -298,6 +298,37 @@ object FxEngine {
         applyTargets(def, startAddress, 0, 1)
 
     /**
+     * 清掉**上一次探测出来的**通道映射（不动阵列参数）。
+     *
+     * ⚠ 必须在每次重新探测之前调用，因为下面全是 `chFine(...)?.let { ... }` ——
+     * **找不到就保留旧值**。不清的后果是"上一台灯的通道映射留下来"：
+     *  - 推子页的「切割」分组不消失（bladeCh 还是上一台灯的）；
+     *  - 换到一台没有 PAN 的灯之后，效果会继续往上一台灯的 PAN 通道上写。
+     *
+     * ⚠ 这里把 pan/tilt/dim/RGB 也清成 0，而不是留字段声明里那套 28/30/1/4/5/6 默认值：
+     *   `real(0)` 返回 0 = "这个效果不写任何通道"，是诚实的表达。
+     *   留旧值则会往**别的灯**的通道上写，比不写危险得多。
+     */
+    private fun resetDetectedChannels() {
+        panCh = 0; panFineCh = 0; tiltCh = 0; tiltFineCh = 0
+        dimCh = 0; dimFineCh = 0
+        rCh = 0; gCh = 0; bCh = 0
+        zoomCh = 0; zoomFineCh = 0; focusCh = 0; focusFineCh = 0
+        colorCh = 0; goboCh = 0; goboRotCh = 0
+        for (i in bladeCh.indices) bladeCh[i] = 0
+        shaperRotCh = 0
+        ptSpeedCh = null
+    }
+
+    /** 没有任何灯型时的通道状态：**一律当作"不存在"**（0 = 不写这个通道）。 */
+    fun clearChannels() {
+        resetDetectedChannels()
+        targetStride = 0
+        targetCount = 1
+        startAddr = 1
+    }
+
+    /**
      * 应用灯具 + 阵列配置（当前选中的一组实例）。可在效果运行中调用。
      *
      * @param firstGlobalAddr 阵列第 0 台的**全局**起始通道（1..1024）
@@ -308,6 +339,10 @@ object FxEngine {
         startAddr = firstGlobalAddr.coerceIn(1, DmxProtocol.MAX_CHANNELS)
         targetStride = if (count > 1) stride.coerceIn(0, DmxProtocol.MAX_CHANNELS) else 0
         targetCount = count.coerceIn(1, MAX_TARGETS)
+        // ⚠ 先把上一次的映射清掉再探测：下面全是"找不到就保留旧值"的写法。
+        //   不清的话换灯之后会留着**上一台灯**的通道号（PAN/调光/切割片都算），
+        //   效果就会往别的灯的通道上写。
+        resetDetectedChannels()
         // 优先按 attribute（MA2 标准，如 COLOR1/GOBO1/PAN）精确匹配，其次按通道名模糊匹配
         fun byAttr(key: String): Pair<Int, Int?>? {
             val k = key.lowercase()

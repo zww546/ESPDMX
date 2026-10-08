@@ -144,7 +144,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      */
     private var rdmGroupMode = true
     /**
-     * RDM 列表当前的行模型（元素是 [RdmGroupRow] 组头或 [RdmDevice] 设备行）。
+     * RDM 列表当前的行模型（元素是 [RdmRows.Group] 组头或 [RdmDevice] 设备行）。
      *
      * ⚠ adapter 的 position 是**行模型下标**，不是 [rdmOrder] 的下标。分组模式
      *   下两者相差若干个组头，所以"预期地址"必须靠 uid 反查 rdmOrder 的序号，
@@ -194,6 +194,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     /** RDM 扫描超时兜底（单独持引用，取消时只撤它，不牵连同 Handler 上的别人）。 */
     private var rdmScanTimeout: Runnable? = null
     private lateinit var rdmStore: RdmStore
+    private lateinit var shaperStore: ShaperStore
+    /** 切割「逐片自检」的定时器（单独持引用，重复点不会互相打架）。 */
+    private var shaperSelfTimer: Runnable? = null
 
     /**
      * 属性别名：不同灯库对同一功能命名不同（dimmer / intensity / dim），
@@ -297,6 +300,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         steps = StepStore(this)
         fixtureStore = FixtureStore(this)
         rdmStore = RdmStore(this)
+        shaperStore = ShaperStore(this)
         fixtureEditor = FixtureEditor(this, fixtureStore)
         fxPresetStore = FxPresetStore(this)
 
@@ -847,6 +851,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
         // v6：效果按"规则阵列"作用到整组（非规则阵列则退回单台并提示）
         applyFxTargets(def, insts)
+        // 切割通道随灯型/实例变，这里重算一次入口行（模式 0 时它什么都不做）
+        refreshShaperUi()
         applyFaderLayout(def.id)
         b.presetBar.visibility = View.GONE
         b.etChannels.visibility = View.GONE
@@ -1058,6 +1064,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         channelAdapter.applyFixture(def)
         applyFaderLayout(def.id)
         FxEngine.applyFixture(def, 1)  // 非实例模式从地址 1 开始
+        // 非实例（直接用灯库）模式：切割入口行同样要跟着灯型重建
+        refreshShaperUi()
         fb.btnLocate.isEnabled = true
         // 隐藏通道选择器，显示灯具名
         b.presetBar.visibility = View.GONE
@@ -1082,6 +1090,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         selectedInstanceIds.clear()
         currentInstanceId = null
         channelAdapter.clearFixture()
+        // ⚠ clearFixture() 会把通道数复位成默认的裸通道数（10）；这里再用输入框里的值
+        //   覆盖一次 —— 用户之前可能把裸通道数设成 32。
+        channelAdapter.setChannelCount(bareChannelCount())
+        // ⚠ 必须重刷切割面板：否则 collapsedBladeChannels 还留着上一次那台灯的值，
+        //   推子页的「切割」分组会继续挂着不消失（用户报的 bug）。
+        refreshShaperUi()
         fb.btnLocate.isEnabled = false
         // 有实例时通道数由实例决定，不显示自定义通道选择；无实例时预设+输入框都显示
         val showCh = fixtureStore.instances().isEmpty()
@@ -1103,6 +1117,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         b.etChannels.setText(c.toString())
         channelAdapter.setChannelCount(c)
     }
+
+    /**
+     * 裸通道模式下的通道数（推子页那个输入框的值）。
+     * 取消选中灯具时要恢复到它，而不是留着灯库的通道数。
+     */
+    private fun bareChannelCount(): Int =
+        b.etChannels.text.toString().toIntOrNull()?.coerceIn(1, DmxProtocol.MAX_CHANNELS)
+            ?: ChannelAdapter.DEFAULT_BARE_COUNT
 
     /**
      * 录制前的快照净化：把复位类通道（attribute 含 reset，如 fixtureglobalreset）清零，
@@ -1528,6 +1550,11 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val def = if (insts.isNotEmpty()) fixtureStore.fixtureOf(insts[0]) else fixtureStore.currentFixture
         if (def != null) {
             applyFxTargets(def, insts)
+        } else {
+            // ⚠ 没有灯型时必须**显式清一遍**：applyTargets 里的探测是"找不到就保留旧值"，
+            //   不清的话上一次那台灯的通道映射会留着 —— 表现就是"取消选中后
+            //   推子页的「切割」分组不消失"（bladeCh 还是上一台灯的）。
+            FxEngine.clearChannels()
         }
     }
 
@@ -2837,6 +2864,37 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         channelAdapter.groupByFunction = stb.swFaderGroup.isChecked
         // 点整行也能切换开关（交互更自然，也让自动化可点）
         stb.rowFaderGroup.setOnClickListener { stb.swFaderGroup.toggle() }
+
+        // 切割调整方式：三种模式全局切换（同一份通道值的三种视图）
+        stb.btnShaperMode0.setOnClickListener { setShaperMode(ShaperStore.MODE_FADERS) }
+        stb.btnShaperMode1.setOnClickListener { setShaperMode(ShaperStore.MODE_PANEL) }
+        stb.btnShaperMode2.setOnClickListener { setShaperMode(ShaperStore.MODE_CANVAS) }
+        stb.rowShaperMode.setOnClickListener {
+            // 点整行 = 三种模式轮着切（和别的设置行"点行即切换"的手感一致）
+            setShaperMode((shaperStore.uiMode + 1) % 3)
+        }
+        // 映射 / 自检入口放在这里，任何模式都够得着（推子页只有面板模式才有这些操作）
+        stb.btnShaperMappingSettings.setOnClickListener {
+            val ch = shaperChannels()
+            if (ch.blades.none { it > 0 }) {
+                toast("当前灯型没有切割片通道（灯库里认不到 BLADE / FRAMING）")
+            } else {
+                showShaperMappingDialog(ch.fixtureId) { refreshShaperUi() }
+            }
+        }
+        stb.btnShaperSelfTestSettings.setOnClickListener {
+            val ch = shaperChannels()
+            if (ch.blades.none { it > 0 }) {
+                toast("当前灯型没有切割片通道（灯库里认不到 BLADE / FRAMING）")
+            } else {
+                runShaperSelfTest(ch)
+            }
+        }
+        // 「切割最大角度」的三档按钮：45 / 90 / 180（默认 45）。
+        // 用代码建而不是写死在 XML 里，是为了档位列表只有 ShaperStore 一处定义。
+        buildShaperAnglePills()
+        refreshShaperModeHint()
+
         stb.rowDualUniverse.setOnClickListener { stb.swDualUniverse.toggle() }
         stb.rowRdm.setOnClickListener { stb.swRdm.toggle() }
 
@@ -3329,7 +3387,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     // ---------- RDM 按型号分组 ----------
 
     /** 列表里的一行：分组头（分组模式才有）或一台设备。 */
-    private data class RdmGroupRow(val key: String, val devices: List<RdmDevice>)
 
     /** 分组键：优先型号描述；为空时退回设备标签，再空就"未知型号"。 */
     private fun rdmModelKey(d: RdmDevice): String =
@@ -3444,7 +3501,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
      *   `3 台 · ⚠无灯库  ▾` —— 找不到灯库时整段染成警示色。
      * 所有动作（递增/相同/加实例/指定灯库/改名）收进**长按菜单**。
      */
-    private fun bindRdmGroupHeader(root: View, row: RdmGroupRow) {
+    private fun bindRdmGroupHeader(root: View, row: RdmRows.Group) {
         val key = row.key
         val collapsed = key in rdmGroupCollapsed
         val lib = fixtureForModel(key)
@@ -3864,21 +3921,26 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 分组与排序**可以同时开**：分组模式下也能拖动，但只允许**同组内换位**
         // （见下面 ItemTouchHelper 的 onMove）——跨组换位会让"组内递增配地址"
         // 的顺序失去意义，所以直接拒绝。
-        val groupedRows = ArrayList<Any>()
+        // 行模型算法本体在 [RdmRows]（纯逻辑、可单测）。返回的表是**可变**的：
+        // 拖动排序会就地 swap / 搬段，所以这里必须一直用同一个实例。
+        val groupedRows = RdmRows.build(
+            devices = if (rdmReorderMode) rdmOrder else rdmDevices,
+            grouped = rdmGroupMode,
+            groupKeyOf = { rdmModelKey(it) },
+            collapsed = rdmGroupCollapsed,
+        )
         fun rebuildGroupedRows() {
+            // 组内顺序变了（拖动）时重铺内容，**长度和实例都不换** ——
+            // 换实例/换长度会让拖动中的 ViewHolder 失效。
+            val fresh = RdmRows.build(
+                devices = if (rdmReorderMode) rdmOrder else rdmDevices,
+                grouped = rdmGroupMode,
+                groupKeyOf = { rdmModelKey(it) },
+                collapsed = rdmGroupCollapsed,
+            )
             groupedRows.clear()
-            // 排序模式下按 rdmOrder 的顺序铺，这样"组内顺序"就是配地址要用的顺序
-            val base = if (rdmReorderMode) rdmOrder else rdmDevices
-            if (!rdmGroupMode) {
-                groupedRows.addAll(base)
-                return
-            }
-            for ((key, devs) in base.groupBy { rdmModelKey(it) }) {
-                groupedRows.add(RdmGroupRow(key, devs))
-                if (key !in rdmGroupCollapsed) groupedRows.addAll(devs)
-            }
+            groupedRows.addAll(fresh)
         }
-        rebuildGroupedRows()
         rdmRows = groupedRows     // 与 groupedRows 同一个实例，之后就地在变
         // 预期地址整表算一次（onBind 每行都要用，别在 onBind 里重算成 O(n²)）
         rdmPlanMap = if (rdmReorderMode) rdmAddressPlan() else null
@@ -3886,7 +3948,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         imfb.rvRdm.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = groupedRows.size
             override fun getItemViewType(pos: Int) =
-                if (groupedRows.getOrNull(pos) is RdmGroupRow) 1 else 0
+                if (RdmRows.isGroup(groupedRows.getOrNull(pos))) 1 else 0
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val id = if (viewType == 1) R.layout.item_channel_group else R.layout.item_rdm_device
                 val v = LayoutInflater.from(parent.context).inflate(id, parent, false)
@@ -3894,7 +3956,7 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, pos: Int) {
                 val row = groupedRows.getOrNull(pos) ?: return
-                if (row is RdmGroupRow) {
+                if (row is RdmRows.Group) {
                     bindRdmGroupHeader(holder.itemView, row)
                     return
                 }
@@ -3960,88 +4022,25 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                                     tgt: RecyclerView.ViewHolder): Boolean {
                     val a = vh.bindingAdapterPosition
                     val b = tgt.bindingAdapterPosition
-                    if (a < 0 || b < 0) return false
-
-                    // ---- 拖组头 = 整组挪位置 ----
-                    // 只认"组头拖到另一个组头"：拖到别组的灯具行上不动（组头是明确的
-                    // 落点，用户知道往哪拖）。组顺序会决定各组"自动接续"的起始地址，
-                    // 所以换完顺序必须重排一遍地址。
-                    if (rdmGroupMode) {
-                        val ha = groupedRows.getOrNull(a)
-                        val hb = groupedRows.getOrNull(b)
-                        if (ha is RdmGroupRow && hb is RdmGroupRow && ha.key != hb.key) {
-                            val devsA = list.filter { rdmGroupKeyOf(it) == ha.key }
-                            if (devsA.isEmpty()) return false
-                            // 折叠的组只占 1 行（组头），没折叠的是 1 + 台数
-                            val rowsA = if (ha.key in rdmGroupCollapsed) 0 else devsA.size
-                            val rowsB = if (hb.key in rdmGroupCollapsed) 0
-                                        else list.count { rdmGroupKeyOf(it) == hb.key }
-                            list.removeAll { rdmGroupKeyOf(it) == ha.key }
-                            if (a < b) {
-                                val lastB = list.indexOfLast { rdmGroupKeyOf(it) == hb.key }
-                                list.addAll(if (lastB < 0) list.size else lastB + 1, devsA)
-                            } else {
-                                val firstB = list.indexOfFirst { rdmGroupKeyOf(it) == hb.key }
-                                list.addAll(if (firstB < 0) 0 else firstB, devsA)
-                            }
-                            relayoutLocalAddresses(refresh = false)   // 组顺序变了 → 起始地址跟着变
-                            rebuildGroupedRows()
-                            val ad = imfb.rvRdm.adapter ?: return false
-                            // ⚠ 整块搬 = 反复把块首（或块尾）那一行移到目标位置。
-                            //   不能图省事用 notifyDataSetChanged()：拖动中的 ViewHolder
-                            //   会被回收，ItemTouchHelper 的手势当场断掉。
-                            //   两种方向的移动序列都用小例子验算过：
-                            //     A 在 B 前 → [HA,x,HB,y] --move(0→3) 两次--> [HB,y,HA,x]
-                            //     A 在 B 后 → [HB,y,HA,x] --move(3→0) 两次--> [HA,x,HB,y]
-                            val blockRows = rowsA + 1
-                            if (a < b) repeat(blockRows) { ad.notifyItemMoved(a, a + rowsA + rowsB + 1) }
-                            else       repeat(blockRows) { ad.notifyItemMoved(a + rowsA, b) }
-                            updateRdmPreviews()
-                            return true
-                        }
-                        // 组头 ↔ 灯具行：不处理，交给下面的同组换位逻辑判断
-                    }
-
-                    // ---- 分组模式：只允许**同组内**换位 ----
-                    // 跨组换位直接拒绝 —— 否则"组内递增配地址"的顺序就失去意义了
-                    // （要换整组位置请拖组头，见上面）。
-                    if (rdmGroupMode) {
-                        val ra = groupedRows.getOrNull(a)
-                        val rb = groupedRows.getOrNull(b)
-                        if (ra !is RdmDevice || rb !is RdmDevice) return false
-                        if (rdmModelKey(ra) != rdmModelKey(rb)) return false
-                        val ia = list.indexOfFirst { it.uid == ra.uid }
-                        val ib = list.indexOfFirst { it.uid == rb.uid }
-                        if (ia < 0 || ib < 0 || ia == ib) return false
-                        // ⚠ 这里必须是**真移动**（摘出来再插进去），不能像平铺模式那样
-                        //   逐格交换：rdmOrder 里同组的成员之间可能夹着别组的设备，
-                        //   而分组列表只把同组成员排在一起 —— 交换会让"夹在中间的同组
-                        //   成员"静止不动，与 notifyItemMoved 的语义对不上（拖过头就乱）。
-                        val moved = list.removeAt(ia)
-                        list.add(ib, moved)
-                        // 顺序变了 → 预期地址跟着变。这里必须把**预设地址**一起更新，
-                        // 否则「写入」下发的是 d.address（旧的），和界面上显示的预期地址
-                        // 对不上。refresh=false：拖动中不能重建 adapter。
-                        relayoutLocalAddresses(refresh = false)
-                        // 组内相对顺序变了，重铺行模型（长度不变，只是顺序变了）
-                        rebuildGroupedRows()
-                        imfb.rvRdm.adapter?.notifyItemMoved(a, b)
-                        // ⚠ 这里**不能**调 refreshRdmList()：它会整个替换 adapter，
-                        //   手势会被打断，表现成"只能相邻换位"。
-                        updateRdmPreviews()
-                        return true
-                    }
-
-                    // ---- 平铺模式：就地逐格交换 ----
-                    if (a >= list.size || b >= list.size) return false
-                    // 就地逐格交换：中间任何一次回调被丢弃都不会累积错位
-                    if (a < b) for (i in a until b) java.util.Collections.swap(list, i, i + 1)
-                    else       for (i in a downTo b + 1) java.util.Collections.swap(list, i, i - 1)
+                    // 决策（三套分支 + notifyItemMoved 序列）全在 [RdmDrag]（纯逻辑、有单测）。
+                    // 这里只负责把结果落到界面：先按新顺序重排地址，再把移动序列发给 adapter。
+                    val res = RdmDrag.onMove(
+                        rows = groupedRows,
+                        order = list,
+                        a = a, b = b,
+                        grouped = rdmGroupMode,
+                        collapsed = rdmGroupCollapsed,
+                        groupKeyOf = { rdmGroupKeyOf(it) },
+                    ) ?: return false
+                    // 顺序变了 → 预设地址跟着变（写「写入」下发的就是它）。
+                    // refresh=false：拖动中不能重建 adapter，否则手势当场断掉。
                     relayoutLocalAddresses(refresh = false)
-                    rebuildGroupedRows()      // 平铺时 groupedRows 是元素**引用**的拷贝，得重铺
-                    imfb.rvRdm.adapter?.notifyItemMoved(a, b)
-                    // ⚠ 这里**不能**调 refreshRdmList()：它会整个替换 adapter，
-                    //   手势会被打断，表现成"只能相邻换位"。只就地更新地址预览。
+                    // 行模型重铺（分组时长度可能变；平铺时是元素引用的拷贝，也得重铺）
+                    rebuildGroupedRows()
+                    val ad = imfb.rvRdm.adapter ?: return false
+                    // ⚠ 不能用 notifyDataSetChanged()：拖动中的 ViewHolder 会被回收，
+                    //   ItemTouchHelper 的手势当场断掉（表现成"只能相邻换位"）。
+                    res.moves.forEach { (f, t) -> ad.notifyItemMoved(f, t) }
                     updateRdmPreviews()
                     return true
                 }
@@ -4101,36 +4100,19 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     /**
      * 每个分组**当前生效**的起始地址：组键 → 起始地址。
      *
-     * - 用户在该组「起始」框里填过的，就是填的值；
-     * - 没填过的接上一组的末尾（第一组因此是 1）。
-     *
-     * 组的先后 = 在 [rdmOrderedDevices] 里首次出现的次序，跟
-     * [assignAddressesByGroup] 内部的组顺序一致，两处必须同源。
+     * 算法本体在 [RdmStore.groupStartsOf] —— 它和真正排址用的
+     * [RdmStore.assignAddressesByGroup] **共用同一份跨度/组序计算**。
+     * 以前这里自己抄了一遍，注释写着"两处必须同源"；那种注释就是漂移的预告：
+     * 一旦不一致，界面「起始」格显示的地址和实际排出来的地址会差一截，
+     * 而且没有任何测试能发现。
      */
-    private fun rdmGroupStarts(): LinkedHashMap<String, Int> {
-        val totals = LinkedHashMap<String, Int>()          // 组键 → 该组占用的通道跨度
-        val widest = HashMap<String, Int>()                // 组键 → 组内最宽的一台
-        for (d in rdmOrderedDevices()) {
-            // 参数未知的灯不占地址空间 —— 否则它会把后面每组顶偏
-            if (rdmIsUnknown(d)) continue
-            val k = rdmGroupKeyOf(d)
-            val fp = rdmFootprint(d)
-            totals[k] = (totals[k] ?: 0) + fp
-            widest[k] = maxOf(widest[k] ?: 0, fp)
-        }
-        // "相同"模式的组整组指向同一个地址，只占一台的宽度 —— 必须和
-        // assignAddressesByGroup 里的跨度算法一致，否则界面上显示的起始地址
-        // 和实际排出来的地址会差一截。
-        for (k in totals.keys) if (rdmGroupSame[k] == true) totals[k] = widest[k] ?: 1
-        val out = LinkedHashMap<String, Int>()
-        var auto = 1
-        for ((k, ch) in totals) {
-            val s = rdmGroupStart[k]?.coerceIn(1, DmxProtocol.UNIVERSE_SIZE) ?: auto
-            out[k] = s
-            auto = maxOf(auto, s + ch)
-        }
-        return out
-    }
+    private fun rdmGroupStarts(): LinkedHashMap<String, Int> = groupStartsOf(
+        devices = rdmOrderedDevices(),
+        groupOf = { rdmGroupKeyOf(it) },
+        starts = rdmGroupStart,
+        footprintOf = { rdmFootprint(it) },
+        sameOf = { rdmGroupSame[it] == true },
+    )
 
     /**
      * 整表的"预期地址"：uid → 新地址。返回 null = 本宇宙放不下。
@@ -5120,5 +5102,498 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             }
         }
         next(0)
+    }
+
+    // ========================================================================
+    // 切割（framing shutter）可视化
+    //
+    // 三种模式共用**同一份 8 个通道值**：
+    //   0 = 8 条推杆（就是普通的通道滑条，模式 0 下什么都不做）
+    //   1 = 面板：圆形预览（不可拖）+ 4 片 × (偏移/角度) 滑块
+    //   2 = 窗口：同一个预览**可拖**（直接拖四条刀片线 / 拖外圈旋转）+ 滑块精调
+    // 所以切换模式只换"怎么看/怎么输"，不动也不丢任何值。
+    //
+    // 哪 8 个通道是切割片由 FxEngine.bladeCh 现算（认 MA2 / 老虎 D4 / 珍珠三种命名），
+    // 这里不另存一份，避免两边漂移。
+    // ========================================================================
+
+    /** 当前灯型的切割通道：8 片（灯内号，0=不存在）+ 旋转通道 + 灯型 id（映射键）。 */
+    private data class ShaperCh(val blades: IntArray, val rot: Int, val fixtureId: String?)
+
+    /** 上一次刷新时的切割模式（-1 = 还没刷过）——用来只在换模式时复位折叠状态。 */
+    private var lastShaperMode = -1
+
+    private fun shaperChannels(): ShaperCh {
+        updateFxChannels()   // 保证 bladeCh 与当前实例/灯库一致（它按灯库现算）
+        val inst = currentInstanceId?.let { id -> fixtureStore.instances().find { it.id == id } }
+        val fid = inst?.fixtureId ?: fixtureStore.currentFixture?.id
+        return ShaperCh(FxEngine.bladeCh.copyOf(), FxEngine.shaperRotCh, fid)
+    }
+
+    /**
+     * 切割角度的半量程（度）：角度通道 0..255 ↔ −max..+max，128 = 0°。
+     *
+     * **灯库写了就用灯库的**（用户要求"灯库有就不用选择"）：例如 Ares-FP2600 的
+     * SHAPER ROT 通道 phys 就是 −45..45，直接采信，设置页那一行会显示成只读。
+     * 灯库没写才回落到用户设置（默认 45°，可选 90/180）。
+     */
+    private fun shaperMaxAngleDeg(ch: ShaperCh): Int = libraryMaxAngleDeg(ch) ?: shaperStore.maxAngleDeg(ch.fixtureId)
+
+    /** 灯库声明的最大角度；灯库没写返回 null。 */
+    private fun libraryMaxAngleDeg(ch: ShaperCh): Int? {
+        if (ch.rot <= 0) return null
+        val def = currentFixtureDef() ?: return null
+        val c = def.channels.firstOrNull { it.number == ch.rot } ?: return null
+        val a = Math.abs(c.physFrom)
+        val b = Math.abs(c.physTo)
+        val m = Math.max(a, b)
+        // phys 全 0 = 灯库没填，不能当成"最大角度 0°"
+        if (m < 1f) return null
+        return Math.round(m).toInt().coerceIn(ShaperStore.MIN_ANGLE_DEG, ShaperStore.MAX_ANGLE_DEG)
+    }
+
+    /** 当前正在用的灯库（实例优先，否则当前灯库）。 */
+    private fun currentFixtureDef(): FixtureDef? {
+        val insts = groupInstances()
+        return if (insts.isNotEmpty()) fixtureStore.fixtureOf(insts[0]) else fixtureStore.currentFixture
+    }
+
+    /** 读某个灯内通道的当前值（和推子页读同一个地址）。 */
+    private fun shaperRead(chInFixture: Int): Int =
+        if (chInFixture <= 0) 0 else engine.get(channelAdapter.dmxChannelOfFixtureCh(chInFixture))
+
+    /** 已经做过"切割归位"的灯型 id（每个灯型只做一次，免得反复覆盖用户的值）。 */
+    private val shaperNeutralDone = mutableSetOf<String>()
+
+    /**
+     * 把切割的八个刀片通道摆到**全开位**（0）—— 用户要求"8 个片默认值改为 0"。
+     *
+     * ⚠ 这里**必须是 0，不能是 128**。旧模型（一片 = 偏移 + 角度）里"角度 128"是
+     *   中位 0°；但改成 A/B 双端模型后，128 = 走了一半行程 = **刀片推进到圆心**，
+     *   也就是一进切割面板四片就各遮住一半光。这个坑是改模型时漏下的。
+     *
+     * 为什么需要这一步：这个 App **从来不把灯库的 `defaultValue` 写进引擎**，
+     * 所有通道一律从 0 开始。0 在 A/B 模型里正好就是全开，所以正常情况下**什么都不用做**；
+     * 只有旋转通道需要摆到中位 128（= 0°）。
+     *
+     * ⚠ 三条约束：
+     *   1. 每个灯型只做一次（`shaperNeutralDone`），不跟用户后来的操作打架；
+     *   2. 只在八个刀片通道**全都还是 0** 时才动手 —— 已经有值就说明不是初始状态；
+     *   3. 只在对应灯型确实有切割通道时做。
+     */
+    private fun ensureShaperNeutral(ch: ShaperCh) {
+        val key = ch.fixtureId ?: "default"
+        if (!shaperNeutralDone.add(key)) return
+        val bladeCh = ch.blades.filter { it > 0 }
+        if (bladeCh.isEmpty()) return
+        if (bladeCh.any { shaperRead(it) != 0 }) return
+        // 刀片通道保持 0（全开）—— 显式写一遍，让"默认值就是 0"这件事有据可依，
+        // 而不是依赖"引擎初始值恰好是 0"。
+        for (c in bladeCh) setChannelValue(c, 0)
+        // 只有旋转要摆到中位：128 = 0°，不是 0
+        if (ch.rot > 0 && shaperRead(ch.rot) == 0) setChannelValue(ch.rot, 128)
+    }
+
+    /** 由当前通道值 + 映射算出 4 片刀片状态。 */
+    private fun currentBlades(ch: ShaperCh): List<ShaperGeometry.Blade> {
+        val inv = shaperStore.inverted(ch.fixtureId)
+        val sides = shaperStore.sides(ch.fixtureId)
+        return (0 until 4).map { i ->
+            // 每片的两个通道 = **同一片刀片的两个端点**（A 端 / B 端），不是"偏移 + 角度"。
+            // 两端各自进出，合成平移 + 倾斜。灯库的物理量程也能佐证：
+            // BLADE1A 和 BLADE1B 的量程完全一样，偏移+角度的话不会一样。
+            val a = ShaperGeometry.insetFromChannel(shaperRead(ch.blades.getOrElse(2 * i) { 0 }))
+            val b = ShaperGeometry.insetFromChannel(shaperRead(ch.blades.getOrElse(2 * i + 1) { 0 }))
+            ShaperGeometry.bladeFromEnds(sides[i],
+                if (inv.getOrElse(i) { false }) 1.0 - a else a,
+                if (inv.getOrElse(i) { false }) 1.0 - b else b)
+        }
+    }
+
+    /** 旋转通道值 → 弧度。同样按半量程映射（128 = 0°），不是 0..360。 */
+    private fun shaperRotRad(ch: ShaperCh): Double {
+        if (ch.rot <= 0) return 0.0
+        val half = Math.toRadians(shaperMaxAngleDeg(ch).toDouble())
+        return ShaperGeometry.angleFromChannel(shaperRead(ch.rot), half)
+    }
+
+    /**
+     * 按当前模式刷新推子页的「切割」那一块。
+     *
+     * 模式 0：不动（8 条推杆照旧）。
+     * 模式 1/2：这 8 行**整组换成内嵌面板**（圆形预览 + 8 条滑块 + 旋转 + 按钮），
+     *   就地长在推子页里，不弹窗 —— 调切割时还能同时看到其它通道。
+     *   入口是「切割」标题行：**默认收起**，点一下在原地展开。
+     */
+    private fun refreshShaperUi() {
+        val mode = shaperStore.uiMode
+        channelAdapter.shaperMode = mode
+        // 换模式时把「切割」块复位成默认收起：面板铺开有 12 行（预览 + 8 滑条 + 旋转 + 按钮），
+        // 一上来就展开会把整个推子页顶下去。标题行会显示当前形状，当入口用。
+        // ⚠ 只在**模式真的变了**时复位 —— 否则用户手动展开后，一次值刷新就又被收起来了。
+        if (mode != lastShaperMode) {
+            lastShaperMode = mode
+            channelAdapter.setGroupCollapsed(ChannelRows.CUT_GROUP, mode != ShaperStore.MODE_FADERS)
+        }
+        val ch = shaperChannels()
+        // 角度通道先归中（128 = 0°），再算形状 —— 否则首次打开看到的是"全片 −45°"
+        ensureShaperNeutral(ch)
+        // 收进面板的集合要**连旋转通道一起**装进去：旋转滑块也在面板里，
+        // 少收一个的话它会作为独立通道又冒出来一行（面板里外各一个旋转）。
+        val present = (ch.blades.filter { it > 0 } + listOf(ch.rot).filter { it > 0 }).toSet()
+        val inline = mode != ShaperStore.MODE_FADERS && present.isNotEmpty()
+        channelAdapter.collapsedBladeChannels = if (inline) present else null
+        channelAdapter.shaperBlades = ch.blades
+        channelAdapter.shaperRotCh = ch.rot
+        channelAdapter.shaperSummary =
+            if (inline) ShaperGeometry.shapeLabel(currentBlades(ch)) else ""
+        channelAdapter.shaperPreviewBinder = if (inline) { view -> bindShaperPreview(view, ch) } else null
+
+        // ---- 面板/窗口的输入回调：全部换算成通道值，走和推子页同一条 setChannelValue ----
+        // 拖**线段**：只有这一片动，沿它自己的法线进出。
+        // ⚠ 传进来的是**距离**（不是"等效插入量"）：平移必须保住当前倾角，
+        //   所以要把这片当前的角度一起带进去算两端深度。
+        channelAdapter.onShaperEdgeDrag = { side, distance ->
+            val i = bladeIndexOfSide(ch, side)
+            if (i >= 0) {
+                translateShaperBlade(ch, i, distance)
+                refreshShaperPanel(ch)
+            }
+        }
+        // 拖**角**：角随意移动（限位在虚线框内），两条相邻边跟着转，
+        // 另外两个角保持不动。快照由视图在按下时给出，避免量化误差逐帧累积。
+        channelAdapter.onShaperCornerDrag = { cornerIndex, from, newPt ->
+            moveShaperCorner(ch, cornerIndex, from, newPt)
+        }
+        // 手势结束：回收"理想几何"，画面回到引擎里的真实值
+        channelAdapter.onShaperDragEnd = { endShaperDrag() }
+        // 拖面板里的滑块 → 顺便重画预览（写入本身还是走同一条 setChannelValue）
+        channelAdapter.onShaperValueChanged = { refreshShaperPanel(ch) }
+
+        channelAdapter.refresh()
+    }
+
+    /** 某条边对应第几片（0..3）；没有返回 -1。 */
+    private fun bladeIndexOfSide(ch: ShaperCh, side: ShaperGeometry.Side): Int {
+        val sides = shaperStore.sides(ch.fixtureId)
+        return (0 until 4).firstOrNull { sides[it] == side } ?: -1
+    }
+
+    /**
+     * 把某片的**两端深度**写进它的两个通道（反向片要翻过来）。
+     *
+     * @param depthA/depthB 归一化压入深度（0 = 在边沿，1 = 到中线）
+     */
+    private fun setShaperBladeEnds(ch: ShaperCh, blade: Int, depthA: Double, depthB: Double) {
+        val inv = shaperStore.inverted(ch.fixtureId).getOrElse(blade) { false }
+        val chA = ch.blades.getOrElse(2 * blade) { 0 }
+        val chB = ch.blades.getOrElse(2 * blade + 1) { 0 }
+        fun enc(v: Double): Int {
+            val raw = if (inv) 1.0 - v else v
+            return Math.round(raw.coerceIn(0.0, 1.0) * 255).toInt().coerceIn(0, 255)
+        }
+        if (chA > 0) setChannelValue(chA, enc(depthA))
+        if (chB > 0) setChannelValue(chB, enc(depthB))
+    }
+
+    /**
+     * 整条边平移（拖线段）：**只改它到圆心的距离，保住当前倾角**。
+     *
+     * ⚠ 这里曾经写成"两端设成同一个值"（`setShaperBladeEnds(ch, blade, inset, inset)`）——
+     *   那等于**把倾角清零**：先拖角把某片扭出一个角度，再拖这条线，角度就没了
+     *   （用户报的 bug）。平移的正确含义是"两端**同样地**进/退"，即深度差不变。
+     */
+    private fun translateShaperBlade(ch: ShaperCh, blade: Int, distance: Double) {
+        val side = shaperStore.sides(ch.fixtureId).getOrNull(blade) ?: return
+        // ⚠ 用**带整表校验**的版本：平移只看得到这一片的两端，会把一条边推到和对边重合
+        //   ⇒ "4 个点变 3 个点"（用户就是"一角往中间拖"触发的）。
+        //   校验不过就二分夹到最远处 / 退化时按"间距只许变大"扫一个最远处 ——
+        //   到极限是整条线停下或稍微弹开，而不是把四边形压塌。
+        // ⛔ 这里**不能**再写 `?: translateBlade(...)` 兜底：那是**绕过校验**的路径
+        //   （老问题"修一条路、另一条又塌"就是这么来的）。返回 null = 这一帧不动。
+        val ends = ShaperGeometry.translateBladeChecked(currentBlades(ch), side, distance) ?: return
+        setShaperBladeEnds(ch, blade, ends.first, ends.second)
+    }
+
+    /**
+     * 拖动某个角：把它挪到 [newPt]，两条相邻边各自仍然过自己另一头的角。
+     *
+     * ⚠ [fromCorners] 必须是**手势按下时的快照**（视图给的），不要在这里现算：
+     *   通道只有 0..255，每帧重算会让量化误差变成新基准，旁边的角一直飘。
+     *
+     * 反算链路（含"哪两条边受影响"和限位）都在 [ShaperGeometry.dragCorner]（纯逻辑、有单测）——
+     * 这里只负责把算出来的 (距离, 转角) 写进通道。
+     */
+    private fun moveShaperCorner(
+        ch: ShaperCh, cornerIndex: Int,
+        fromCorners: List<ShaperGeometry.Pt?>, newPt: ShaperGeometry.Pt
+    ) {
+        // ① 正常路径：dragCorner 的角参数化（"边绕对面的角转"）。
+        // ② 退化时（两个角重合 = 用户看到的"拖成三角形"）dragCorner 会因为"重建后角不许重合"
+        //    的防线返回 null，这时**不能直接放弃**（表现就是"拖了完全没反应"，而且那个状态
+        //    自己走不出来）。用 nudgeCornerDrag：基于**真实刀片**把你抓的那个点挪开。
+        //    ⚠ 必须基于 currentBlades，不能从角反推 —— 角退化时反推会**编造**一个形状
+        //      （实测把用户的梯形变成全开的大方形）。
+        // ⛔ 不再有"整体缩放"兜底（degenerateDrag）：它会把用户的形状压成一个小正方形
+        //    （用户原话："拖动到原来边三角形的位置会重置成一个小方形也是不对的"）。
+        //    两级都不行就 return = 这一帧不动、形状原样保留；**拖线段永远可用**，所以不会卡死。
+        val cur = currentBlades(ch)
+        val res = ShaperGeometry.dragCorner(fromCorners, cornerIndex, newPt)
+            ?: ShaperGeometry.nudgeCornerDrag(
+                cur, cornerIndex, fromCorners.getOrNull(cornerIndex) ?: newPt, newPt
+            ) ?: return
+        val sides = shaperStore.sides(ch.fixtureId)
+        for ((side, d, ang) in res.updates) {
+            val blade = sides.indexOfFirst { it == side }
+            if (blade < 0) continue
+            // 几何量 (距离, 转角) → **两端深度** —— 这才是真正写进通道的东西
+            val ends = ShaperGeometry.endsFromBlade(
+                ShaperGeometry.Blade(side, ShaperGeometry.insetFromDistance(d), ang))
+            setShaperBladeEnds(ch, blade, ends.first, ends.second)
+        }
+        // ⚠ 立刻用**理想几何**重绘（不是读回值）：通道只有 0..255，读回来的那条边
+        //   和理想值差不到 1 个步长，但那点误差落在"绕对面角旋转"的边上，
+        //   会让旁边的角每帧抖 ~2px。手势结束再把画面交回读回值。
+        channelAdapter.refreshShaperPanel(
+            res.ideal, shaperRotRad(ch), ShaperGeometry.shapeLabel(res.ideal))
+    }
+
+    /** 手势结束：把画面交回"引擎里真实的值"。 */
+    private fun endShaperDrag() {
+        val ch = shaperChannels()
+        refreshShaperPanel(ch)
+    }
+
+    /** 把当前几何画进预览图（[ChannelAdapter.shaperPreviewBinder]）。 */
+    private fun bindShaperPreview(view: ShaperWindowView, ch: ShaperCh) {
+        view.blades = currentBlades(ch)
+        view.rotationRad = shaperRotRad(ch)
+    }
+
+    /**
+     * 值变了 → 重画预览 + 更新形状文字。
+     *
+     * 走 [ChannelAdapter.refreshShaperPanel]（只改已绑定的 View，不 notify）：
+     * 用户正按着滑条/刀片时重绑会把 View detach 掉，手势直接断掉。
+     *
+     * ⚠ 形参要**带进来**而不是在这里重新算：拖动时这个回调每帧都跑，重新
+     *   `shaperChannels()` 会顺带 `updateFxChannels()` + 查实例表，白白卡手。
+     *   灯型/实例变了的话 [refreshShaperUi] 会重跑，闭包里拿到的自然是新的。
+     */
+    private fun refreshShaperPanel(ch: ShaperCh) {
+        val bl = currentBlades(ch)
+        channelAdapter.refreshShaperPanel(bl, shaperRotRad(ch), ShaperGeometry.shapeLabel(bl))
+    }
+
+    /**
+     * 四边全开 / 四边全闭（设置页的「重置切割」用）。
+     *
+     * ⚠ "开"的值取决于反向映射：反向片是 255 才是全开。写错的表现是"点全开灯反而黑了"。
+     * 全闭 = 四片都推到圆心，孔隙被切死，灯上是**全黑** —— 这是预期行为（它就是个"关光"动作）。
+     */
+    private fun setShaperAllOpen(ch: ShaperCh, open: Boolean) {
+        val inv = shaperStore.inverted(ch.fixtureId)
+        for (i in 0 until 4) {
+            val off = if (open) (if (inv[i]) 255 else 0) else (if (inv[i]) 0 else 255)
+            if (ch.blades[2 * i] > 0) setChannelValue(ch.blades[2 * i], off)
+            if (ch.blades[2 * i + 1] > 0) setChannelValue(ch.blades[2 * i + 1], 128)  // 角度回中
+        }
+        if (ch.rot > 0) setChannelValue(ch.rot, 128)   // ⚠ 旋转回中 = 128（0°），不是 0
+        channelAdapter.refresh()      // 这回没有手势在手，整表重绑没关系（滑条位置要对齐）
+        refreshShaperPanel(ch)
+    }
+
+    private fun setShaperMode(mode: Int) {
+        shaperStore.uiMode = mode
+        refreshShaperUi()
+        refreshShaperModeHint()
+        toast("切割调整方式：${ShaperStore.modeName(mode)}")
+    }
+
+    private fun refreshShaperModeHint() {
+        val mode = shaperStore.uiMode
+        val ch = shaperChannels()
+        val n = ch.blades.count { it > 0 }
+        stb.tvShaperModeHint.text = buildString {
+            append("当前：${ShaperStore.modeName(mode)}")
+            when {
+                n == 0 ->
+                    append("　·　当前灯型没有切割片通道（灯库里认不到 BLADE / FRAMING）")
+                n == 8 ->
+                    append("　·　识别到 8 个切割通道 = 4 片 × (偏移+角度)")
+                else -> {
+                    // ⚠ 面板按"每片 2 个通道（偏移 + 角度）"解释这 8 个通道。
+                    //   数量不对时必须说清楚，否则用户会以为"面板画错了"。
+                    append("　·　只识别到 $n 个切割通道；面板按「每片 2 个通道」配对，")
+                    append("通道数不是 8 时配对会不准，建议用「8 条推杆」模式或先在灯库里补通道")
+                }
+            }
+            if (ch.rot > 0) append("　·　含切割旋转")
+            append("\n三种模式是同一份通道值的不同视图，切换不会改变任何值")
+        }
+        listOf(stb.btnShaperMode0, stb.btnShaperMode1, stb.btnShaperMode2)
+            .forEachIndexed { i, v ->
+                v.setTextColor(ContextCompat.getColor(this,
+                    if (i == mode) R.color.accent else R.color.text))
+                v.background = ContextCompat.getDrawable(this,
+                    if (i == mode) R.drawable.bg_pill else R.drawable.bg_pill_outline_white)
+            }
+    }
+
+    /**
+     * 建「切割最大角度」的三颗按钮（45 / 90 / 180，默认 45）。
+     *
+     * **灯库有就不用选**：灯库的 SHAPER ROT 通道写了物理量程（Ares-FP2600 是 −45..45）
+     * 时，按钮整排禁掉并显示"灯库已定义"，避免用户改了却不生效还以为是坏的。
+     */
+    private fun buildShaperAnglePills() {
+        val row = stb.rowShaperAngle
+        row.removeAllViews()
+        val ch = shaperChannels()
+        val lib = libraryMaxAngleDeg(ch)
+        val cur = shaperStore.maxAngleDeg(ch.fixtureId)
+        ShaperStore.MAX_ANGLE_CHOICES.forEachIndexed { i, deg ->
+            val on = lib?.let { it == deg } ?: (deg == cur)
+            row.addView(TextView(this).apply {
+                text = "±$deg°"
+                textSize = 12f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(ContextCompat.getColor(this@MainActivity,
+                    if (on) R.color.accent else R.color.text))
+                background = ContextCompat.getDrawable(this@MainActivity,
+                    if (on) R.drawable.bg_pill else R.drawable.bg_pill_outline_white)
+                isEnabled = lib == null
+                alpha = if (lib == null) 1f else 0.45f
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                    if (i > 0) leftMargin = dp(6)
+                }
+                setOnClickListener {
+                    shaperStore.setMaxAngleDeg(ch.fixtureId, deg)
+                    refreshShaperUi()
+                    buildShaperAnglePills()
+                    toast("切割最大角度：±$deg°")
+                }
+            })
+        }
+        stb.tvShaperAngleHint.text = if (lib != null)
+            "灯库已定义 ±$lib°（SHAPER ROT 的物理量程），无需设置"
+        else
+            "**切割旋转**通道 0..255 对应 −$cur°..+$cur°（128 = 0°）。\n" +
+                "⚠ 切割片本身的倾斜不在这里设：每片的两个通道是这片刀片的 A/B 两个端点，" +
+                "两端一起进出 = 平移，两端不等 = 倾斜，最大倾斜由几何决定（约 ±26.6°）。"
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /**
+     * 逐片自检：依次把每一片压进 60%、其余全开，每步停 1.2 秒。
+     *
+     * 具体"每步写哪些通道、写什么值"在 [ShaperGeometry.selfTestSteps]（纯逻辑、有单测）——
+     * 这里只负责按秒表把计划放出去。这么拆是因为那个计划踩过坑（漏复位会让窗口越切越小），
+     * 而"每一步写了什么"在 Activity 里根本没法测。
+     *
+     * 每步只走 [refreshShaperPanel]（原地重画，不重绑列表），所以自检过程中
+     * 用户还能自己动手拖滑块，不会被列表刷新打断。
+     */
+    private fun runShaperSelfTest(ch: ShaperCh) {
+        shaperSelfTimer?.let { syncHandler.removeCallbacks(it) }
+        val sides = shaperStore.sides(ch.fixtureId)
+        val steps = ShaperGeometry.selfTestSteps(
+            ch.blades, ch.rot, shaperStore.inverted(ch.fixtureId))
+        var step = 0
+        fun tick() {
+            val plan = steps.getOrNull(step)
+            if (plan == null) {
+                shaperSelfTimer = null
+                toast("自检结束，已四边全开")
+                return
+            }
+            for ((chNum, value) in plan) setChannelValue(chNum, value)
+            refreshShaperPanel(ch)
+            if (step < 4) {
+                toast("自检：压片${step + 1}（${sides[step].cn}边）—— 看灯上哪条边在动")
+            }
+            step++
+            val r = Runnable { tick() }
+            shaperSelfTimer = r
+            syncHandler.postDelayed(r, 1200)
+        }
+        tick()
+    }
+
+    /** 映射设置：每片对应窗口哪条边、要不要反向、角度全量程。 */
+    private fun showShaperMappingDialog(fixtureId: String?, onChanged: () -> Unit) {
+        val sides = shaperStore.sides(fixtureId).toMutableList()
+        val inv = shaperStore.inverted(fixtureId).toMutableList()
+        val labels = ShaperGeometry.Side.values().map { it.cn }.toTypedArray()
+        val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        for (i in 0 until 4) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this).apply {
+                text = "片${i + 1}"
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                textSize = 13f
+                width = dp(44)
+            })
+            row.addView(android.widget.Spinner(this).apply {
+                adapter = android.widget.ArrayAdapter(this@MainActivity,
+                    android.R.layout.simple_spinner_dropdown_item, labels)
+                setSelection(sides[i].ordinal)
+                onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(p: android.widget.AdapterView<*>?, x: android.view.View?, pos: Int, id: Long) {
+                        sides[i] = ShaperGeometry.Side.values()[pos]
+                    }
+                    override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+                }
+                layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f)
+            })
+            row.addView(android.widget.CheckBox(this).apply {
+                text = "反向"
+                isChecked = inv[i]
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.textDim))
+                setOnCheckedChangeListener { _, b -> inv[i] = b }
+            })
+            v.addView(row)
+        }
+        v.addView(TextView(this).apply {
+            text = "「反向」= 0 和 255 哪个是把刀片收进来。\n" +
+                "改完可以先点上面的「逐片自检」：它会一片一片地压下去，" +
+                "你看灯上哪条边在动，就知道这一片对应的是哪条边。"
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.textDim))
+            textSize = 11f
+            setPadding(0, dp(8), 0, 0)
+        })
+        // 角度量程改为设置页的三档按钮，这里就不再重复一个输入框了；
+        // 灯库写了物理量程时以灯库为准（那一行会显示成只读）。
+        val libDeg = libraryMaxAngleDeg(shaperChannels())
+        v.addView(TextView(this).apply {
+            text = if (libDeg != null)
+                "角度量程：灯库已定义 ±$libDeg°（SHAPER ROT 的物理量程），无需设置"
+            else
+                "角度量程：由设置页的「切割最大角度」决定（当前 ±${shaperStore.maxAngleDeg(fixtureId)}°）"
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.textDim))
+            textSize = 11f
+            setPadding(0, dp(6), 0, 0)
+        })
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("切割映射")
+            .setMessage("改完点确定。不确定哪片是哪条边，先点「逐片自检」看一眼。")
+            .setView(v)
+            .setPositiveButton(Lang.t(R.string.k_ok_2)) { _, _ ->
+                for (i in 0 until 4) {
+                    shaperStore.setSide(fixtureId, i, sides[i])
+                    shaperStore.setInverted(fixtureId, i, inv[i])
+                }
+                refreshShaperUi()
+                onChanged()
+            }
+            .setNegativeButton(Lang.t(R.string.k_cancel), null)
+            .show()
     }
 }

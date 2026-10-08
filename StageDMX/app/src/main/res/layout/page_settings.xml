@@ -143,6 +143,144 @@
                     app:trackTint="@color/surface2" />
             </LinearLayout>
 
+            <!-- 切割调整方式：三种模式全局切换。
+                 三种都是**同一份 8 个通道值**的不同视图，切换不改变也不丢任何值。 -->
+            <LinearLayout
+                android:id="@+id/rowShaperMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="12dp"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/s_shaper_mode"
+                    android:textColor="@color/text"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvShaperModeHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/textDim"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+
+                    <TextView
+                        android:id="@+id/btnShaperMode0"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="36dp"
+                        android:text="8 条推杆"
+                        android:textSize="12sp"
+                        android:textColor="@color/text"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/bg_pill_outline_white" />
+
+                    <TextView
+                        android:id="@+id/btnShaperMode1"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="4dp"
+                        android:text="面板"
+                        android:textSize="12sp"
+                        android:textColor="@color/text"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/bg_pill_outline_white" />
+
+                    <TextView
+                        android:id="@+id/btnShaperMode2"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="4dp"
+                        android:text="窗口"
+                        android:textSize="12sp"
+                        android:textColor="@color/text"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/bg_pill_outline_white" />
+                </LinearLayout>
+
+                <!-- 映射入口放在设置页，是为了**任何模式**都能改：
+                     「8 条推杆」模式下推子页里没有面板，没有这条就没地方改映射了
+                     （映射是"哪片=哪条边、要不要反向"，按灯型存）。 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp">
+
+                    <TextView
+                        android:id="@+id/btnShaperMappingSettings"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="36dp"
+                        android:text="@string/s_shaper_mapping_btn"
+                        android:textSize="12sp"
+                        android:textColor="@color/text"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/bg_pill_outline_white" />
+
+                    <TextView
+                        android:id="@+id/btnShaperSelfTestSettings"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="6dp"
+                        android:text="@string/s_shaper_self_test"
+                        android:textSize="12sp"
+                        android:textColor="@color/text"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/bg_pill_outline_white" />
+                </LinearLayout>
+
+                <!-- 切割最大角度：角度通道 0..255 ↔ −max..+max，128 = 0°。
+                     灯库写了物理量程（如 SHAPER ROT 的 −45..45）就以灯库为准，
+                     这一行变成只读提示，不给选 —— 用户要求"灯库有就不用选择"。 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/s_shaper_max_angle"
+                    android:textColor="@color/text"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvShaperAngleHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/textDim"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:id="@+id/rowShaperAngle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp" />
+            </LinearLayout>
+
             <!-- ==================== 输出 ==================== -->
             <TextView
                 android:layout_width="match_parent"

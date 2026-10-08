@@ -210,25 +210,11 @@ fun assignAddressesByGroup(
     val known = devices.filter { footprintOf(it) > 0 }
     if (known.isEmpty()) return emptyList()
 
-    // 1) 组顺序 + 每组占用的通道跨度（"相同"模式下整组只占一台的宽度）
-    val span = LinkedHashMap<String, Int>()
-    val widest = HashMap<String, Int>()
-    for (d in known) {
-        val g = groupOf(d)
-        val fp = footprintOf(d)
-        span[g] = (span[g] ?: 0) + fp
-        widest[g] = maxOf(widest[g] ?: 0, fp)
-    }
-    for (g in span.keys) if (sameOf(g)) span[g] = widest[g] ?: 1
+    // 1) 组顺序 + 每组占用的通道跨度
+    val span = groupSpans(known, groupOf, footprintOf, sameOf)
 
     // 2) 每组落一个起始地址：设过用设的，没设的接上一组末尾
-    val cursorOf = LinkedHashMap<String, Int>()
-    var auto = 1
-    for ((g, ch) in span) {
-        val s = starts[g]?.coerceIn(1, DmxProtocol.UNIVERSE_SIZE) ?: auto
-        cursorOf[g] = s
-        auto = maxOf(auto, s + ch)
-    }
+    val cursorOf = groupStartOf(span, starts)
 
     // 3) 逐台在**自己组内**顺延；"相同"模式的组全部指向同一个地址
     val out = ArrayList<Pair<RdmDevice, Int>>(known.size)
@@ -239,6 +225,74 @@ fun assignAddressesByGroup(
         if (a + ch - 1 > DmxProtocol.UNIVERSE_SIZE) return null   // 本宇宙放不下
         out.add(d to a)
         if (!sameOf(g)) cursorOf[g] = a + ch
+    }
+    return out
+}
+
+/**
+ * 组顺序 + 每组占用的通道跨度（LinkedHashMap 保序）。
+ *
+ * ⚠ 抽出来是因为以前这里被**抄过一遍**：`MainActivity.rdmGroupStarts()` 自己又算了
+ *   一遍跨度，注释里写着"两处必须同源"—— 那种注释就是漂移的预告。两边一旦不一致，
+ *   界面「起始」那一格显示的地址和实际排出来的地址会差一截，而且**没有测试能发现**。
+ */
+private fun groupSpans(
+    known: List<RdmDevice>,
+    groupOf: (RdmDevice) -> String,
+    footprintOf: (RdmDevice) -> Int,
+    sameOf: (String) -> Boolean,
+): LinkedHashMap<String, Int> {
+    val span = LinkedHashMap<String, Int>()
+    val widest = HashMap<String, Int>()
+    for (d in known) {
+        val g = groupOf(d)
+        val fp = footprintOf(d)
+        span[g] = (span[g] ?: 0) + fp
+        widest[g] = maxOf(widest[g] ?: 0, fp)
+    }
+    // "相同"模式的组整组指向同一个地址，只占**一台**的宽度（后面那组才能紧跟着排）
+    for (g in span.keys) if (sameOf(g)) span[g] = widest[g] ?: 1
+    return span
+}
+
+/** 每组"当前生效"的起始地址：设过用设的，没设的接上一组末尾（第一组因此从 1 开始）。 */
+private fun groupStartOf(
+    span: LinkedHashMap<String, Int>,
+    starts: Map<String, Int>,
+): LinkedHashMap<String, Int> {
+    val out = LinkedHashMap<String, Int>()
+    var auto = 1
+    for ((g, ch) in span) {
+        val s = starts[g]?.coerceIn(1, DmxProtocol.UNIVERSE_SIZE) ?: auto
+        out[g] = s
+        auto = maxOf(auto, s + ch)
+    }
+    return out
+}
+
+/**
+ * 每组**当前生效**的起始地址（组键 → 起始地址），给界面「起始」那一格显示用。
+ *
+ * 和 [assignAddressesByGroup] 共用 [groupSpans] / [groupStartOf]，所以显示的地址
+ * 和真正会下发/加实例的地址**结构上就不可能不一致**（不再靠"两处记得同步"）。
+ *
+ * 参数未知的设备（footprint ≤ 0）不占地址空间 —— 否则它会把后面每组顶偏。
+ */
+fun groupStartsOf(
+    devices: List<RdmDevice>,
+    groupOf: (RdmDevice) -> String,
+    starts: Map<String, Int>,
+    footprintOf: (RdmDevice) -> Int = { it.channelCount },
+    sameOf: (String) -> Boolean = { false },
+): LinkedHashMap<String, Int> {
+    val known = devices.filter { footprintOf(it) > 0 }
+    val span = groupSpans(known, groupOf, footprintOf, sameOf)
+    val out = groupStartOf(span, starts)
+    // 参数未知设备所属的组也要出现在结果里（界面要显示那一行），
+    // 组顺序按"全部设备"里首次出现的次序补齐到后面。
+    for (d in devices) {
+        val g = groupOf(d)
+        if (!out.containsKey(g) && !span.containsKey(g)) out[g] = starts[g] ?: 1
     }
     return out
 }

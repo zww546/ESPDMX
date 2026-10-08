@@ -90,6 +90,14 @@
     <string name="s_settings">Settings</string>
     <string name="s_speed_128">Speed: 128</string>
     <string name="s_spread_0">Spread: 0°</string>
+    <string name="s_shaper_rotate">Rotate</string>
+    <string name="s_shaper_self_test">Self-test</string>
+    <string name="s_shaper_blade_offset">Blade %1$d end A</string>
+    <string name="s_shaper_blade_angle">Blade %1$d end B</string>
+    <string name="s_shaper_na">—</string>
+    <string name="s_shaper_mapping_btn">Shaper mapping (current fixture)</string>
+    <string name="s_shaper_mode">Shaper control</string>
+    <string name="s_shaper_max_angle">Shaper rotation max angle</string>
     <string name="s_start">From</string>
     <string name="s_start_addr">Start addr</string>
     <string name="s_start_address_1_512">Start address (1-512)</string>

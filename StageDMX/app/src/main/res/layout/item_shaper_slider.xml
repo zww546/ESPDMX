@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  切割面板 —— 内嵌的一行滑块（偏移 / 角度 / 旋转共用这个布局）。
+  滑块值就是**通道原始值**（0..255），所以"面板 = 同一份通道值的视图"是字面成立的。
+
+  ⚠ 这一行的外形是照 item_channel.xml 抄的（同样的 bg_card / 72dp 标签 / 34dp 数值 /
+     fader_progress + fader_thumb）。不抄的话有两个后果：
+       1. SeekBar 用系统默认皮肤 —— 进度条是粉色，和推子页的蓝色对不上；
+       2. 行高、内边距和通道行不一致，面板看着像"贴上去的一块"。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/bg_card"
+    android:paddingLeft="8dp"
+    android:paddingRight="8dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:layout_marginLeft="4dp"
+    android:layout_marginRight="4dp"
+    android:layout_marginTop="2dp"
+    android:layout_marginBottom="2dp">
+
+    <!-- 标签固定 72dp，和通道名同宽 —— 否则"片1 偏移"和"旋转"会让滑块起点不一样 -->
+    <TextView
+        android:id="@+id/tvShaperLabel"
+        android:layout_width="72dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/accent"
+        android:textStyle="bold"
+        android:textSize="13sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <SeekBar
+        android:id="@+id/seekShaper"
+        android:layout_width="0dp"
+        android:layout_height="20dp"
+        android:layout_weight="1"
+        android:layout_marginStart="28dp"
+        android:layout_marginEnd="2dp"
+        android:max="255"
+        android:maxHeight="8dp"
+        android:minHeight="8dp"
+        android:splitTrack="false"
+        android:progressDrawable="@drawable/fader_progress"
+        android:thumb="@drawable/fader_thumb" />
+
+    <TextView
+        android:id="@+id/tvShaperVal"
+        android:layout_width="34dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:gravity="center"
+        android:textColor="@color/text"
+        android:textSize="15sp" />
+</LinearLayout>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  切割面板 —— 内嵌在推子页「切割」分组里的**第一行**：圆形光斑预览 + 形状结论。
+  （不弹窗：用户要的是"直接在推子页的切割里显示"。）
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_card"
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="6dp"
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginTop="4dp">
+
+    <!-- 高度决定了光斑直径（控件按宽高的**较小者**算半径，见 ShaperWindowView.metrics），
+         所以这里给足高度，圆才不会被上下切掉。 -->
+    <com.example.stagedmx.ShaperWindowView
+        android:id="@+id/shaperPreview"
+        android:layout_width="match_parent"
+        android:layout_height="260dp" />
+
+    <TextView
+        android:id="@+id/tvShaperShape"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingTop="2dp"
+        android:textColor="@color/ok"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

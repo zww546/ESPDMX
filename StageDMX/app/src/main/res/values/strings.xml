@@ -88,6 +88,14 @@
     <string name="s_scope_single">作用范围：单台</string>
     <string name="s_select_all">全选</string>
     <string name="s_settings">设置</string>
+    <string name="s_shaper_mode">切割调整方式</string>
+    <string name="s_shaper_max_angle">切割旋转最大角度</string>
+    <string name="s_shaper_rotate">旋转</string>
+    <string name="s_shaper_self_test">逐片自检</string>
+    <string name="s_shaper_blade_offset">片%1$d A端</string>
+    <string name="s_shaper_blade_angle">片%1$d B端</string>
+    <string name="s_shaper_na">—</string>
+    <string name="s_shaper_mapping_btn">切割映射…（当前灯型）</string>
     <string name="s_speed_128">速度: 128</string>
     <string name="s_spread_0">扩散: 0°</string>
     <string name="s_start">起始</string>
