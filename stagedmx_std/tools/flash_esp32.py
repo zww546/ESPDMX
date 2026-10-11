@@ -113,8 +113,13 @@ def esptool(argv, timeout=180):
 
 def probe(port):
     """返回 (是否 ESP32-S3, 描述文本, 原始输出)。"""
-    rc, out = esptool(["--chip", "esp32s3", "--port", port, "--before", "default-reset",
-                       "--after", "hard-reset", "flash-id"], timeout=60)
+    # ⚠ esptool **只认下划线**：`--before default_reset` / `--after hard_reset` / 子命令 `flash_id`。
+    #   这里曾经写成 `default-reset` / `hard-reset` / `flash-id`（连字符）——
+    #   在 esptool v4 上直接 argparse 报错：
+    #     "argument --before: invalid choice: 'default-reset'"
+    #   症状是**每个口都探测失败**，脚本报"没有探测到 ESP32-S3"，很容易误判成硬件/驱动问题。
+    rc, out = esptool(["--chip", "esp32s3", "--port", port, "--before", "default_reset",
+                       "--after", "hard_reset", "flash_id"], timeout=60)
     # esptool 4.x: "Chip is ESP32-S3" / 5.x: "Chip type:  ESP32-S3 (QFN56)"
     ok = rc == 0 and ("ESP32-S3" in out) and ("Connected to ESP32-S3" in out or "Chip is ESP32-S3" in out
                                              or "Chip type" in out and "ESP32-S3" in out)
@@ -128,10 +133,13 @@ def probe(port):
 
 def flash(port):
     args = ["--chip", "esp32s3", "--port", port, "-b", "460800",
-            "--before", "default-reset", "--after", "hard-reset",
-            "write-flash",
-            "--flash-mode", FLASH_MODE, "--flash-size", FLASH_SIZE,
-            "--flash-freq", FLASH_FREQ]
+            "--before", "default_reset", "--after", "hard_reset",
+            "write_flash",
+            # ⚠ 同样是下划线：`--flash_mode` / `--flash_size` / `--flash_freq`。
+            #   写成连字符时 argparse 不认这个选项，会把后面的 "dio" 当成**地址**，
+            #   报 "Address \"dio\" must be a number" —— 完全看不出是拼写问题。
+            "--flash_mode", FLASH_MODE, "--flash_size", FLASH_SIZE,
+            "--flash_freq", FLASH_FREQ]
     for addr, fn in FLASH_FILES:
         path = find_bin(fn)
         if not path:
