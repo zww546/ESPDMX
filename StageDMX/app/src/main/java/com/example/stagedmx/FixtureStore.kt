@@ -96,8 +96,9 @@ data class FixtureDef(
  * 灯具实例（Patch）——同型号多台 = 多个实例不同起始地址。
  *
  * **双宇宙按 A/B 两条通道分，各自从 1 编号到 512**（与 MA2/Titan 的 universe 模型一致）：
- *   A = 宇宙 1（UART1 / GPIO17），地址 1~512
- *   B = 宇宙 2（UART2 / GPIO18），地址 1~512
+ *   A = 宇宙 1（UART1：TX 17 / RX 18 / DE 4），地址 1~512
+ *   B = 宇宙 2（UART2：TX 16 / RX 15 / DE 5），地址 1~512
+ *   （引脚以 `stagedmx_std/main/pins.h` 为准 —— 这里曾写着宇宙2 = GPIO18，是改板前的旧接线。）
  *
  * 对外统一换算成**全局通道 1~1024**（协议与效果计算都用它）：
  *   `globalAddr() = (universe-1)×512 + addr`
