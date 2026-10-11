@@ -2355,9 +2355,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         get() = appSettings.getString("lib_format", "xml") ?: "xml"
         set(v) { appSettings.edit().putString("lib_format", v).apply() }
 
-    /** 建实例对话框 / RDM 页各自的"重画药丸"闭包（页面没打开时为 null）。 */
+    /** 建实例对话框的"重画药丸"闭包（对话框没打开时为 null）。 */
     private var repaintInstFormatPills: (() -> Unit)? = null
-    private var repaintRdmFormatPills: (() -> Unit)? = null
 
     /** 切换灯具格式筛选：点击选中（蓝圈），再次点击同一格式取消（回到全部，白圈）。 */
     private fun pickFixtureFmt(fmt: String) {
@@ -2370,7 +2369,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun paintFormatPills() {
         updateFmtTabs()
         repaintInstFormatPills?.invoke()
-        repaintRdmFormatPills?.invoke()
     }
 
     /**
@@ -2397,7 +2395,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                     onPick?.invoke()
                 }
             }
-            row.addView(tv, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            // ⚠ 宽度必须自适应（wrap_content + 最小宽度）：早先用等分权重（weight=1）时
+            //   四颗平分一行，"XML·MA2" 被挤到只剩 "XML" —— 控台名直接看不见了。
+            //   单行 + 字号 12sp 下四颗合计约 250dp，普通对话框放得下。
+            //   （minWidth 是 View 的属性，不是 LayoutParams 的 —— 别写错地方。）
+            tv.minimumWidth = dp(56)
+            row.addView(tv, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)
+            ).apply {
                 if (pills.isNotEmpty()) leftMargin = dp(6)
             })
             pills[tab] = tv
@@ -2903,12 +2908,6 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         imfb.rvInstanceMgr.layoutManager = LinearLayoutManager(this)
         // 少了这行 RecyclerView 不会渲染任何子项（列表看起来是空的）
         imfb.rvRdm.layoutManager = LinearLayoutManager(this)
-
-        // RDM「建实例」按当前格式页签**优先**匹配灯库（匹配不到再退回全部候选）——
-        // 同一款灯常有 XML/D4/R20 三份同名灯库，而通道语义可能不同（切割片
-        // BLADE1A/1B vs blade_1+blade_1_rot），自动匹配挑错格式最难查。见 FixtureFormats.prefer。
-        repaintRdmFormatPills = buildFormatPillRow(imfb.rowRdmFormat)
-        repaintRdmFormatPills?.invoke()
     }
 
     // ---------------- 设置页 ----------------
