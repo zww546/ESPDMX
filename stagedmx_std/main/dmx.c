@@ -260,30 +260,32 @@ static inline void dmx_transceiver_tx(const dmx_out_t *o)
 }
 
 /**
- * 切到接收：EN = 接收态电平 → 模块不驱动总线、使能接收。
+ * 切到接收（= **放开总线**）：EN = 接收态电平 → 本片不驱动总线。
  *
- * ⚠ DMX_RX_ENABLE=0（接收禁用）时**不切**：保持发送态。
- *   否则每帧之间都会短暂打开接收器，把我们自己的回波灌进 RX FIFO
- *   （没人消费 → 溢出 + 被登记成伪 break），纯粹是自找麻烦。
+ * ⚠ 这里**不再**按 DMX_RX_ENABLE 分支：不管固件去不去听，都要把方向脚切到"不驱动"。
+ *
+ *   曾经在 DMX_RX_ENABLE=0 时直接什么都不做，理由是"纯发送端就该一直握着总线"。
+ *   那在**单片**收发器上无伤大雅，但硬件改成**两片独立的 SP3485EN（各自一根 DE）**
+ *   之后就成了致命隐患：两个宇宙的驱动源会**长期同时驱动总线**（本固件两个宇宙
+ *   本来就是并行发送的），只要两片的 A/B 落在同一条线上，灯侧收到的就是两个
+ *   驱动源互打的波形 → **完全收不到有效 DMX**。
+ *   而点一次 RDM 扫描时，被扫的那个宇宙会暂停输出、DE 交给 UART 按字节翻转，
+ *   总线短暂只剩一个驱动源 → 灯这才收到"有效帧"（全 0 或残帧）→ 复位/重新初始化。
+ *   症状"无法控制 + 只有 RDM 扫描能让灯有反应"与此完全一致。
+ *
+ *   半双工总线的正确行为本来就是**发完就放开**；DMX512 的接收端也依赖帧间的
+ *   空闲电平来判"信号消失"。RX 引脚在 DMX_RX_ENABLE=0 时并未绑定到 UART
+ *   （见 dmx_install_driver），所以放开总线不会再引出"自己听回自己"的老问题。
  */
 static inline void dmx_transceiver_rx(const dmx_out_t *o)
 {
-#if DMX_RX_ENABLE
     if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
-#else
-    (void)o;
-#endif
 }
 
-/** 上电/停机默认态：不驱动总线，接收器待命。 */
+/** 上电/停机/暂停时的默认态：不驱动总线。 */
 static inline void dmx_transceiver_idle(const dmx_out_t *o)
 {
-#if DMX_RX_ENABLE
     dmx_transceiver_rx(o);
-#else
-    // 接收已禁用：常驻发送态。见 DMX_RX_ENABLE 的说明。
-    dmx_transceiver_tx(o);
-#endif
 }
 
 /**
@@ -414,7 +416,11 @@ static void dmx_task(void *arg)
 #else
                     ESP_LOGW(TAG, "U%d RDM: 【A/B 对照】跳过引脚收回", u + 1);
 #endif
-                    dmx_transceiver_tx(o); // 现在这一句才真正作用到引脚上
+                    // 收回引脚后把方向脚置回**空闲（不驱动总线）**。
+                    // ⚠ 这里以前写的是 dmx_transceiver_tx()（常驻驱动）—— 与 dmx_start()
+                    //   注释里"初始为接收态、释放总线"的本意自相矛盾，也正是
+                    //   "发完不放开"那套旧语义的残留。发不发送由下一帧的 tx() 决定。
+                    dmx_transceiver_idle(o);
                     s_out[u].ok = okr;
                     s_reinstall_req[u] = false;
                     ESP_LOGW(TAG, "U%d RDM: 驱动已在 CPU%d 重装 ok=%d",
@@ -432,9 +438,8 @@ static void dmx_task(void *arg)
         size_t n = dmx_send(o->port);
         // 发送被拒(n==0)时不等待，直接进入下一轮；正常帧最多等 60ms
         bool ok = (n > 0) && dmx_wait_sent(o->port, pdMS_TO_TICKS(DMX_FRAME_WAIT_MS));
-        // 发完释放总线，否则会一直占着 A/B 线，别的控台/设备无法通信。
-        // ⚠ DMX_RX_ENABLE=0 时 dmx_transceiver_rx() 不会把 EN 拉低
-        //   —— 纯发送端就该一直握着总线。
+        // 发完**必须**释放总线（DE 回低）。两个宇宙各有一片 485、各自一根 DE，
+        // 谁都不放开就会两个驱动源互打 —— 见 dmx_transceiver_rx() 的说明。
         dmx_transceiver_rx(o);
         s_last_ok[u] = ok;
         s_frames[u]++;
