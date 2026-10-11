@@ -2312,9 +2312,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         }
 
         // 格式筛选标签：XML / D4 / R20
-        fixb.btnFmtXml.setOnClickListener { setFixtureFmt("xml") }
-        fixb.btnFmtD4.setOnClickListener { setFixtureFmt("d4") }
-        fixb.btnFmtR20.setOnClickListener { setFixtureFmt("r20") }
+        fixb.btnFmtXml.setOnClickListener { pickFixtureFmt("xml") }
+        fixb.btnFmtD4.setOnClickListener { pickFixtureFmt("d4") }
+        fixb.btnFmtR20.setOnClickListener { pickFixtureFmt("r20") }
 
         fixb.btnAddInstance.setOnClickListener { showAddInstanceDialog() }
 
@@ -2345,14 +2345,69 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     }
 
     private var selectMode = false
-    private var fixtureFmt = "xml"            // 灯具页格式筛选：""=全部 / xml / d4 / r20（默认选中 xml）
+
+    /**
+     * 灯库格式筛选：""=全部 / xml / d4 / r20 / other。**三个入口共用同一份选择**：
+     * 灯库页、建实例对话框、RDM 自动匹配灯库。所以必须持久化 —— 否则切个页面就变回
+     * 默认值，用户会以为"选了没用"。页签语义见 [FixtureFormats]。
+     */
+    private var fixtureFmt: String
+        get() = appSettings.getString("lib_format", "xml") ?: "xml"
+        set(v) { appSettings.edit().putString("lib_format", v).apply() }
+
+    /** 建实例对话框 / RDM 页各自的"重画药丸"闭包（页面没打开时为 null）。 */
+    private var repaintInstFormatPills: (() -> Unit)? = null
+    private var repaintRdmFormatPills: (() -> Unit)? = null
 
     /** 切换灯具格式筛选：点击选中（蓝圈），再次点击同一格式取消（回到全部，白圈）。 */
-    private fun setFixtureFmt(fmt: String) {
-        fixtureFmt = if (fixtureFmt == fmt) "" else fmt
-        updateFmtTabs()
+    private fun pickFixtureFmt(fmt: String) {
+        fixtureFmt = if (fixtureFmt == fmt) FixtureFormats.ALL else fmt
+        paintFormatPills()
         refreshFixturePage()
     }
+
+    /** 三处入口的格式药丸一起重画（它们共用同一个 [fixtureFmt]）。 */
+    private fun paintFormatPills() {
+        updateFmtTabs()
+        repaintInstFormatPills?.invoke()
+        repaintRdmFormatPills?.invoke()
+    }
+
+    /**
+     * 往 [row] 里建一排"灯库格式"药丸（全部 / XML / D4 / R20），返回"重画选中态"的闭包。
+     *
+     * 为什么需要这一排：同一款灯常常同时存在三份**同名**灯库（`xxx.xml` / `xxx.d4` /
+     * `xxx_r20.r20`），而它们的通道语义可能并不相同（切割片 `BLADE1A/1B` 双端模型 vs
+     * `blade_1 + blade_1_rot` 偏移+角度）。混在一个列表里，用户分不清选的是哪一份，
+     * 更看不出"推子推得动、灯却不听"是因为选错了格式。
+     */
+    private fun buildFormatPillRow(row: LinearLayout, onPick: (() -> Unit)? = null): () -> Unit {
+        val pills = LinkedHashMap<String, TextView>()
+        row.removeAllViews()
+        for (tab in listOf(FixtureFormats.ALL) + FixtureFormats.KNOWN) {
+            val tv = TextView(this).apply {
+                text = FixtureFormats.label(tab)
+                textSize = 12f
+                gravity = android.view.Gravity.CENTER
+                setPadding(dp(8), dp(5), dp(8), dp(5))
+                setOnClickListener {
+                    // 点已选中的那颗 = 取消筛选（回到「全部」），与灯库页三颗按钮的行为一致
+                    fixtureFmt = if (fixtureFmt == tab) FixtureFormats.ALL else tab
+                    paintFormatPills()
+                    onPick?.invoke()
+                }
+            }
+            row.addView(tv, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+                if (pills.isNotEmpty()) leftMargin = dp(6)
+            })
+            pills[tab] = tv
+        }
+        return { pills.forEach { (tab, v) -> stylePillTab(v, fixtureFmt == tab) } }
+    }
+
+    /** 按当前 [fixtureFmt] 过滤灯库（三处入口共用；逻辑本体在 [FixtureFormats]，有单测）。 */
+    private fun filteredFixtures(): List<FixtureDef> =
+        FixtureFormats.filter(fixtureFmt, fixtureStore.fixtures) { fixtureStore.defFormats(it) }
 
     /**
      * 胶囊标签页统一风格（灯具格式 / 存储标签 / 语言）。
@@ -2394,11 +2449,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
     private fun refreshFixturePage() {
         val def = fixtureStore.currentFixture
         fixb.tvCurrentFixture.text = def?.let { "${it.name} / ${it.mode}" } ?: "无"
-        // fixtureFmt 为空 = 显示全部格式（此时三个格式标签均为未选中白色空心）
-        fixtureAdapter?.submitList(
-            if (fixtureFmt.isEmpty()) fixtureStore.fixtures
-            else fixtureStore.fixturesOfFormat(fixtureFmt)
-        )
+        // 格式筛选（含"其他"= 只有 App JSON 的那些）逻辑在 FixtureFormats，有单测
+        fixtureAdapter?.submitList(filteredFixtures())
         updateFmtTabs()
         renderInstanceBar()
         refreshMasterScope()
@@ -2545,12 +2597,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
 
     /** 添加灯具实例：选灯型 → 名称 + DMX 起始地址。 */
     private fun showAddInstanceDialog() {
-        val defs = fixtureStore.fixtures
-        if (defs.isEmpty()) {
+        // ⚠ 这里必须是 var：切换格式页签时列表整体替换（见下面的 fillTypes）
+        var defs = filteredFixtures()
+        if (fixtureStore.fixtures.isEmpty()) {
             toast(Lang.t(R.string.k_import_a_fixture_library_first))
             return
         }
-        val names = defs.map { "${it.manufacturer} ${it.name} (${it.mode}) ${it.channelCount}CH" }.toTypedArray()
         val holder = layoutInflater.inflate(R.layout.dialog_add_instance, null)
         val spType = holder.findViewById<Spinner>(R.id.spInstType)
         val tvChCount = holder.findViewById<TextView>(R.id.tvInstChCount)
@@ -2559,7 +2611,30 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         val etAddr = holder.findViewById<EditText>(R.id.etInstAddr)
         val etCount = holder.findViewById<EditText>(R.id.etInstCount)
         val tvPreview = holder.findViewById<TextView>(R.id.tvInstPreview)
-        spType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+
+        /**
+         * 按当前格式页签重填灯型下拉框。
+         *
+         * ⚠ 尽量保留原来选中的那个灯型（按 id 找）：切格式时若直接跳到第一项，
+         *   用户刚填好的地址/数量对应的灯型就变了，很容易配错灯。
+         */
+        fun fillTypes() {
+            defs = filteredFixtures()
+            val keepId = defs.getOrNull(spType.selectedItemPosition.coerceAtLeast(0))?.id
+                ?: fixtureStore.currentFixture?.id
+            if (defs.isEmpty()) {
+                spType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
+                    arrayOf("（该格式下没有灯库）"))
+                tvChCount.text = ""
+                return
+            }
+            val names = defs.map { "${it.manufacturer} ${it.name} (${it.mode}) ${it.channelCount}CH" }
+            spType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+            val idx = defs.indexOfFirst { it.id == keepId }
+            if (idx > 0) spType.setSelection(idx)
+        }
+
+        fillTypes()
 
         // 通道 A/B（A = 宇宙1 口，B = 宇宙2 口），每个宇宙各自编号 1-512
         var band = 1
@@ -2598,7 +2673,14 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         // 实时回显：该灯型占多少通道、本宇宙内每台落在哪个地址段。
         // 算术与文案都在 InstanceForm（纯逻辑、有单测），这里只负责取控件值 + 贴文本。
         fun refreshPreview() {
-            val def = defs[spType.selectedItemPosition.coerceIn(0, defs.size - 1)]
+            // ⚠ 必须容忍空列表：选了某个格式而这个格式下没有灯库时（例如灯库只有 .d4
+            //   而当前页签是 XML），原来的 `defs[...coerceIn(0, -1)]` 会直接抛异常。
+            val def = defs.getOrNull(spType.selectedItemPosition.coerceAtLeast(0))
+            if (def == null) {
+                tvChCount.text = ""
+                tvPreview.text = ""
+                return
+            }
             val form = InstanceForm.of(
                 def,
                 etAddr.text.toString().toIntOrNull() ?: 1,
@@ -2608,6 +2690,16 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             tvChCount.text = form.fixtureHintText()
             tvPreview.text = form.summaryText()
         }
+
+        // 格式药丸：切换后重填灯型列表并刷新预览。
+        // （放在 refreshPreview 之后 —— Kotlin 的局部函数必须先声明后引用。）
+        val repaintFormat = buildFormatPillRow(holder.findViewById(R.id.rowInstFormat)) {
+            fillTypes()
+            if (defs.isNotEmpty()) refreshPreview()
+        }
+        repaintInstFormatPills = repaintFormat
+        repaintFormat()
+
         btnBandA.setOnClickListener { band = 1; paintBand(); refreshPreview() }
         btnBandB.setOnClickListener { band = 2; paintBand(); refreshPreview() }
         paintBand()
@@ -2636,7 +2728,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
             .setTitle(Lang.t(R.string.k_add_fixture))
             .setView(holder)
             .setPositiveButton(Lang.t(R.string.k_add)) { _, _ ->
-                val def = defs[spType.selectedItemPosition.coerceIn(0, defs.size - 1)]
+                // 该格式下没有灯库时的空列表保护（原来 coerceIn(0, -1) 会抛异常）
+                val def = defs.getOrNull(spType.selectedItemPosition.coerceAtLeast(0))
+                if (def == null) {
+                    toast("该格式下没有灯库，请换一个格式页签")
+                    return@setPositiveButton
+                }
                 val form = InstanceForm.of(
                     def,
                     etAddr.text.toString().toIntOrNull() ?: 1,
@@ -2658,6 +2755,8 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
                 }
             }
             .setNegativeButton(Lang.t(R.string.k_cancel), null)
+            // 关掉对话框后立刻松手：否则那个闭包还攥着已经销毁的 View
+            .setOnDismissListener { repaintInstFormatPills = null }
             .show()
     }
 
@@ -2804,6 +2903,12 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         imfb.rvInstanceMgr.layoutManager = LinearLayoutManager(this)
         // 少了这行 RecyclerView 不会渲染任何子项（列表看起来是空的）
         imfb.rvRdm.layoutManager = LinearLayoutManager(this)
+
+        // RDM「建实例」按当前格式页签**优先**匹配灯库（匹配不到再退回全部候选）——
+        // 同一款灯常有 XML/D4/R20 三份同名灯库，而通道语义可能不同（切割片
+        // BLADE1A/1B vs blade_1+blade_1_rot），自动匹配挑错格式最难查。见 FixtureFormats.prefer。
+        repaintRdmFormatPills = buildFormatPillRow(imfb.rowRdmFormat)
+        repaintRdmFormatPills?.invoke()
     }
 
     // ---------------- 设置页 ----------------
@@ -3464,27 +3569,65 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         return fixtureStore.fixtures.firstOrNull { matchFixture(it, modelKey) }
     }
 
-    /** 手动为某个型号指定灯库（组内所有设备共用同一个灯型）。 */
+    /**
+     * 手动为某个型号指定灯库（组内所有设备共用同一个灯型）。
+     *
+     * ⚠ 这里**必须带灯库格式页签**：同一款灯常有 `xxx.xml` / `xxx.d4` / `xxx_r20.r20`
+     *   三份**同名**灯库，全列在一起时用户看不出区别 —— 而它们的通道语义可能不同
+     *   （切割片 `BLADE1A/1B` 双端模型 vs `blade_1 + blade_1_rot` 偏移+角度），
+     *   指定错了就会出现"推子推得动、灯不听话"。页签逻辑见 [FixtureFormats]。
+     *
+     * 用 `.setAdapter()` + 自定义标题（标题里塞药丸行）实现：`setItems()` 的列表是
+     * **定死的**，切页签没法重填。
+     */
     private fun pickFixtureForModel(modelKey: String) {
-        val defs = fixtureStore.fixtures
-        if (defs.isEmpty()) {
+        if (fixtureStore.fixtures.isEmpty()) {
             toast("App 灯库里还没有灯型，请先去「设置 → 灯库编辑」创建一个")
             return
         }
-        val names = defs.map { "${it.name}（${it.channelCount}CH）" }.toTypedArray()
+        var defs = ArrayList(filteredFixtures())
+        val names = ArrayList(defs.map { "${it.name}（${it.channelCount}CH）" })
+        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, names)
+
+        // 自定义标题 = 原标题 + 一行格式药丸
+        val titleBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(4))
+        }
+        titleBox.addView(TextView(this).apply {
+            text = "为「$modelKey」指定灯库"
+            textSize = 18f
+            setTextColor(getColor(R.color.text))
+        })
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        titleBox.addView(row)
+
+        // 切页签 → 重算候选并重填列表；空列表也要给个说法，别让用户对着空白发呆
+        val repaint = buildFormatPillRow(row) {
+            defs = ArrayList(filteredFixtures())
+            names.clear()
+            names.addAll(if (defs.isEmpty()) listOf("（该格式下没有灯库）") else defs.map { "${it.name}（${it.channelCount}CH）" })
+            adapter.notifyDataSetChanged()
+        }
+        repaint()
+
         MaterialAlertDialogBuilder(this)
-            .setTitle("为「$modelKey」指定灯库")
-            .setItems(names) { _, which ->
-                rdmModelFixture[modelKey] = defs[which].id
+            .setCustomTitle(titleBox)
+            .setAdapter(adapter) { _, which ->
+                val def = defs.getOrNull(which) ?: return@setAdapter   // 空列表时点不动
+                rdmModelFixture[modelKey] = def.id
                 // ⚠ 换灯库 = 换占用通道数，所以**地址要立刻跟着重排**（本地）。
                 //   但硬件不动 —— 下发必须等用户确认后点「写入」/「写入地址」，
                 //   否则在灯库里翻着看一遍就把现场的地址全改了。
                 val plan = relayoutLocalAddresses()
                 if (plan == null) {
                     refreshRdmList()   // 至少把"占通道 / 灯库"那行刷出来
-                    toast("已指定灯库：${defs[which].name}；但按新通道数排不下本宇宙，请调整起始地址")
+                    toast("已指定灯库：${def.name}；但按新通道数排不下本宇宙，请调整起始地址")
                 } else {
-                    toast("已指定灯库：${defs[which].name}（地址已按新通道数重排，点「写入地址」下发）")
+                    toast("已指定灯库：${def.name}（地址已按新通道数重排，点「写入地址」下发）")
                 }
             }
             .setNegativeButton("取消", null)
@@ -4229,7 +4372,9 @@ class MainActivity : AppCompatActivity(), BleManager.Listener {
         fun norm(s: String) = FixtureDef.modelKey(s)   // 统一到 FixtureDef.modelKey，见那里的说明
         val key = norm(d.modelDesc.ifEmpty { d.model })
         if (key.isEmpty()) return null
-        val all = fixtureStore.fixtures
+        // 候选先按当前格式页签**优先**过滤（选中的格式没有对应灯库时原样退回全部，
+        // 否则用户换个页签就再也匹配不上任何灯 —— 见 FixtureFormats.prefer）
+        val all = FixtureFormats.prefer(fixtureFmt, fixtureStore.fixtures) { fixtureStore.defFormats(it) }
         // 1) 名称互相包含，且**通道数也要对得上**（同一型号常有 15CH/20CH 等不同模式）
         val byName = all.filter {
             val n = norm(it.name)

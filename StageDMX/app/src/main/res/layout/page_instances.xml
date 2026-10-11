@@ -239,6 +239,16 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- 灯库格式页签：RDM「建实例」时会按这些格式去匹配灯库（优先选中格式，
+             匹配不到再退回全部 —— 见 FixtureFormats.prefer）。
+             同一款灯常有 XML/D4/R20 三份同名灯库，自动匹配挑错格式会导致通道语义不对。 -->
+        <LinearLayout
+            android:id="@+id/rowRdmFormat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal" />
+
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"

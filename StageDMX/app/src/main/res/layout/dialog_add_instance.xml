@@ -20,6 +20,16 @@
         android:textColor="@color/textDim"
         android:textSize="13sp" />
 
+    <!-- 灯库格式页签：同一款灯常同时存在 XML/D4/R20 三份同名灯库，
+         而它们的通道语义可能不同（例如切割片 BLADE1A/1B vs blade_1+blade_1_rot）。
+         不分开的话用户分不清选的是哪一份。页签逻辑见 FixtureFormats（纯逻辑、有单测）。 -->
+    <LinearLayout
+        android:id="@+id/rowInstFormat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal" />
+
     <Spinner
         android:id="@+id/spInstType"
         android:layout_width="match_parent"

@@ -588,6 +588,19 @@ class FixtureStore(context: Context) {
     fun fixturesOfFormat(ext: String): List<FixtureDef> =
         fixtures.filter { File(dir, "${it.id}.$ext").exists() }
 
+    /**
+     * 该灯型**手上有哪些原始格式**（"xml"/"d4"/"r20"）。
+     *
+     * 判据是"灯库目录里存在 `<id>.<ext>`"—— 导入时原始文件会按 id 存下来
+     * （见 [saveRaw]），所以一个灯型先后用不同格式导入过，就会同时有两种。
+     *
+     * 返回**空集合**表示只有 App 自己的 JSON：从 ZIP 一次导入多个灯型时，只有第一个
+     * 会留下原始文件，其余都只存 JSON（见 [importFromZip]）。这些灯型要能出现在
+     * 「其他」页签里，不能凭空消失。页签语义见 [FixtureFormats]。
+     */
+    fun defFormats(def: FixtureDef): Set<String> =
+        FixtureFormats.KNOWN.filterTo(mutableSetOf()) { File(dir, "${def.id}.$it").exists() }
+
     var currentFixtureId: String?
         get() = prefs.getString("current_fixture", null)
         set(value) = prefs.edit().putString("current_fixture", value).apply()
