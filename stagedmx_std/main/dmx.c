@@ -239,82 +239,78 @@ void dmx_get_stats(uint8_t universe, uint32_t *frames, uint32_t *fails,
     if (fps)    *fps    = s_fps[universe];
 }
 
-// ==================== 收发方向控制 ====================
+// ==================== 收发方向控制（交给 esp_dmx 的 RTS）====================
 // RS-485 半双工：同一时刻只能有一端驱动总线，DE/RE 必须成对切换。
 //
-// ⚠ 为什么不用 esp_dmx 的 rts_pin 来自动控制方向：
-//   1) 该组件只在 RDM「等待响应」那一个分支里调过 dmx_uart_set_rts()（见
-//      esp_dmx/src/dmx/hal/uart.c:319），发送/接收路径上并不翻转；
-//   2) ESP-IDF 只在 UART_MODE_RS485_HALF_DUPLEX 下才自动翻转 RTS，
-//      而 esp_dmx 从未调用 uart_set_mode()。
-//   所以 rts_pin 传下去**不会**自动换向，方向必须由我们自己驱动。
+// **本版起方向由 esp_dmx 管**（关键在 dmx_install_driver 里 `rts = o->en_pin`）：
+// 组件在它自己管的收发路径上写 UART 的 RTS 寄存器（`conf0.sw_rts`），而 RTS
+// 信号已经被路由到 DE 脚，于是换向由组件完成：
 //
-// 本工程用的 485 模块只有**一个 EN 脚**（DE 与 /RE 在模块内部处理），
-// 所以下面两个函数写的是同一个 GPIO 的两个电平。
-// 将来若换成 DE/RE 分开的 6 脚模块，把结构体里 en_pin 拆成两个并各写一行即可。
+//   io.c:389  dmx_send_num()      → set_rts(0)  发送（"Turn the DMX bus around"）
+//   io.c:150  dmx_receive_num()   → set_rts(1)  接收
+//   io.c:87   dmx_write_offset()  → set_rts(0)  发送
+//   driver.c:241 dmx_driver_install() → set_rts(1)  空闲/接收
+//   uart.c:319 RDM 等应答          → set_rts(1)  接收
+//
+// ⚠ 四个必须记住的点（都是踩过的）：
+//  1) **必须把 rts 引脚绑上去**（dmx_set_pin 的第 4 个参数）。不绑的话上面那些
+//     set_rts() 只是写寄存器、引脚纹丝不动 —— 老版本传 `rts = -1` 再自己拨 GPIO,
+//     这条路径整个是空的。
+//  2) 组件**从不反转 RTS**（全文只有 TXD 反转，用于 inverted-DMX），也**从不调用
+//     `uart_set_mode(UART_MODE_RS485_HALF_DUPLEX)`** ⇒ ESP-IDF 不会按字节自动翻转，
+//     换向完全靠上面那几个显式 set_rts()。
+//  3) **发完一帧组件不会主动放开总线**：只有"要收"的路径才切回接收。对本工程
+//     （两个宇宙各一片 485、各自独占一条总线）没问题；但**两个宇宙若共用一条总线，
+//     就是两个驱动源长期互打** —— 那是接线问题，软件救不了，必须各自一条线。
+//  4) 驱动装上之后，`gpio_set_level()` 对 en_pin **不再起作用**
+//     （它只写 GPIO_OUT_REG，改不了 GPIO_FUNCx_OUT_SEL_CFG 里的输出源选择）。
+//     所以下面三个函数只在**驱动装上之前**的那个窗口里有用。
+//
+// 下面三个函数就是给那个窗口用的：复位后到驱动装好之间，DI 还是浮空的，
+// 若此时 DE 已经为高，SP3485 就会拿随机电平驱动 A/B 线（接收端可能锁存乱码帧）。
+// 所以 dmx_start() 先把方向脚摆成"不驱动"。
 
-/** 切到发送：EN = 发送态电平 → 模块驱动总线（并关掉自己的接收，避免自收回波）。 */
+/** 切到发送（**仅驱动装上之前有效**）：EN = 发送态电平 → 驱动总线。 */
 static inline void dmx_transceiver_tx(const dmx_out_t *o)
 {
     if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_tx_level);
 }
 
 /**
- * 切到接收（= **放开总线**）：EN = 接收态电平 → 本片不驱动总线。
+ * 切到接收 = **放开总线**（**仅驱动装上之前有效**）。
  *
- * ⚠ 这里**不再**按 DMX_RX_ENABLE 分支：不管固件去不去听，都要把方向脚切到"不驱动"。
- *
- *   曾经在 DMX_RX_ENABLE=0 时直接什么都不做，理由是"纯发送端就该一直握着总线"。
- *   那在**单片**收发器上无伤大雅，但硬件改成**两片独立的 SP3485EN（各自一根 DE）**
- *   之后就成了致命隐患：两个宇宙的驱动源会**长期同时驱动总线**（本固件两个宇宙
- *   本来就是并行发送的），只要两片的 A/B 落在同一条线上，灯侧收到的就是两个
- *   驱动源互打的波形 → **完全收不到有效 DMX**。
- *   而点一次 RDM 扫描时，被扫的那个宇宙会暂停输出、DE 交给 UART 按字节翻转，
- *   总线短暂只剩一个驱动源 → 灯这才收到"有效帧"（全 0 或残帧）→ 复位/重新初始化。
- *   症状"无法控制 + 只有 RDM 扫描能让灯有反应"与此完全一致。
- *
- *   半双工总线的正确行为本来就是**发完就放开**；DMX512 的接收端也依赖帧间的
- *   空闲电平来判"信号消失"。RX 引脚在 DMX_RX_ENABLE=0 时并未绑定到 UART
- *   （见 dmx_install_driver），所以放开总线不会再引出"自己听回自己"的老问题。
+ * 驱动装上之后由 esp_dmx 通过 RTS 管；这里保留是因为上电窗口内 en_pin 还是
+ * 普通 GPIO，必须显式摆成"不驱动"，否则见上面第 4 条。
  */
 static inline void dmx_transceiver_rx(const dmx_out_t *o)
 {
     if (o->en_pin >= 0) gpio_set_level((gpio_num_t)o->en_pin, o->en_rx_level);
 }
 
-/** 上电/停机/暂停时的默认态：不驱动总线。 */
+/** 上电窗口的默认态：不驱动总线。（装上驱动后由 RTS 决定，见文件头说明。） */
 static inline void dmx_transceiver_idle(const dmx_out_t *o)
 {
     dmx_transceiver_rx(o);
 }
 
 /**
- * RDM 结束后，把被 UART 外设"借走"的引脚收回来。
+ * RDM 结束后，把被 UART 外设"借走"的 **RX** 引脚收回来。
  *
- * ⚠ 为什么必须做：dmx_rdm_mode(true) 用 dmx_set_pin(port, tx, rx, en_pin)
- *   把 **EN 绑成了 UART RTS**、**RX 绑成了 UART RX**。而回程的重装解不开它们：
- *     · IDF uart_set_pin() 只在「新引脚 >= 0」时才释放旧引脚
- *       （uart.c: `uart_release_pin(uart, tx>=0, rx>=0, rts>=0, cts>=0)`），
- *       而 dmx_install_driver() 传的是 rts = -1（RX 在 DMX_RX_ENABLE=0 时也是 -1）
- *       → 那两路 release=false，**根本不会被释放**；
- *     · dmx_uart_deinit() 只做 periph_module_disable()，不碰引脚。
- *   后果：重装之后 EN 仍由 RTS 信号驱动，而 dmx_transceiver_tx/rx() 用的
- *   gpio_set_level() 只写 GPIO_OUT_REG、不改 GPIO_FUNCx_OUT_SEL_CFG → **对它无效**。
+ * ⚠ 为什么 RX 仍然必须收回：dmx_rdm_mode(true) 用 dmx_set_pin(port, tx, rx, en_pin)
+ *   把 RX 绑成了 UART RX；而回程的重装走 dmx_install_driver()，在 DMX_RX_ENABLE=0
+ *   时它传 rx = -1 —— 而 IDF 的 uart_set_pin() 只在「新引脚 >= 0」时才释放旧引脚
+ *   （uart.c: `uart_release_pin(uart, tx>=0, rx>=0, rts>=0, cts>=0)`），于是那一路
+ *   release=false、**根本不会被释放**；dmx_uart_deinit() 也只做
+ *   periph_module_disable()，不碰引脚。
  *
- * 当前 DMX_RX_ENABLE=0 时 EN 恰好没暴露：重装里的 periph_module_reset() 把
- * conf0.sw_rts 清零，而 sw_rts=0 正是发送态（由 RDM 能正常应答反推得到），
- * 与"常驻发送态"的意图一致 —— 但这是巧合。一旦打开 DMX_RX_ENABLE，
- * dmx_transceiver_rx() 需要把 EN 拉低，就会立刻失效。
+ * ⚠ **EN 不再需要收回**：本版起 dmx_install_driver() 恒传 `rts = en_pin`，
+ *   每次重装都会重新绑定（≥ 0 就会被 release + 重新 route），方向继续由组件的
+ *   set_rts() 管。以前"把 EN 强行改回普通 GPIO"的做法，在组件管方向之后反而会
+ *   把 RTS 路由拆掉（gpio_set_direction 会把输出源改回 SIG_GPIO_OUT_IDX），
+ *   所以删掉了。
  */
 static void dmx_pins_reclaim(const dmx_out_t *o)
 {
-    if (o->en_pin >= 0) {
-        // gpio_set_direction(OUTPUT) → gpio_output_enable()
-        //   → gpio_hal_matrix_out_default()
-        //   → REG_WRITE(GPIO_FUNC0_OUT_SEL_CFG_REG + gpio*4, SIG_GPIO_OUT_IDX)
-        // 正好把输出源从 UART RTS 改回普通 GPIO，恢复 gpio_set_level() 的控制权。
-        gpio_set_direction((gpio_num_t)o->en_pin, GPIO_MODE_OUTPUT);
-    }
 #if !DMX_RX_ENABLE
     if (o->rx_pin >= 0) {
         // 本意是"接收通路整个不存在"（见 dmx_install_driver 的说明）。
@@ -324,6 +320,8 @@ static void dmx_pins_reclaim(const dmx_out_t *o)
         // （否则 RX 溢出 / 伪 break 中断又会回来）。
         gpio_reset_pin((gpio_num_t)o->rx_pin);
     }
+#else
+    (void)o;
 #endif
 }
 
@@ -336,16 +334,21 @@ static bool dmx_install_driver(dmx_out_t *o)
                  (int)o->port, o->tx_pin, o->rx_pin);
         return false;
     }
-    // v7：把 RO 也绑定到 UART RX（v6 传 -1，接收端是关的）。
-    // rts 仍传 -1 —— 方向不用硬件 RTS，由 dmx_transceiver_* 直接驱动 GPIO（原因见上）。
+    // 引脚绑定：TX → UART TX，RO → UART RX（可选），**DE → UART RTS**。
     //
-    // ⚠ DMX_RX_ENABLE=0 时传 -1：**不绑定 RX 引脚**。
-    //   这样 UART 的接收通路整个不存在，也就不可能产生 RX 溢出/伪 break 中断。
-    //   （不绑引脚不影响 RO 的物理连接，只是固件不去听。）
+    // ⚠ 第 4 个参数（rts）是**方向的接管点**，本版起恒传 en_pin：
+    //   esp_dmx 内部用 dmx_uart_set_rts() 写 `conf0.sw_rts` 来换向
+    //   （send→0 发送 / receive→1 接收，见文件头），而这条 RTS 信号必须
+    //   先被 route 到 DE 脚才会起作用。传 -1 时那几个 set_rts() 只是写寄存器，
+    //   引脚纹丝不动 —— 老版本"自己拨 GPIO"就是被这一点绕过去的。
+    //
+    // ⚠ DMX_RX_ENABLE=0 时 rx 传 -1：**不绑定 RX 引脚**，这样 UART 的接收通路
+    //   整个不存在，也就不可能产生 RX 溢出/伪 break 中断（RO 的物理连接不受影响，
+    //   只是固件平时不去听；RDM 扫描期间由 dmx_rdm_mode 临时绑上）。
     const int rx = DMX_RX_ENABLE ? o->rx_pin : -1;
-    if (!dmx_set_pin(o->port, o->tx_pin, rx, -1)) {
-        ESP_LOGE(TAG, "dmx_set_pin FAILED (port %d, TX=%d RX=%d)",
-                 (int)o->port, o->tx_pin, rx);
+    if (!dmx_set_pin(o->port, o->tx_pin, rx, o->en_pin)) {
+        ESP_LOGE(TAG, "dmx_set_pin FAILED (port %d, TX=%d RX=%d RTS=%d)",
+                 (int)o->port, o->tx_pin, rx, o->en_pin);
         return false;
     }
     return true;
@@ -397,7 +400,9 @@ static void dmx_task(void *arg)
         // 必须停在这里（一帧的边界）而不是发送中途 —— 中途停会把驱动留在
         // DMX_STATUS_SENDING，之后的 dmx_send 会一直返回 0。
         if (s_paused[u]) {
-            dmx_transceiver_idle(o);
+            // 方向交给 esp_dmx/RDM 路径了：暂停期间 dmx_rdm_mode() 会把 DE 绑成
+            // UART RTS 并按收发自动切换（见文件头"收发方向控制"）。这里手动拨
+            // gpio_set_level() 是**无效**的，所以不拨。
             if (s_pause_ack[u]) xSemaphoreGive(s_pause_ack[u]);
             while (s_paused[u]) {
                 // RDM 结束后的整口重装 —— **必须在本任务（core 1）里做**。
@@ -412,15 +417,13 @@ static void dmx_task(void *arg)
                     }
                     bool okr = dmx_install_driver(o);
 #if DMX_RECLAIM_PINS
-                    dmx_pins_reclaim(o);   // ← 先收回被 UART 借走的 EN/RX，见函数说明
+                    dmx_pins_reclaim(o);   // ← 收回被 UART 借走的 RX，见函数说明
 #else
                     ESP_LOGW(TAG, "U%d RDM: 【A/B 对照】跳过引脚收回", u + 1);
 #endif
-                    // 收回引脚后把方向脚置回**空闲（不驱动总线）**。
-                    // ⚠ 这里以前写的是 dmx_transceiver_tx()（常驻驱动）—— 与 dmx_start()
-                    //   注释里"初始为接收态、释放总线"的本意自相矛盾，也正是
-                    //   "发完不放开"那套旧语义的残留。发不发送由下一帧的 tx() 决定。
-                    dmx_transceiver_idle(o);
+                    // 方向**不用**在这里拨：重装走 dmx_install_driver()，它把 DE
+                    // 重新绑成 UART RTS，而组件在 install 内部已经 set_rts(1)
+                    // （接收/放开总线）—— 见文件头"收发方向控制"。
                     s_out[u].ok = okr;
                     s_reinstall_req[u] = false;
                     ESP_LOGW(TAG, "U%d RDM: 驱动已在 CPU%d 重装 ok=%d",
@@ -431,16 +434,18 @@ static void dmx_task(void *arg)
             }
             continue;
         }
-        // 半双工：驱动总线前先切到发送态（DE=1, /RE=1）。
-        dmx_transceiver_tx(o);
+        // ⚠ 方向不在这里拨了：DE 已绑成 UART RTS，换向由 esp_dmx 在它自己的
+        //   收发路径里 set_rts() 完成（dmx_send → 发送）。手动 gpio_set_level()
+        //   此时对 en_pin 是**无效**的（只写 GPIO_OUT_REG，改不了输出源选择）。
         dmx_state_copy_port_frame(o->frame, u);
         dmx_write(o->port, o->frame, DMX_PACKET_SIZE);
         size_t n = dmx_send(o->port);
         // 发送被拒(n==0)时不等待，直接进入下一轮；正常帧最多等 60ms
         bool ok = (n > 0) && dmx_wait_sent(o->port, pdMS_TO_TICKS(DMX_FRAME_WAIT_MS));
-        // 发完**必须**释放总线（DE 回低）。两个宇宙各有一片 485、各自一根 DE，
-        // 谁都不放开就会两个驱动源互打 —— 见 dmx_transceiver_rx() 的说明。
-        dmx_transceiver_rx(o);
+        // ⚠ 发完**不主动放开总线**：esp_dmx 只在"要收"的路径里才切回接收
+        //   （见文件头第 3 条）。所以空闲时 DE 保持发送态 —— 对"每个宇宙独占
+        //   一条总线"是对的；若两个宇宙的 A/B 接在同一条线上，就是两个驱动源
+        //   长期互打，**必须改接线**，软件救不了。
         s_last_ok[u] = ok;
         s_frames[u]++;
         if (!ok) s_fails[u]++;
@@ -516,9 +521,10 @@ void dmx_start(void)
     gpio_set_direction((gpio_num_t)DMX_TX2_PIN,  GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)DMX_TX2_PIN, 1);
 
-    // DE/RE：每个宇宙一对，初始为"接收态"（DE=0 释放总线，/RE=0 使能接收）。
+    // DE/RE：每个宇宙一对，**在驱动装上之前**先摆成"接收态"（不驱动总线）。
+    // 驱动装上之后这两个脚由 UART RTS 接管，方向交给 esp_dmx（见文件头）。
     // v6 及以前这里是把唯一一个共用 EN 常驻拉高 —— 收发器永远在发送态，
-    // 既收不到东西，也一直占着总线。现在两个宇宙各自独立控制。
+    // 既收不到东西，也一直占着总线。现在两个宇宙各自独立、且装上后不再手动拨。
     for (int u = 0; u < DMX_UNIVERSES; u++) {
         const dmx_out_t *o = &s_out[u];
         if (o->en_pin >= 0) {
