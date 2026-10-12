@@ -18,18 +18,24 @@
 //   2. **DE 从"两片共用一根 GPIO2"改成每片一根（4 / 5）**。共用一根时没法只让一个宇宙发送，
 //      而且 GPIO2 在部分 S3 开发板上挂了板载器件。GPIO2 现在是空闲脚。
 //
-// ⚠ U1 用 UART1 的**原生引脚**（17 = TX / 18 = RX），省掉 GPIO Matrix 的一层路由；
-//   U2 在 ESP32-S3 上**没有原生引脚**（soc/uart_pins.h: U2RXD/U2TXD = -1），
-//   15/16 是经 GPIO Matrix 路由的，可以任选空闲脚。
+// ⚠ 下面填的是**实际接线**，不是 UART 原生脚的顺序：
+//   宇宙1: TX = GPIO18 / RX = GPIO17      宇宙2: TX = GPIO15 / RX = GPIO16
+//   （ESP32-S3 上 UART1 的原生脚是 17=TX / 18=RX，UART2 根本没有原生脚 ——
+//    soc/uart_pins.h: U2RXD/U2TXD = -1。所以现在两口都经 GPIO Matrix 路由；
+//    `uart_set_pin()` 会自动处理，功能不受影响，只是多一层矩阵延迟，250k 波特下无所谓。）
+//
+// ⚠ 本版与上一版相比 **TX/RX 各自对调了**（17↔18、15↔16）—— 这是随实际接线改的。
+//   改引脚必须和文件末尾的接线表一起改，否则出现"代码和板子各说一套"，
+//   现场症状是 DMX 完全无输出，而 DI/RO 接反时更糟（两个输出对打、芯片发烫）。
 
 // ---- 宇宙 1（UART1）----
-#define DMX_TX_PIN      17    // ESP TXD → 芯片 DI
-#define DMX_RX_PIN      18    // ESP RXD ← 芯片 RO
+#define DMX_TX_PIN      18    // ESP TXD → 芯片 DI
+#define DMX_RX_PIN      17    // ESP RXD ← 芯片 RO
 #define DMX_EN_PIN      4     // ESP → 芯片 DE（方向脚）
 
 // ---- 宇宙 2（UART2）----
-#define DMX_TX2_PIN     16    // 第二片 DI
-#define DMX_RX2_PIN     15    // 第二片 RO
+#define DMX_TX2_PIN     15    // 第二片 DI
+#define DMX_RX2_PIN     16    // 第二片 RO
 #define DMX_EN2_PIN     5     // 第二片 DE
 
 // 引脚避让（N16R8 模块）：
@@ -76,8 +82,8 @@
 // ==================== 接线表（每口一片）====================
 //   VCC  → 3.3V
 //   GND  → GND（两片与 ESP32 必须共地）
-//   DI   → ESP GPIO17 (宇宙1) / GPIO16 (宇宙2)   [ESP 输出]
-//   RO   → ESP GPIO18 (宇宙1) / GPIO15 (宇宙2)   [ESP 输入]
+//   DI   → ESP GPIO18 (宇宙1) / GPIO15 (宇宙2)   [ESP 输出]
+//   RO   → ESP GPIO17 (宇宙1) / GPIO16 (宇宙2)   [ESP 输入]
 //   DE   → ESP GPIO4  (宇宙1) / GPIO5  (宇宙2)   [方向；建议 /RE 与 DE 短接]
 //   A    → DMX 总线 A (XLR 母头 pin3)
 //   B    → DMX 总线 B (XLR 母头 pin2)
