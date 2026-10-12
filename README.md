@@ -85,8 +85,8 @@ cd ..\StageDMX
 
 ### 固件（ESP32-S3）
 
-- **双宇宙 DMX512**：`ch 1..512 = 宇宙1（UART1/GPIO17）`、`ch 513..1024 = 宇宙2（UART2/GPIO18）`，
-  每口一个输出任务**并行**发送（各自 41–43fps，互不影响），两片 SP3485 共用 DE（GPIO2）
+- **双宇宙 DMX512**：`ch 1..512 = 宇宙1（UART1）`、`ch 513..1024 = 宇宙2（UART2）`，
+  每口一个输出任务**并行**发送（各自 41–43fps，互不影响），**每口一片 SP3485EN、方向脚各自独立**（GPIO4 / GPIO5）
 - **渲染管线**：core 1 上一个 10ms 任务 `snapshot → 程序层(HTP) → 效果层(阵列) → commit`，
   临界区从"每通道一次"降到"每 tick 两次"，用版本号做乐观并发，避免 commit 覆盖刚到的推子值
 - **BLE GATT**：服务 `0xFF00` / 写 `0xFF01`（WRITE + WRITE_NO_RSP）/ 通知 `0xFF02`；设备名 `StageDMX-01`
@@ -169,14 +169,14 @@ cd ..\StageDMX
 | SP3485EN | 接 ESP32-S3 | 说明 |
 |---|---|---|
 | VCC / GND | 3.3V / GND | 供电共地 |
-| DI | GPIO17（宇宙1）/ GPIO16（宇宙2） | ESP 输出 → 芯片 DI |
-| RO | GPIO18（宇宙1）/ GPIO15（宇宙2） | 芯片 RO → ESP 输入（RDM 依赖它） |
+| DI | GPIO18（宇宙1）/ GPIO15（宇宙2） | ESP 输出 → 芯片 DI |
+| RO | GPIO17（宇宙1）/ GPIO16（宇宙2） | 芯片 RO → ESP 输入（RDM 依赖它） |
 | DE | GPIO4（宇宙1）/ GPIO5（宇宙2） | 方向脚；**建议把 `/RE` 与 `DE` 短接** |
 | A / B / G | DMX 总线 | XLR 母头 pin3 / pin2 / 地 |
 
 - 末端设备 A/B 之间并联 **120Ω** 终端电阻
 - GPIO 避让（N16R8）：26–32 = SPI flash、33–37 = Octal PSRAM、19/20 = 原生 USB、43/44 = UART0（留控制台）
-- 模拟器接线（TTL 直连，`SIM_RTS_PIN = -1`）：控台 U1 TX `GPIO17` → 模拟器 `GPIO2`，控台 U1 RX ← 模拟器 `GPIO1`，**必须共地**
+- 模拟器接线（TTL 直连，`SIM_RTS_PIN = -1`）：控台 U1 TX `GPIO18` → 模拟器 `GPIO2`，控台 U1 RX ← 模拟器 `GPIO1`，**必须共地**
 
 ---
 
