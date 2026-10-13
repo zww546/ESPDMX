@@ -29,13 +29,13 @@
 //   现场症状是 DMX 完全无输出，而 DI/RO 接反时更糟（两个输出对打、芯片发烫）。
 
 // ---- 宇宙 1（UART1）----
-#define DMX_TX_PIN      18    // ESP TXD → 芯片 DI
-#define DMX_RX_PIN      17    // ESP RXD ← 芯片 RO
+#define DMX_TX_PIN      17    // ESP TXD → 芯片 DI
+#define DMX_RX_PIN      18    // ESP RXD ← 芯片 RO
 #define DMX_EN_PIN      4     // ESP → 芯片 DE（方向脚）
 
 // ---- 宇宙 2（UART2）----
-#define DMX_TX2_PIN     15    // 第二片 DI
-#define DMX_RX2_PIN     16    // 第二片 RO
+#define DMX_TX2_PIN     16    // 第二片 DI
+#define DMX_RX2_PIN     15    // 第二片 RO
 #define DMX_EN2_PIN     5     // 第二片 DE
 
 // 引脚避让（N16R8 模块）：

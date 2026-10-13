@@ -1,0 +1,34 @@
+# ---- Flash / PSRAM: must match the board, otherwise it will not boot at all ----
+#
+# Pitfall we hit: this used to use the ESP-IDF defaults (2MB flash, no PSRAM).
+# Flashed onto a "Waveshare ESP32-S3 (16MB flash + 8MB Octal PSRAM)" the symptom
+# was that esptool could flash and reset the chip, but not a single byte came out
+# of the serial port -- because the bootloader initialized for 2MB flash, boot
+# failed, and even the ROM log never appeared. Keep this in sync with the
+# controller project.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+
+# ---- Console on native USB-Serial-JTAG (same as the controller) ----
+# ESP32-S3 defaults to console on UART0, but the port you plug in is native USB;
+# they are not the same port -- with UART0 you would see nothing over USB.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ---- RDM identity ----
+# The manufacturer label must be set here, via Kconfig, BEFORE the driver is
+# installed. The docs for rdm_register_manufacturer_label() state that the value
+# is used to set the default "when this function is called for the first time and
+# is ignored on subsequent calls" -- and dmx_driver_install() has already
+# registered it once using the Kconfig value. So registering it again from
+# application code has no effect, and the controller would keep reading back the
+# Kconfig default ("esp_dmx").
+#
+# NOTE: keep every comment in this file pure ASCII. kconfgen reads
+# sdkconfig.defaults with open(path, "r") and no explicit encoding, so any UTF-8
+# non-ASCII byte here crashes the build on a non-UTF-8 (e.g. GBK) Windows locale.
+CONFIG_RDM_MANUFACTURER_LABEL="StageDMX"

@@ -73,7 +73,7 @@ static const char *TAG = "fixture";
 #define SIM_RX_PIN          18
 // TTL 直连没有收发器 ⇒ 不需要方向脚。
 // 若改用 A/B 差分（本板加一片 SP3485），把这里改成该模块的 EN/DE 脚。
-#define SIM_RTS_PIN         -1
+#define SIM_RTS_PIN         16
 
 #define SIM_PORT            DMX_NUM_1
 
@@ -113,7 +113,9 @@ static const char *TAG = "fixture";
 //   这里只在**启动之后**才把它配成输入+下拉，所以正常上电不受影响；
 //   但每次复位时那个下拉也会参与 strapping 采样 —— 若出现复位后行为异常，
 //   优先怀疑这里，换回 GPIO4/GPIO5 等非 strapping 脚。
-#define SIM_WATCH_PIN       3
+#define SIM_WATCH_PIN       4
+// 第二个监视脚：看宇宙2 的 DE（控台 GPIO5 → 本板 GPIO5）。
+#define SIM_WATCH2_PIN      5
 
 // ---- 上报 ----
 #define SIM_REPORT_MS       1000    // 状态行间隔
@@ -489,15 +491,27 @@ static void sim_report_task(void *arg)
                            s_identify ? (int)((now / 100000) & 1) : 0);
         }
 
-        // 可选：把被监视引脚（例如控台的 EN/方向脚）的实测电平拼到状态行尾部
-        char watchbuf[64] = "";
+        // 可选：把被监视引脚（例如控台的 DE/方向脚）的实测电平拼到状态行尾部。
+        // 同时看两个宇宙的 DE：控台 GPIO4（宇宙1）+ GPIO5（宇宙2）→ 本板同名脚。
+        // ⚠ 本板这两个脚是空的（DMX 口用的是 17/18），所以可以直接当输入用。
+        char watchbuf[160] = "";
 #if SIM_WATCH_PIN >= 0
         {
             uint32_t wtr = 0, whi = 0;
             sample_one(SIM_WATCH_PIN, &wtr, &whi);
             snprintf(watchbuf, sizeof(watchbuf),
-                     " | GPIO%d(监视): 跳变=%lu 高=%lu%%",
+                     " | GPIO%d(DE-U1): 跳变=%lu 高=%lu%%",
                      SIM_WATCH_PIN, (unsigned long)wtr, (unsigned long)whi);
+        }
+#endif
+#if SIM_WATCH2_PIN >= 0
+        {
+            uint32_t w2tr = 0, w2hi = 0;
+            sample_one(SIM_WATCH2_PIN, &w2tr, &w2hi);
+            int n = (int)strlen(watchbuf);
+            snprintf(watchbuf + n, sizeof(watchbuf) - (size_t)n,
+                     " | GPIO%d(DE-U2): 跳变=%lu 高=%lu%%",
+                     SIM_WATCH2_PIN, (unsigned long)w2tr, (unsigned long)w2hi);
         }
 #endif
 
