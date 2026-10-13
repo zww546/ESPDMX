@@ -70,7 +70,7 @@ static void status_led_task(void *arg)
         if (fault)         lit = ((ms / 100) & 1) == 0;   // 5Hz  故障
         else if (!ready)   lit = ((ms / 250) & 1) == 0;   // 2Hz  驱动没装成
         else if (!ble)     lit = ((ms / 500) & 1) == 0;   // 1Hz  等手机
-        else               lit = ((ms / 1500) % 2) == 0;  // 慢心跳 正常工作
+        else               lit = true ;  // 慢心跳 正常工作
 
         gpio_set_level((gpio_num_t)STATUS_LED_PIN, STATUS_LED_ACTIVE_LOW ? !lit : lit);
         vTaskDelay(pdMS_TO_TICKS(100));
