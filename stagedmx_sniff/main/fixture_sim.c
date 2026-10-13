@@ -61,10 +61,16 @@ static const char *TAG = "fixture";
 // ============================================================================
 
 // ---- 引脚 ----
-//   SIM_TX_PIN → 控台 U1 RX (GPIO18)
-//   SIM_RX_PIN ← 控台 U1 TX (GPIO17)
-#define SIM_TX_PIN          1
-#define SIM_RX_PIN          2
+// ⚠ 这两行必须与**控台当前**的 U1 引脚一一对上（控台的 TX 接本板的 RX，反之亦然）。
+//   控台自 2026-10 起把两个宇宙的 TX/RX 各自对调过，现在是：
+//     控台 U1 TX = GPIO18 / U1 RX = GPIO17     （见 stagedmx_std/main/pins.h）
+//   所以本板按**直连线序**接成：18 ↔ 18、17 ↔ 17
+//     控台 TX(18) → 本板 GPIO18 = SIM_RX_PIN
+//     控台 RX(17) ← 本板 GPIO17 = SIM_TX_PIN
+//   （历史上这里曾是 SIM_TX=1 / SIM_RX=2 的"交叉线"接法，换控台引脚时两边都要改，
+//     否则现象是"帧率 0、收不到任何字节"，很难看出是引脚对不上。）
+#define SIM_TX_PIN          17
+#define SIM_RX_PIN          18
 // TTL 直连没有收发器 ⇒ 不需要方向脚。
 // 若改用 A/B 差分（本板加一片 SP3485），把这里改成该模块的 EN/DE 脚。
 #define SIM_RTS_PIN         -1
