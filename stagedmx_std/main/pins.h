@@ -94,3 +94,11 @@
 //
 // ⚠ DI/RO 接反是**危险**的：两个都是输出，会互相对打（对方是推挽输出时电流很大）。
 //   症状：DMX 无输出 + 芯片发烫。上电前务必核对。
+
+// ---- 状态灯（板载 LED，GPIO1）----
+// 板上有颗 LED 挂在 GPIO1。GPIO1 在 ESP32-S3 上**不是 strapping 脚**
+// （0/3/45/46 才是，别碰），做状态灯完全安全。
+// ⚠ 若你的板子是"低电平点亮"（LED 阳极接 3.3V、经限流电阻到 GPIO），
+//   把下面 ACTIVE_LOW 改成 1 即可。
+#define STATUS_LED_PIN        1
+#define STATUS_LED_ACTIVE_LOW 1
