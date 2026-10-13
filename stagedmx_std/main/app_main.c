@@ -58,7 +58,7 @@ static void status_led_task(void *arg)
         for (int u = 0; u < DMX_UNIVERSES; u++) {
             uint32_t frames = 0, fails = 0; uint8_t ok = 0, fps = 0;
             dmx_get_stats((uint8_t)u, &frames, &fails, &ok, &fps);
-            if (!dmx_port_ready((uint8_t)u)) ready = false;
+            if (ok == 0) ready = false;   // ok 来自 dmx_get_stats：0 = 这个宇宙没在正常发
             if (fails > last_fails[u]) fault = true;      // 这一周期内出现过失败
             last_fails[u] = fails;
         }
