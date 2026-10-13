@@ -46,6 +46,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+void sim_rgb_init(void);
+void sim_rgb_show(uint8_t r, uint8_t g, uint8_t b);
+void sim_rgb_show_idle(void);
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
@@ -445,6 +448,8 @@ static void sim_report_task(void *arg)
     int no_link_ticks = 0;
 
     while (1) {
+        sim_rgb_show(s_channels[0], s_channels[1], s_channels[2]);
+
         vTaskDelay(pdMS_TO_TICKS(SIM_REPORT_MS));
 
         uint32_t f = s_st.frames;
